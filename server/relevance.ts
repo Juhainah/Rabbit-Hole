@@ -1,0 +1,174 @@
+import type { SourceItem } from '../shared/types';
+
+// Search APIs happily return things that merely share a word with the query.
+// A clue only makes the board if it genuinely mentions the topic, and the best
+// matches get the limited slots. Measured with scripts/eval-relevance.ts.
+
+const STOP = new Set(
+  'the and for with from into over after before under between through during without within upon are was were been being its this that these those what which who whom whose why how when where there here than then such not nor only own same too very can will just should now also any each few more most other some both all their them they his her him she you your our out off once again did does doing have has had having would could about'.split(
+    ' ',
+  ),
+);
+
+// Words too generic to identify a topic on their own ("incident", "mystery"…).
+const GENERIC = new Set(
+  'people thing things world life part case cases story stories history historical theory theories mystery mysteries mysterious secret secrets strange weird unknown unexplained famous real truth true fact facts event events incident incidents death deaths dead die died killed murder war wars battle city town place places country countries state states government group family name names book books film films movie movies video videos article articles news report reports list top best worst one two three four five six seven eight nine ten hundred thousand million century centuries modern ancient early late known found discovered use used using make made based man men woman women day days year years time times old new first last long great little many much good way even back really explained explain why what'.split(
+    ' ',
+  ),
+);
+
+export const norm = (s: string) =>
+  s
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+    .toLowerCase();
+
+const stem = (w: string) => (w.length > 4 && w.endsWith('s') && !w.endsWith('ss') ? w.slice(0, -1) : w);
+const tokens = (s: string) => norm(s).split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+
+/** Topic words (stemmed, de-duplicated), in the order they appear. */
+export function terms(q: string): string[] {
+  return [...new Set(tokens(q).filter((w) => w.length >= 3 && !STOP.has(w)).map(stem))];
+}
+
+interface Phrasing {
+  all: string[];
+  anchors: string[];
+  /** Anchor pairs that sit side by side in the query ("numbers station"): they must stay close in the text. */
+  pairs: [string, string][];
+  whole: string;
+}
+
+function phrasing(q: string): Phrasing {
+  const toks = tokens(q);
+  const kept = toks.map((w, i) => ({ w: stem(w), i })).filter(({ w }) => w.length >= 3 && !STOP.has(w));
+  const anchors = kept.filter(({ w }) => !GENERIC.has(w));
+  const pairs: [string, string][] = [];
+  for (let k = 1; k < anchors.length; k++) if (anchors[k].i - anchors[k - 1].i === 1) pairs.push([anchors[k - 1].w, anchors[k].w]);
+  return { all: [...new Set(kept.map((x) => x.w))], anchors: [...new Set(anchors.map((x) => x.w))], pairs, whole: toks.join(' ') };
+}
+
+// "station" matches station, stations, station's; never compass, moonlight, station19.
+const SUFFIX = /^(s|es|ed|ing|n|ns|ian|ians)?$/;
+function positions(toks: string[], term: string): number[] {
+  const out: number[] = [];
+  toks.forEach((t, i) => {
+    if (t === term || (t.startsWith(term) && SUFFIX.test(t.slice(term.length)))) out.push(i);
+  });
+  return out;
+}
+
+/** Which anchors truly hit: present, and paired names found near each other. */
+function hitsIn(toks: string[], p: Phrasing): Set<string> {
+  const pos = new Map(p.anchors.map((a) => [a, positions(toks, a)]));
+  const hit = new Set(p.anchors.filter((a) => pos.get(a)!.length));
+  for (const [a, b] of p.pairs) {
+    if (!hit.has(a) || !hit.has(b)) continue;
+    // In order and close: "numbers station", not "Station platform numbers".
+    const close = pos.get(a)!.some((x) => pos.get(b)!.some((y) => y > x && y - x <= 2));
+    if (!close) hit.delete(b);
+  }
+  return hit;
+}
+
+function passes(toks: string[], p: Phrasing, lenient: boolean): boolean {
+  if (!p.all.length) return true;
+  if (!p.anchors.length) return p.all.filter((w) => positions(toks, w).length).length >= Math.ceil(p.all.length / 2);
+  const hits = hitsIn(toks, p).size;
+  const n = p.anchors.length;
+  if (lenient) return hits >= Math.min(n, n <= 2 ? n : n - 1) || (n > 2 && hits >= 2);
+  if (n <= 2) return hits === n;
+  if (n <= 4) return hits >= n - 1;
+  return hits >= Math.ceil(n * 0.6);
+}
+
+// Sources whose own search engines are good, or whose items rarely repeat the query words.
+const LENIENT = new Set(['wikipedia', 'nasa', 'met', 'artic', 'cleveland', 'vam', 'wellcome', 'smithsonian', 'europeana', 'wikidata', 'wikiquote', 'wikisource']);
+// Sources where the query isn't a topic, so there's nothing to check.
+const EXEMPT = new Set(['wayback', 'places', 'nearby', 'oeis', 'wiktionary', 'urbandictionary', 'musicbrainz', 'inaturalist']);
+
+// Everyday words that say nothing about what an article is about.
+const PLAIN = new Set(
+  'became become becoming including later born since while called named often several well among although because however according january february march april june july august september october november december'.split(' '),
+);
+
+/** What the case is about beyond its name: the distinctive words of its main article. */
+function contextOf(extract: string | undefined, ps: Phrasing[]): Set<string> {
+  if (!extract) return new Set();
+  const own = new Set(ps.flatMap((p) => p.all));
+  return new Set(tokens(extract.slice(0, 900)).map(stem).filter((w) => w.length >= 4 && !STOP.has(w) && !GENERIC.has(w) && !PLAIN.has(w) && !own.has(w)));
+}
+
+/** The case a result is judged against: ways of naming it, plus its main article's text. */
+export interface Topic {
+  phrasings: (string | undefined)[];
+  context?: string;
+}
+
+const textOf = (item: SourceItem) => (item.kind === 'post' ? item.title : [item.title, item.snippet, item.author].filter(Boolean).join(' '));
+
+/**
+ * Builds a filter from one or more phrasings of the topic (the query, the main
+ * article's title…). An item survives if it matches any phrasing.
+ */
+export function relevanceFilter(topic: Topic) {
+  const ps = topic.phrasings.filter((p): p is string => !!p?.trim()).map(phrasing);
+  const ctx = contextOf(topic.context, ps);
+  const askedFor = (re: RegExp) => ps.some((p) => re.test(p.whole));
+  return (item: SourceItem): boolean => {
+    if (EXEMPT.has(item.source) || !ps.length) return true;
+    // Roundups and side-pages (albums, "… in fiction") share the name, not the subject.
+    if (ROUNDUP.test(item.title) && !askedFor(ROUNDUP)) return false;
+    if (SIDE_PAGE.test(item.title) && !askedFor(SIDE_PAGE)) return false;
+    // Forum posts often mention a topic in passing ("my top 20 films"); require it in the title.
+    const toks = tokens(textOf(item));
+    // Wikipedia's other hits are neighbouring articles (tangents, not evidence) unless the title names the topic.
+    if (item.source === 'wikipedia') {
+      const title = tokens(item.title);
+      if (!ps.some((p) => hitsIn(title, p).size > 0)) return false;
+    }
+    if (!ps.some((p) => passes(toks, p, LENIENT.has(item.source)))) return false;
+    // Named only in passing (a line-up, an author list)? Then it must also touch the case's
+    // subject, or it's likely a namesake: Leonid Kulik the noise band, not the meteorite hunter.
+    if (ctx.size && !LENIENT.has(item.source) && !ps.some((p) => hitsIn(tokens(item.title), p).size)) return toks.some((t) => ctx.has(stem(t)));
+    return true;
+  };
+}
+
+// Roundups mention everything and are about nothing in particular.
+const ROUNDUP = /\b(top \d+|\d+ (most|best|weirdest|creepiest|scariest|strangest|biggest|greatest)|most (disturbing|terrifying|mysterious)|list of|roundup|daily .*news|this week in|color by number)\b/i;
+// Side-pages that share the name but not the subject.
+const SIDE_PAGE =
+  /\b(discography|album|song|single|in popular culture|in fiction|soundtrack|video game|board game|longplay|walkthrough|let'?s play|playthrough|gameplay|speedrun)\b|\((tv|television|web) series\)|\((film|novel|band|musical|play|opera|comics?|manga|disambiguation)\)/i;
+
+/** Best matches first, so the few board slots per source go to the strongest evidence. */
+export function rankRelevant(items: SourceItem[], topic: Topic): SourceItem[] {
+  const ps = topic.phrasings.filter((p): p is string => !!p?.trim()).map(phrasing);
+  if (!ps.length) return items;
+  const ctx = contextOf(topic.context, ps);
+  const wanted = new Set(ps.flatMap((p) => p.all));
+  const score = (item: SourceItem) => {
+    const title = tokens(item.title);
+    const body = tokens(textOf(item));
+    let s = 0;
+    for (const p of ps) {
+      const inTitle = hitsIn(title, p);
+      const inBody = hitsIn(body, p);
+      let v = 0;
+      for (const a of p.anchors) v += inTitle.has(a) ? 3 : inBody.has(a) ? 1.5 : 0;
+      for (const g of p.all) if (!p.anchors.includes(g) && positions(body, g).length) v += 1;
+      if (p.whole.length > 4 && body.join(' ').includes(p.whole)) v += 3;
+      s = Math.max(s, v);
+    }
+    // Touching the case's subject (Tunguska, meteorite…) beats a bare name match.
+    const around = new Set(tokens(textOf(item)).map(stem).filter((t) => ctx.has(t))).size;
+    s += Math.min(around, 3) * 0.75;
+    if (ROUNDUP.test(item.title)) s -= 4;
+    if (SIDE_PAGE.test(item.title) && ![...wanted].some((w) => SIDE_PAGE.test(w))) s -= 3;
+    return s;
+  };
+  return items
+    .map((item, i) => ({ item, i, s: score(item) }))
+    .sort((a, b) => b.s - a.s || a.i - b.i)
+    .map((x) => x.item);
+}

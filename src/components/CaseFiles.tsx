@@ -1,0 +1,212 @@
+import { ArrowLeft, FolderPlus, Search, Trash2 } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { useBoards } from '../store/boards';
+import { useUi } from '../store/ui';
+import type { Board } from '../types';
+import { openEmojiPicker } from './EmojiPicker';
+import { newBoard } from './LeftPanel';
+
+interface FileSummary {
+  id: string;
+  no: number;
+  name: string;
+  emoji: string;
+  clues: number;
+  cases: string[];
+  photo?: string;
+  depth: number;
+  updatedAt: number;
+}
+
+function summarize(b: Board, no: number): FileSummary {
+  const topics = b.nodes.filter((n) => n.type === 'topic');
+  const photo = topics.find((t) => t.data.image)?.data.image ?? b.nodes.find((n) => n.data.image)?.data.image;
+  return {
+    id: b.id,
+    no,
+    name: b.name,
+    emoji: b.emoji,
+    clues: b.nodes.length,
+    cases: topics.map((t) => t.data.title).filter(Boolean),
+    photo,
+    depth: Math.max(0, ...topics.map((t) => t.data.depth ?? 0)),
+    updatedAt: b.updatedAt,
+  };
+}
+
+function ago(t: number) {
+  const m = Math.round((Date.now() - t) / 60000);
+  if (m < 1) return 'just now';
+  if (m < 60) return `${m} min ago`;
+  const h = Math.round(m / 60);
+  if (h < 24) return `${h} h ago`;
+  const d = Math.round(h / 24);
+  return d === 1 ? 'yesterday' : `${d} days ago`;
+}
+
+function openBoard(id: string) {
+  useBoards.getState().setCurrent(id);
+  useUi.getState().set({ caseFilesOpen: false, view: 'board', selectedNodeId: undefined, selectedEdgeId: undefined });
+}
+
+/** Every investigation as a manila folder in a drawer, named on a taped paper label. */
+export function CaseFiles() {
+  const order = useBoards((s) => s.order);
+  const boards = useBoards((s) => s.boards);
+  const currentId = useBoards((s) => s.currentId);
+  const [q, setQ] = useState('');
+
+  const files = useMemo(() => order.map((id, i) => (boards[id] ? summarize(boards[id], order.length - i) : null)).filter((f): f is FileSummary => !!f), [order, boards]);
+  const needle = q.trim().toLowerCase();
+  const shown = needle ? files.filter((f) => [f.name, ...f.cases].some((s) => s.toLowerCase().includes(needle))) : files;
+
+  return (
+    <div className="desk relative min-h-0 flex-1 overflow-y-auto">
+      <div className="mx-auto max-w-[1180px] px-6 pt-8 pb-16">
+        <div className="flex flex-wrap items-end gap-x-6 gap-y-3">
+          <button onClick={() => useUi.getState().set({ caseFilesOpen: false })} className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 font-ui text-[13px] text-paper/70 hover:bg-white/10 hover:text-paper">
+            <ArrowLeft size={15} /> Back to the board
+          </button>
+          <div className="min-w-0 flex-1">
+            <h1 className="font-hand text-[46px] leading-none font-bold text-paper">Case files</h1>
+            <p className="mt-1 font-ui text-[14px] text-paper/60">
+              {files.length} investigation{files.length === 1 ? '' : 's'} in the drawer. Click a folder to open it; click its sticker to change the icon.
+            </p>
+          </div>
+          <label className="flex w-full items-center gap-2 rounded-lg bg-paper px-3 py-2 sm:w-72">
+            <Search size={15} className="text-ink-soft" />
+            <input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="Find a case…"
+              className="min-w-0 flex-1 bg-transparent font-ui text-[14px] text-ink outline-none placeholder:text-ink/40"
+            />
+          </label>
+        </div>
+
+        <div className="mt-12 grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-x-10 gap-y-14">
+          {!needle && (
+            <button
+              onClick={() => {
+                useUi.getState().set({ caseFilesOpen: false });
+                newBoard();
+              }}
+              className="cfile-new"
+            >
+              <FolderPlus size={30} strokeWidth={1.5} />
+              <span className="font-hand text-[26px] leading-none">Open a new case</span>
+            </button>
+          )}
+          {shown.map((f) => (
+            <Folder key={f.id} f={f} current={f.id === currentId} />
+          ))}
+        </div>
+        {needle && !shown.length && <p className="mt-10 text-center font-ui text-[14px] text-paper/60">No case file matches “{q}”.</p>}
+      </div>
+    </div>
+  );
+}
+
+function Folder({ f, current }: { f: FileSummary; current: boolean }) {
+  const [renaming, setRenaming] = useState(false);
+  const [shredding, setShredding] = useState(false);
+  const papers = f.cases.slice(-3);
+  // A slight, stable tilt per folder so the drawer looks handled, not printed.
+  const tilt = ((f.id.charCodeAt(0) + f.id.charCodeAt(1)) % 5) - 2;
+
+  return (
+    <article
+      role="button"
+      tabIndex={0}
+      aria-label={`Open ${f.name}`}
+      onClick={() => !renaming && !shredding && openBoard(f.id)}
+      onKeyDown={(e) => e.key === 'Enter' && e.target === e.currentTarget && openBoard(f.id)}
+      className="cfile"
+      style={{ '--tilt': `${tilt * 0.5}deg` } as React.CSSProperties}
+    >
+      <div className="cfile-tab">
+        Case Nº {String(f.no).padStart(3, '0')}
+        {current && <span className="cfile-open">on your desk</span>}
+      </div>
+      <div className="cfile-back" />
+      <div className="cfile-papers">
+        {(papers.length ? papers : ['Nothing dug up yet']).map((t, i) => (
+          <div key={i} className="cfile-paper" style={{ '--i': i } as React.CSSProperties}>
+            {t}
+          </div>
+        ))}
+      </div>
+      {f.photo && (
+        <div className="cfile-photo">
+          {/* A photo that won't load takes its frame with it, rather than leaving a broken icon. */}
+          <img src={f.photo} alt="" loading="lazy" onError={(e) => ((e.currentTarget.parentElement as HTMLElement).hidden = true)} />
+        </div>
+      )}
+      <div className="cfile-front">
+        <button
+          className="cfile-sticker"
+          title="Change icon"
+          onClick={(e) => {
+            e.stopPropagation();
+            openEmojiPicker(f.id, e.currentTarget);
+          }}
+        >
+          {f.emoji}
+        </button>
+        <div className="cfile-label" onDoubleClick={(e) => (e.stopPropagation(), setRenaming(true))} title="Double-click to rename">
+          {renaming ? (
+            <input
+              autoFocus
+              defaultValue={f.name}
+              onClick={(e) => e.stopPropagation()}
+              onBlur={(e) => {
+                useBoards.getState().renameBoard(f.id, e.target.value.trim() || f.name);
+                setRenaming(false);
+              }}
+              onKeyDown={(e) => {
+                e.stopPropagation();
+                if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+                if (e.key === 'Escape') setRenaming(false);
+              }}
+              className="w-full bg-transparent outline-none"
+            />
+          ) : (
+            f.name
+          )}
+        </div>
+        <div className="cfile-meta">
+          <span>
+            {f.clues} clues · {f.cases.length} case{f.cases.length === 1 ? '' : 's'}
+            {f.depth > 0 && ` · depth ${f.depth}`}
+          </span>
+          {/* The shred button lives on the meta line, so it never lands on the label or stamp. */}
+          <span className="flex items-center gap-1.5">
+            {ago(f.updatedAt)}
+            <button
+              className="cfile-trash"
+              title="Shred this file"
+              aria-label={`Shred ${f.name}`}
+              onClick={(e) => {
+                e.stopPropagation();
+                setShredding(true);
+              }}
+            >
+              <Trash2 size={14} />
+            </button>
+          </span>
+        </div>
+        {shredding && (
+          <div className="cfile-shred" onClick={(e) => e.stopPropagation()}>
+            <span>Shred this file? It can’t be undone.</span>
+            <button onClick={() => useBoards.getState().deleteBoard(f.id)} className="rounded bg-[#b3261e] px-2 py-0.5 font-semibold text-white">
+              Shred
+            </button>
+            <button onClick={() => setShredding(false)} className="rounded px-2 py-0.5 hover:bg-ink/10">
+              Keep
+            </button>
+          </div>
+        )}
+      </div>
+    </article>
+  );
+}

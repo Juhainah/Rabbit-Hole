@@ -1,0 +1,1550 @@
+@import 'tailwindcss';
+
+/* ───────────────────────── Design tokens ───────────────────────── */
+@theme {
+  --color-desk: #17120e;
+  --color-desk-2: #211a15;
+  --color-desk-3: #2c231c;
+  --color-paper: #f6efe1;
+  --color-paper-2: #ece2cd;
+  --color-paper-3: #ddd0b4;
+  --color-ink: #2b221c;
+  --color-ink-soft: #6e6053;
+  --color-ink-faint: #a3927f;
+  --color-string: #c8322f;
+  --color-mustard: #dca83f;
+  --color-sage: #8ea67c;
+  --color-terracotta: #c96d4b;
+  --color-teal: #3f7f86;
+  --color-plum: #7e5a9b;
+
+  --font-hand: 'Caveat', 'Segoe Print', cursive;
+  --font-type: 'Special Elite', 'Courier New', monospace;
+  --font-ui: 'Inter', system-ui, sans-serif;
+  --font-serif: 'Playfair Display', Georgia, serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+}
+
+:root {
+  color-scheme: dark;
+  /* painted once at startup by src/lib/textures.ts */
+  --noise: none;
+  --paper-noise: none;
+  --cork: none;
+
+  /* per-theme board variables (cork default) */
+  --string: #c8322f;
+  --string-evidence: rgba(160, 36, 32, 0.55);
+  --string-tangent: #7e3fb0;
+  --string-shadow: rgba(40, 18, 5, 0.28);
+  --label-bg: #fbf7ee;
+  --label-ink: #b3261e;
+  --select: #2b221c;
+  --card-shadow: 0 1px 1px rgba(0, 0, 0, 0.18), 0 6px 14px -4px rgba(40, 20, 5, 0.45);
+  --card-shadow-hover: 0 2px 2px rgba(0, 0, 0, 0.15), 0 22px 34px -10px rgba(40, 20, 5, 0.55);
+  --f-title: var(--font-type);
+  --f-note: var(--font-hand);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+body {
+  background: var(--color-desk);
+  color: var(--color-paper);
+  font-family: var(--font-ui);
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+button {
+  cursor: pointer;
+}
+::selection {
+  background: rgba(220, 168, 63, 0.45);
+}
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(120, 100, 80, 0.5) transparent;
+}
+
+/* ───────────────────────── Chrome ───────────────────────── */
+.desk {
+  background:
+    radial-gradient(1200px 500px at 50% -200px, rgba(220, 168, 63, 0.08), transparent 70%),
+    var(--noise),
+    linear-gradient(#1a140f, #140f0b);
+}
+
+.paper-panel {
+  background: var(--paper-noise), linear-gradient(180deg, #f8f2e5, #f1e8d6);
+  color: var(--color-ink);
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.25),
+    0 20px 40px -20px rgba(0, 0, 0, 0.8);
+}
+
+.paper-panel.ruled {
+  background:
+    repeating-linear-gradient(transparent 0 27px, rgba(63, 127, 134, 0.16) 27px 28px),
+    var(--paper-noise),
+    linear-gradient(180deg, #f8f2e5, #f1e8d6);
+}
+
+.washi {
+  --w: var(--color-sage);
+  background:
+    repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.22) 0 4px, transparent 4px 8px),
+    var(--w);
+  opacity: 0.92;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
+  mask: linear-gradient(90deg, transparent 0 3px, #000 3px calc(100% - 3px), transparent calc(100% - 3px)),
+    conic-gradient(from 45deg, #000 25%, transparent 0) -3px 0 / 6px 6px;
+}
+
+.stamp {
+  font-family: var(--font-type);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  border: 2.5px solid currentColor;
+  border-radius: 4px;
+  padding: 2px 8px;
+  transform: rotate(-6deg);
+  opacity: 0.8;
+}
+
+.btn-stamp {
+  font-family: var(--font-type);
+  letter-spacing: 0.06em;
+  background: var(--color-string);
+  color: #fff6ec;
+  border-radius: 6px;
+  box-shadow:
+    inset 0 -3px 0 rgba(0, 0, 0, 0.25),
+    0 2px 0 #7a1b18;
+  transition:
+    transform 0.12s,
+    box-shadow 0.12s,
+    filter 0.12s;
+}
+.btn-stamp:hover {
+  filter: brightness(1.08);
+  transform: translateY(-1px) rotate(-1deg);
+}
+.btn-stamp:active {
+  transform: translateY(2px);
+  box-shadow:
+    inset 0 -1px 0 rgba(0, 0, 0, 0.25),
+    0 0 0 #7a1b18;
+}
+
+.label-caps {
+  font-family: var(--font-ui);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-family: var(--font-ui);
+  font-size: 12px;
+  line-height: 18px;
+  border: 1px solid rgba(43, 34, 28, 0.18);
+  background: rgba(255, 255, 255, 0.55);
+  color: var(--color-ink);
+  transition:
+    transform 0.15s,
+    background 0.15s;
+}
+.chip:hover {
+  transform: translateY(-1px) rotate(-1deg);
+  background: #fff;
+}
+.chip.on {
+  background: var(--color-ink);
+  color: var(--color-paper);
+  border-color: var(--color-ink);
+}
+
+.glyph {
+  display: inline-grid;
+  place-items: center;
+  min-width: 20px;
+  height: 18px;
+  padding: 0 4px;
+  border-radius: 4px;
+  font: 700 9.5px/1 var(--font-mono);
+  letter-spacing: -0.02em;
+  color: #fff;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.35);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.15);
+}
+
+.index-tab {
+  position: relative;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  font-weight: 500;
+  color: #d8c9b0;
+  padding: 7px 14px 6px;
+  border-radius: 8px 8px 0 0;
+  background: #2b221b;
+  transition:
+    background 0.15s,
+    color 0.15s,
+    transform 0.15s;
+}
+.index-tab:hover {
+  color: #fff;
+  transform: translateY(-2px);
+}
+.index-tab.on {
+  background: var(--color-paper);
+  color: var(--color-ink);
+  transform: translateY(-3px);
+}
+
+.dig-strip {
+  background: var(--paper-noise), #f8f1e3;
+  color: var(--color-ink);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.6) inset,
+    0 8px 20px -8px rgba(0, 0, 0, 0.8);
+}
+
+@keyframes wiggle {
+  0%,
+  100% {
+    transform: rotate(0);
+  }
+  25% {
+    transform: rotate(-8deg);
+  }
+  75% {
+    transform: rotate(8deg);
+  }
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes blink {
+  50% {
+    opacity: 0.25;
+  }
+}
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+.animate-rise {
+  animation: rise 0.35s ease-out both;
+}
+.shovel-dots::after {
+  content: '…';
+  animation: blink 1s infinite;
+}
+
+/* ───────────────────────── Board themes ───────────────────────── */
+.board {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  font-family: var(--font-ui);
+  --z: 1;
+  --bx: 0px;
+  --by: 0px;
+}
+.board.theme-cork {
+  /* granular cork tile (painted once) + big soft blotches, all raster: cheap to zoom */
+  background-color: #c38b53;
+  background-image:
+    var(--cork),
+    radial-gradient(ellipse at center, rgba(110, 62, 22, 0.22), transparent 62%),
+    radial-gradient(ellipse at center, rgba(245, 198, 140, 0.2), transparent 60%);
+  background-size:
+    calc(320px * var(--z)) calc(320px * var(--z)),
+    calc(620px * var(--z)) calc(430px * var(--z)),
+    calc(810px * var(--z)) calc(590px * var(--z));
+  background-position:
+    var(--bx) var(--by),
+    calc(var(--bx) + 120px) calc(var(--by) + 40px),
+    calc(var(--bx) - 200px) calc(var(--by) + 300px);
+}
+.board.theme-void {
+  --string: #ff5b5b;
+  --string-evidence: rgba(160, 170, 255, 0.35);
+  --string-tangent: #b48cff;
+  --string-shadow: rgba(0, 0, 0, 0);
+  --label-bg: #1c1d26;
+  --label-ink: #ff8a80;
+  --select: #b48cff;
+  --card-shadow: 0 0 0 1px rgba(255, 255, 255, 0.06), 0 10px 30px -8px rgba(0, 0, 0, 0.9);
+  background:
+    radial-gradient(circle, rgba(180, 160, 255, 0.16) 0 1px, transparent 1.5px) var(--bx) var(--by) / calc(28px * var(--z))
+      calc(28px * var(--z)),
+    radial-gradient(1200px 800px at 50% 40%, #1a1a28, #0b0b10);
+}
+.board.theme-blueprint {
+  --string: #fef3c7;
+  --string-evidence: rgba(255, 255, 255, 0.4);
+  --string-tangent: #fbbf24;
+  --string-shadow: rgba(0, 20, 60, 0.35);
+  --label-bg: #fef3c7;
+  --label-ink: #1e3a8a;
+  --select: #fef3c7;
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.09) 1px, transparent 1px) var(--bx) var(--by) / calc(24px * var(--z)) calc(24px * var(--z)),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.09) 1px, transparent 1px) var(--bx) var(--by) / calc(24px * var(--z))
+      calc(24px * var(--z)),
+    linear-gradient(rgba(255, 255, 255, 0.16) 1.5px, transparent 1.5px) var(--bx) var(--by) / calc(120px * var(--z))
+      calc(120px * var(--z)),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.16) 1.5px, transparent 1.5px) var(--bx) var(--by) / calc(120px * var(--z))
+      calc(120px * var(--z)),
+    #1d4a8f;
+}
+.board.theme-chalk {
+  --string: #f4f1e6;
+  --string-evidence: rgba(244, 241, 230, 0.38);
+  --string-tangent: #ffd166;
+  --string-shadow: rgba(0, 0, 0, 0.2);
+  --label-bg: transparent;
+  --label-ink: #f4f1e6;
+  --select: #ffd166;
+  background:
+    var(--noise) var(--bx) var(--by) / calc(240px * var(--z)),
+    radial-gradient(1400px 900px at 40% 30%, #3a5a47, #22382c);
+}
+.board.theme-paper {
+  --string: #c96d4b;
+  --string-evidence: rgba(142, 166, 124, 0.7);
+  --string-tangent: #7e5a9b;
+  --string-shadow: rgba(80, 60, 30, 0.14);
+  --label-bg: #fffaf0;
+  --label-ink: #b3261e;
+  --select: #c96d4b;
+  background:
+    linear-gradient(rgba(63, 127, 134, 0.1) 1px, transparent 1px) var(--bx) var(--by) / calc(22px * var(--z)) calc(22px * var(--z)),
+    linear-gradient(90deg, rgba(63, 127, 134, 0.1) 1px, transparent 1px) var(--bx) var(--by) / calc(22px * var(--z))
+      calc(22px * var(--z)),
+    var(--paper-noise),
+    #f4ecdb;
+}
+
+.board.bfont-type {
+  --f-title: var(--font-type);
+  --f-note: var(--font-type);
+}
+.board.bfont-clean {
+  --f-title: var(--font-ui);
+  --f-note: var(--font-ui);
+}
+
+/* wooden frame */
+.board-frame {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  border: 18px solid transparent;
+  border-image: repeating-linear-gradient(
+      92deg,
+      #6b4226 0 7px,
+      #7c4d2c 7px 11px,
+      #5e3920 11px 19px,
+      #86552f 19px 22px,
+      #6a4125 22px 31px
+    )
+    18;
+  box-shadow:
+    inset 0 0 0 1px rgba(0, 0, 0, 0.4),
+    inset 0 10px 24px rgba(0, 0, 0, 0.45),
+    inset 0 -6px 16px rgba(0, 0, 0, 0.3);
+}
+.board-frame::after {
+  content: '';
+  position: absolute;
+  inset: -18px;
+  border: 1px solid rgba(255, 220, 170, 0.12);
+  box-shadow: inset 0 0 0 17px rgba(0, 0, 0, 0.12);
+}
+
+/* ───────────────────────── React Flow overrides ───────────────────────── */
+.react-flow {
+  --xy-background-color: transparent;
+  --xy-edge-stroke: var(--string);
+  --xy-selection-background-color: rgba(220, 168, 63, 0.12);
+  --xy-selection-border: 1px dashed rgba(43, 34, 28, 0.6);
+}
+.react-flow__renderer {
+  z-index: 1;
+}
+.react-flow__node {
+  border-radius: 0;
+}
+.react-flow__attribution {
+  background: transparent !important;
+  opacity: 0.35;
+  font-size: 9px;
+}
+.react-flow__controls {
+  box-shadow: 0 6px 16px -6px rgba(0, 0, 0, 0.6) !important;
+  border-radius: 10px;
+  overflow: hidden;
+}
+.react-flow__controls-button {
+  background: var(--color-paper) !important;
+  border-bottom: 1px solid var(--color-paper-3) !important;
+  color: var(--color-ink) !important;
+  fill: var(--color-ink) !important;
+  width: 30px !important;
+  height: 30px !important;
+}
+.react-flow__minimap {
+  background: #f8f2e5 !important;
+  border: 7px solid #fff !important;
+  border-bottom-width: 22px !important;
+  box-shadow: 0 10px 22px -8px rgba(0, 0, 0, 0.6);
+  transform: rotate(1.5deg);
+  border-radius: 2px;
+}
+.board.arranging .react-flow__node {
+  transition: transform 0.7s cubic-bezier(0.2, 0.9, 0.2, 1);
+}
+
+/* pins = connection handles */
+.react-flow__handle.pin {
+  width: 16px;
+  height: 16px;
+  border: none;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #fff9 0 2px, transparent 3px), var(--pin, #c8322f);
+  box-shadow:
+    inset -2px -3px 4px rgba(0, 0, 0, 0.35),
+    2px 5px 5px -1px rgba(0, 0, 0, 0.45);
+  top: -3px;
+  z-index: 10;
+  cursor: crosshair;
+  transition: transform 0.15s;
+}
+.react-flow__handle.pin::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 60%;
+  width: 2px;
+  height: 9px;
+  background: linear-gradient(#999, #555);
+  transform: translateX(-50%) rotate(12deg);
+  transform-origin: top;
+  z-index: -1;
+}
+.react-flow__handle.pin:hover {
+  transform: translate(-50%, -50%) scale(1.25);
+  animation: wiggle 0.4s;
+}
+.react-flow__handle.map-point {
+  width: 14px;
+  height: 14px;
+  border: 0;
+  background: transparent;
+  cursor: crosshair;
+}
+.react-flow__connectionline path {
+  stroke: var(--string);
+  stroke-width: 2.4;
+}
+
+/* strings */
+.string-path {
+  fill: none;
+  stroke-linecap: round;
+  transition: stroke-width 0.15s;
+}
+.string-path.draw {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: draw-string 0.9s ease-out forwards;
+}
+@keyframes draw-string {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+.string-shadow {
+  fill: none;
+  stroke: var(--string-shadow);
+  stroke-width: 3;
+  transform: translate(2px, 5px);
+}
+.react-flow__edge.selected .string-path,
+.react-flow__edge:hover .string-path {
+  stroke-width: 4 !important;
+}
+.react-flow__edge:hover .string-flow,
+.react-flow__edge.selected .string-flow {
+  animation: flow 1.2s linear infinite;
+}
+@keyframes flow {
+  to {
+    stroke-dashoffset: -28;
+  }
+}
+.string-label {
+  position: absolute;
+  pointer-events: all;
+  font: 700 17px/1 var(--f-note);
+  color: var(--label-ink);
+  background: var(--label-bg);
+  padding: 3px 9px 4px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.22);
+  clip-path: polygon(2% 8%, 98% 0, 100% 90%, 3% 100%);
+  white-space: nowrap;
+  max-width: 190px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.board.has-selection .string-path:not(.lit),
+.board.has-selection .string-shadow:not(.lit) {
+  opacity: 0.28;
+}
+.string-path.lit {
+  stroke-width: 3.2px !important;
+}
+.string-ui {
+  position: absolute;
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  pointer-events: none;
+}
+.string-ui > * {
+  pointer-events: all;
+}
+.string-ui .string-label {
+  position: static;
+}
+.string-label-input {
+  width: 200px;
+  padding: 4px 10px;
+  border: 2px solid var(--label-ink);
+  border-radius: 4px;
+  background: var(--label-bg);
+  color: var(--label-ink);
+  font: 700 17px/1.1 var(--f-note);
+  outline: none;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+.string-tools {
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 999px;
+  background: var(--color-ink);
+  box-shadow: 0 6px 16px -4px rgba(0, 0, 0, 0.6);
+  animation: rise 0.16s ease-out;
+}
+.string-tools button {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  color: var(--color-paper);
+  font: 600 12px/1 var(--font-ui);
+  white-space: nowrap;
+}
+.string-tools button:hover,
+.string-tools button:focus-visible {
+  background: rgba(255, 255, 255, 0.14);
+  outline: none;
+}
+.string-tools button.danger:hover {
+  background: #b3261e;
+}
+.theme-chalk .string-label {
+  box-shadow: none;
+  font-size: 19px;
+}
+
+/* ───────────────────────── Clue cards ───────────────────────── */
+@keyframes drop-in {
+  0% {
+    opacity: 0;
+    transform: translateY(-30px) scale(1.12) rotate(calc(var(--rot) * 3));
+  }
+  60% {
+    opacity: 1;
+    transform: translateY(3px) scale(0.99) rotate(var(--rot));
+  }
+  100% {
+    transform: rotate(var(--rot));
+  }
+}
+.clue {
+  --rot: 0deg;
+  position: relative;
+  transform: rotate(var(--rot));
+  box-shadow: var(--card-shadow);
+  transition:
+    transform 0.25s cubic-bezier(0.2, 0.9, 0.3, 1.2),
+    box-shadow 0.25s;
+  color: var(--color-ink);
+}
+.clue.fresh {
+  animation: drop-in 0.6s cubic-bezier(0.2, 0.9, 0.3, 1.1) backwards;
+}
+.react-flow__node:hover .clue {
+  transform: rotate(calc(var(--rot) * 0.3)) translateY(-4px);
+  box-shadow: var(--card-shadow-hover);
+}
+.react-flow__node.dragging .clue {
+  transform: rotate(calc(var(--rot) + 2deg)) scale(1.03);
+  box-shadow: var(--card-shadow-hover);
+}
+.clue.is-selected {
+  outline: 2px dashed var(--select);
+  outline-offset: 6px;
+}
+.clue .tape {
+  position: absolute;
+  width: 84px;
+  height: 22px;
+  top: -11px;
+  left: 50%;
+  translate: -50% 0;
+  rotate: -3deg;
+  z-index: 3;
+}
+/* Hover buttons float over the card's bottom edge instead of reserving empty space. */
+.clue-actions {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  z-index: 4;
+  display: flex;
+  gap: 4px;
+  padding: 3px;
+  border-radius: 9px;
+  background: rgba(255, 253, 247, 0.96);
+  box-shadow: 0 4px 12px -4px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(43, 34, 28, 0.08);
+  opacity: 0;
+  transform: translateY(4px);
+  pointer-events: none;
+  transition: opacity 0.15s, transform 0.15s;
+}
+.react-flow__node:hover .clue-actions,
+.clue.is-selected .clue-actions {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+}
+/* The case file keeps its buttons in view: they are the main controls. */
+.clue-actions.inline {
+  position: static;
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+  background: transparent;
+  box-shadow: none;
+  padding: 0;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+.clue-video .clue-actions {
+  background: rgba(27, 23, 20, 0.92);
+}
+.clue-clip .clue-actions,
+.clue-question .clue-actions {
+  bottom: 14px;
+  right: 12px;
+}
+.clue-entity .clue-actions {
+  right: auto;
+  left: 10px;
+}
+.film-date {
+  position: absolute;
+  right: 7px;
+  bottom: 6px;
+  font: 700 12px/1 var(--font-mono);
+  color: #ff8c2e;
+  letter-spacing: 0.04em;
+  text-shadow: 0 0 4px rgba(255, 120, 30, 0.7), 0 1px 1px rgba(0, 0, 0, 0.6);
+  white-space: nowrap;
+  pointer-events: none;
+}
+.clue-btn {
+  font: 600 11px/1 var(--font-ui);
+  padding: 5px 8px;
+  border-radius: 6px;
+  background: rgba(43, 34, 28, 0.08);
+  color: var(--color-ink);
+  transition: background 0.15s;
+}
+.clue-btn:hover {
+  background: rgba(43, 34, 28, 0.16);
+}
+
+/* topic = case file folder */
+.clue-topic {
+  width: 360px;
+  padding: 26px 20px 16px;
+  background: var(--paper-noise), linear-gradient(170deg, #efd9a6, #e3c78a);
+  border-radius: 3px 10px 6px 6px;
+}
+.clue-topic::before {
+  content: '';
+  position: absolute;
+  top: -16px;
+  left: 18px;
+  width: 130px;
+  height: 18px;
+  background: #e8cf95;
+  border-radius: 8px 8px 0 0;
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.3);
+}
+.clue-topic .sheet {
+  background: var(--paper-noise), #fbf7ee;
+  padding: 14px 14px 12px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+  transform: rotate(-0.6deg);
+}
+.clue-title {
+  font-family: var(--f-title);
+  line-height: 1.12;
+  overflow-wrap: anywhere;
+}
+
+/* entity = index card */
+.clue-entity {
+  width: 244px;
+  padding: 16px 14px 12px;
+  background:
+    linear-gradient(transparent 36px, rgba(200, 50, 47, 0.45) 36px 37.5px, transparent 37.5px),
+    repeating-linear-gradient(transparent 0 21px, rgba(63, 127, 134, 0.2) 21px 22px) 0 38px / 100% calc(100% - 38px) no-repeat,
+    var(--paper-noise),
+    #fdfbf6;
+}
+.photo-clip {
+  position: absolute;
+  right: -14px;
+  top: -18px;
+  width: 92px;
+  padding: 5px 5px 14px;
+  background: #fff;
+  box-shadow: 0 4px 10px -2px rgba(0, 0, 0, 0.4);
+  transform: rotate(6deg);
+  z-index: 2;
+}
+.photo-clip img {
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+}
+.date-scrap {
+  display: inline-block;
+  white-space: nowrap;
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font: 700 18px/1 var(--f-note);
+  color: #b3261e;
+  background: #fffdf7;
+  padding: 3px 8px 4px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+  transform: rotate(-3deg);
+  clip-path: polygon(0 6%, 100% 0, 97% 100%, 3% 94%);
+}
+
+/* sticky note */
+.clue-note {
+  width: 210px;
+  min-height: 190px;
+  padding: 26px 16px 18px;
+  background: linear-gradient(170deg, var(--note, #f7de6b), color-mix(in oklab, var(--note, #f7de6b), #b8860b 18%));
+  font: 600 21px/1.2 var(--f-note);
+  border-bottom-right-radius: 26px 8px;
+}
+.clue-note textarea {
+  width: 100%;
+  min-height: 140px;
+  background: transparent;
+  border: 0;
+  outline: 0;
+  resize: none;
+  font: inherit;
+  color: inherit;
+}
+
+/* polaroid */
+.clue-image {
+  width: 224px;
+  padding: 10px 10px 12px;
+  background: #fdfdfb;
+}
+.clue-image .frame {
+  position: relative;
+  aspect-ratio: 1;
+  background: #1d1a17;
+  overflow: hidden;
+}
+.clue-image .frame img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.6s;
+}
+.clue-image:hover .frame img {
+  transform: scale(1.06);
+}
+.clue-image .frame::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.18), transparent 40%);
+  pointer-events: none;
+}
+.clue-image .caption {
+  font: 700 19px/1.1 var(--f-note);
+  margin-top: 8px;
+  color: #2b2b2b;
+}
+
+/* newspaper clipping */
+.clue-clip {
+  width: 260px;
+  padding: 18px 16px 18px;
+  background: var(--paper-noise), #f3eee2;
+}
+.clue-clip .headline {
+  font: 700 18px/1.12 var(--font-serif);
+  letter-spacing: -0.01em;
+}
+.clue-clip .body {
+  font: 12.5px/1.45 Georgia, serif;
+  color: #3e362e;
+  text-align: justify;
+  hyphens: auto;
+}
+.clue-clip .thumb {
+  float: right;
+  width: 84px;
+  height: 84px;
+  margin: 2px 0 6px 10px;
+  object-fit: cover;
+}
+
+/* forum post */
+.clue-post {
+  width: 262px;
+  background: #fffefb;
+  border-radius: 4px;
+  overflow: hidden;
+}
+.clue-post .bar {
+  height: 6px;
+  background: var(--src, #ff4500);
+}
+
+/* media (video / audio) */
+.clue-video {
+  width: 272px;
+  background: #1b1714;
+  color: #f3e9da;
+  border-radius: 6px;
+  padding: 8px 8px 10px;
+}
+.clue-video .screen {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  background: #000;
+  border-radius: 3px;
+  overflow: hidden;
+}
+.clue-video .screen img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0.9;
+}
+.clue-video .play {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: rgba(200, 50, 47, 0.92);
+  display: grid;
+  place-items: center;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
+  transition: transform 0.2s;
+}
+.clue-video .play:hover {
+  transform: scale(1.12);
+}
+.clue-video .label {
+  margin-top: 8px;
+  background: #f4ecdc;
+  color: var(--color-ink);
+  padding: 6px 8px;
+  border-radius: 2px;
+  font: 600 13px/1.25 var(--f-title);
+}
+
+/* tangent = the rabbit hole */
+.clue-tangent {
+  width: 236px;
+  padding: 14px 14px 12px;
+  background: var(--paper-noise), #f1e7d3;
+  border-radius: 14px;
+}
+.clue-tangent .hole {
+  position: relative;
+  height: 64px;
+  margin: 0 auto 8px;
+  width: 150px;
+}
+.clue-tangent .hole .pit {
+  position: absolute;
+  inset: 22px 0 0;
+  border-radius: 50%;
+  background: radial-gradient(ellipse at 50% 40%, #000 0 35%, #2a1b12 60%, #6b4a2f 80%, transparent 82%);
+  overflow: hidden;
+}
+.clue-tangent .hole .swirl {
+  position: absolute;
+  inset: -40%;
+  background: conic-gradient(from 0deg, transparent, rgba(180, 140, 255, 0.35), transparent 30%, rgba(255, 190, 120, 0.3), transparent 60%);
+  opacity: 0.7;
+}
+.react-flow__node:hover .clue-tangent .hole .swirl {
+  animation: spin 0.9s linear infinite;
+}
+.clue-tangent .ears {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  translate: -50% 0;
+  transition: transform 0.35s cubic-bezier(0.3, 1.6, 0.5, 1);
+  transform-origin: bottom;
+}
+.clue-tangent:hover .ears {
+  transform: translateY(-6px) scaleY(1.1);
+}
+.clue-tangent.explored {
+  filter: saturate(0.4);
+  opacity: 0.85;
+}
+
+/* question scrap */
+.clue-question {
+  width: 224px;
+  padding: 16px 16px 14px 56px;
+  background: var(--paper-noise), #fbe6df;
+  clip-path: polygon(0 3%, 6% 0, 40% 2%, 72% 0, 100% 3%, 98% 50%, 100% 97%, 60% 100%, 30% 98%, 2% 100%, 0 60%);
+  font: 700 19px/1.15 var(--f-note);
+  color: #7a1d17;
+}
+.clue-question .qmark {
+  position: absolute;
+  left: 12px;
+  top: 4px;
+  font: 700 58px/1 var(--font-hand);
+  color: #c8322f;
+  transform: rotate(-8deg);
+}
+
+/* quote */
+.clue-quote {
+  width: 250px;
+  padding: 20px 18px 14px;
+  background: var(--paper-noise), #fffdf8;
+  border-radius: 2px;
+  font: italic 500 15px/1.4 var(--font-serif);
+}
+.clue-quote::before {
+  content: '“';
+  position: absolute;
+  left: 8px;
+  top: -14px;
+  font: 700 70px/1 var(--font-serif);
+  color: rgba(200, 50, 47, 0.35);
+}
+
+/* handwritten label scrap */
+.clue-label {
+  min-width: 90px;
+  padding: 8px 14px 10px;
+  background: #fffdf7;
+  font: 700 26px/1 var(--f-note);
+  color: #b3261e;
+  clip-path: polygon(0 8%, 100% 0, 98% 92%, 2% 100%);
+  text-align: center;
+}
+.clue-label input {
+  width: 100%;
+  background: transparent;
+  border: 0;
+  outline: 0;
+  font: inherit;
+  color: inherit;
+  text-align: center;
+}
+
+/* pinned map */
+.clue-map {
+  background: #f5efe0;
+  padding: 8px;
+}
+.clue-map .tiles {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+.clue-map .tiles img {
+  position: absolute;
+  width: 256px;
+  height: 256px;
+  user-select: none;
+  pointer-events: none;
+}
+.clue-map .crease {
+  position: absolute;
+  inset: 8px;
+  pointer-events: none;
+  background:
+    linear-gradient(90deg, transparent 33%, rgba(0, 0, 0, 0.08) 33.2%, rgba(255, 255, 255, 0.25) 33.6%, transparent 34%),
+    linear-gradient(90deg, transparent 66%, rgba(0, 0, 0, 0.07) 66.2%, rgba(255, 255, 255, 0.22) 66.6%, transparent 67%),
+    linear-gradient(transparent 49.5%, rgba(0, 0, 0, 0.08) 50%, rgba(255, 255, 255, 0.25) 50.4%, transparent 51%);
+}
+.clue-map .corner-pin {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #666 0 2px, #151515 3px);
+  box-shadow: 1px 3px 3px rgba(0, 0, 0, 0.5);
+  z-index: 3;
+}
+.map-mark-label {
+  font: 700 17px/1 var(--font-hand);
+  fill: #b3261e;
+  paint-order: stroke;
+  stroke: #fff8ec;
+  stroke-width: 4px;
+}
+
+.mini-map {
+  position: relative;
+  overflow: hidden;
+}
+.mini-map img {
+  position: absolute;
+  width: 256px;
+  height: 256px;
+  pointer-events: none;
+}
+
+.status-stamp {
+  color: #b3261e;
+}
+.status-stamp.done {
+  color: #2f6b3a;
+}
+
+/* ───────────────────────── Panels ───────────────────────── */
+.prose-rh {
+  font-size: 13.5px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+/* Long URLs and words wrap instead of pushing past the edge. */
+.paper-panel,
+.clue {
+  overflow-wrap: break-word;
+}
+.prose-rh p {
+  margin: 0 0 0.6em;
+}
+.prose-rh ul,
+.prose-rh ol {
+  margin: 0 0 0.6em 1.1em;
+  list-style: disc;
+}
+.prose-rh ol {
+  list-style: decimal;
+}
+.prose-rh li {
+  margin: 0.15em 0;
+}
+.prose-rh strong {
+  color: #1c1511;
+  background: linear-gradient(transparent 60%, rgba(220, 168, 63, 0.4) 60%);
+}
+.prose-rh a {
+  color: var(--color-teal);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.prose-rh h1,
+.prose-rh h2,
+.prose-rh h3,
+.prose-rh h4 {
+  font-family: var(--font-ui);
+  font-weight: 700;
+  margin: 0.9em 0 0.35em;
+  font-size: 14.5px;
+  color: #1c1511;
+}
+.prose-rh hr {
+  border: 0;
+  border-top: 1px dashed rgba(43, 34, 28, 0.25);
+  margin: 0.9em 0;
+}
+.prose-rh table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+  font-size: 12.5px;
+  line-height: 1.4;
+  margin: 0.4em 0 0.8em;
+}
+.prose-rh th,
+.prose-rh td {
+  border: 1px solid rgba(43, 34, 28, 0.15);
+  padding: 5px 8px;
+  vertical-align: top;
+  min-width: 110px;
+  text-align: left;
+}
+.prose-rh th {
+  background: rgba(220, 168, 63, 0.14);
+  font-weight: 700;
+}
+.prose-rh blockquote {
+  border-left: 3px solid rgba(200, 50, 47, 0.4);
+  padding-left: 10px;
+  color: #4a3f36;
+  margin: 0.5em 0;
+}
+.prose-rh code {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  background: rgba(0, 0, 0, 0.06);
+  padding: 0 4px;
+  border-radius: 3px;
+}
+
+.ticker-line {
+  animation: rise 0.3s ease-out both;
+}
+
+/* leaflet */
+.leaflet-container {
+  background: #0f0d0b;
+  font-family: var(--font-ui);
+}
+.rh-pin {
+  width: 22px;
+  height: 22px;
+  border-radius: 50% 50% 50% 0;
+  transform: rotate(-45deg);
+  box-shadow:
+    inset -2px -2px 3px rgba(0, 0, 0, 0.3),
+    2px 3px 6px rgba(0, 0, 0, 0.5);
+  border: 2px solid #fff8ec;
+}
+.leaflet-popup-content-wrapper {
+  background: var(--color-paper);
+  color: var(--color-ink);
+  border-radius: 4px;
+}
+.leaflet-popup-tip {
+  background: var(--color-paper);
+}
+
+/* ───────────────────────── Performance ───────────────────────── */
+/* The camera position drives only the board's own background. Registered as non-inheriting,
+   changing them restyles one element instead of every card on the board, every frame. */
+@property --bx {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+@property --by {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+@property --z {
+  syntax: '<number>';
+  inherits: false;
+  initial-value: 1;
+}
+/* While panning/zooming: keep the board on one GPU layer and skip hover/transition work. */
+.board.moving .react-flow__viewport {
+  will-change: transform;
+}
+/* While moving, the cork keeps only its cheap texture tile (the soft blotches return on stop). */
+.board.theme-cork.moving {
+  background-image: var(--cork);
+  background-size: calc(320px * var(--z)) calc(320px * var(--z));
+  background-position: var(--bx) var(--by);
+}
+.board.moving .clue,
+.board.moving .react-flow__handle.pin {
+  transition: none !important;
+  animation: none !important;
+}
+.board.moving .react-flow__node:hover .clue {
+  transform: rotate(var(--rot));
+  box-shadow: var(--card-shadow);
+}
+
+/* Zoomed far out: text is unreadable anyway, so drop it and show big titles. */
+.board[data-lod=far] .clue p,
+.board[data-lod=far] .clue .body,
+.board[data-lod=far] .clue-actions,
+.board[data-lod=far] .string-label,
+.board[data-lod=far] .string-shadow,
+.board[data-lod=far] .mini-map,
+.board[data-lod=far] .glyph + span {
+  display: none !important;
+}
+.board[data-lod=far] .clue {
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.35);
+}
+.board[data-lod=far] .clue-title,
+.board[data-lod=far] .clue-clip .headline,
+.board[data-lod=far] .clue-image .caption,
+.board[data-lod=far] .clue-post .font-semibold,
+.board[data-lod=far] .clue-video .label,
+.board[data-lod=far] .clue-question,
+.board[data-lod=far] .clue-note {
+  font-size: 30px !important;
+  line-height: 1.08 !important;
+}
+.board[data-lod=mid] .string-label {
+  font-size: 22px;
+}
+
+/* Sign-in: a manila case folder lying on the desk. */
+.case-folder {
+  filter: drop-shadow(0 24px 30px rgba(0, 0, 0, 0.55));
+}
+.case-folder-tab {
+  display: inline-block;
+  margin-left: 22px;
+  padding: 8px 18px 6px;
+  border-radius: 8px 8px 0 0;
+  background: linear-gradient(#e6c67c, #dcb96a);
+  color: #4a3610;
+  font-family: var(--font-type);
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.case-folder-body {
+  padding: 18px 16px 20px;
+  border-radius: 0 10px 10px 10px;
+  background:
+    var(--paper-noise),
+    linear-gradient(160deg, #e3c27a, #d4ae5f);
+}
+
+/* ── Spotlight: picked card types stay lit, the rest of the board steps back ── */
+.board .react-flow__node,
+.board .react-flow__edge {
+  transition: opacity 0.18s ease;
+}
+.board.spotlighting .react-flow__node {
+  opacity: 0.14;
+}
+.board.spotlighting .react-flow__edge {
+  opacity: 0.1;
+}
+
+/* ── Emoji picker ── */
+.emoji-picker {
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.2), 0 24px 48px -16px rgba(0, 0, 0, 0.7);
+}
+.emoji-cell {
+  transition: transform 0.12s ease, background 0.12s ease;
+}
+.emoji-cell:hover,
+.emoji-cell:focus-visible {
+  background: rgba(43, 34, 28, 0.08);
+  transform: scale(1.18) rotate(-4deg);
+  outline: none;
+}
+.emoji-cell.on {
+  background: rgba(200, 50, 47, 0.14);
+  box-shadow: inset 0 0 0 1.5px var(--color-string);
+}
+
+/* ── Case files: manila folders in a drawer ── */
+.cfile,
+.cfile-new {
+  position: relative;
+  height: 236px;
+}
+.cfile {
+  cursor: pointer;
+  perspective: 900px;
+  transform: rotate(var(--tilt, 0deg));
+  transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+  outline: none;
+}
+.cfile:hover,
+.cfile:focus-visible {
+  transform: rotate(0deg) translateY(-4px);
+}
+.cfile:focus-visible .cfile-front {
+  box-shadow: 0 0 0 3px var(--color-mustard);
+}
+.cfile-tab {
+  position: absolute;
+  top: 0;
+  left: 18px;
+  padding: 6px 14px 8px;
+  border-radius: 8px 8px 0 0;
+  background: linear-gradient(#dfbd70, #d4ae5e);
+  color: #4a3610;
+  font-family: var(--font-type);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.cfile-back {
+  position: absolute;
+  inset: 26px 0 0 0;
+  border-radius: 3px 10px 8px 8px;
+  background: var(--paper-noise), linear-gradient(170deg, #d8b465, #c9a152);
+  box-shadow: 0 22px 30px -16px rgba(0, 0, 0, 0.8);
+}
+.cfile-papers {
+  position: absolute;
+  inset: 34px 30px auto 14px;
+  height: 120px;
+}
+.cfile-paper {
+  position: absolute;
+  top: calc(var(--i) * 19px);
+  left: calc(var(--i) * 10px);
+  right: calc(var(--i) * -6px);
+  height: 108px;
+  padding: 8px 12px;
+  overflow: hidden;
+  background: #fbf7ee;
+  border-radius: 2px;
+  color: var(--color-ink);
+  font-family: var(--font-type);
+  font-size: 12.5px;
+  line-height: 1.35;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+  transform: rotate(calc((var(--i) - 1) * 1.3deg));
+  transition: transform 0.35s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.cfile:hover .cfile-paper,
+.cfile:focus-visible .cfile-paper {
+  transform: translateY(calc(-12px - var(--i) * 7px)) rotate(calc((var(--i) - 1) * 2.2deg));
+}
+.cfile-photo {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 1;
+  width: 84px;
+  padding: 5px 5px 14px;
+  background: #fffdf8;
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.35);
+  transform: rotate(7deg);
+  transition: transform 0.35s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.cfile-photo img {
+  display: block;
+  width: 100%;
+  height: 62px;
+  object-fit: cover;
+}
+.cfile-photo::before {
+  /* the paperclip */
+  content: '';
+  position: absolute;
+  top: -9px;
+  left: 50%;
+  width: 11px;
+  height: 26px;
+  border: 2px solid #9aa3ab;
+  border-radius: 6px;
+  transform: translateX(-50%) rotate(-8deg);
+}
+.cfile:hover .cfile-photo {
+  transform: rotate(3deg) translateY(-10px);
+}
+.cfile-front {
+  position: absolute;
+  inset: auto 0 0 0;
+  z-index: 2;
+  height: 138px;
+  padding: 24px 16px 12px;
+  border-radius: 2px 2px 8px 8px;
+  background: var(--paper-noise), linear-gradient(168deg, #eed392, #deba69);
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, 0.4),
+    0 -8px 16px -10px rgba(0, 0, 0, 0.45);
+  transform-origin: bottom center;
+  transition: transform 0.35s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.cfile:hover .cfile-front,
+.cfile:focus-visible .cfile-front {
+  transform: rotateX(-16deg);
+}
+.cfile-label {
+  position: relative;
+  max-width: calc(100% - 44px);
+  padding: 7px 12px 6px;
+  background: #fbf7ee;
+  color: var(--color-ink);
+  font-family: var(--font-hand);
+  font-size: 25px;
+  font-weight: 700;
+  line-height: 1.05;
+  overflow-wrap: anywhere;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.22);
+  transform: rotate(-1.4deg);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.cfile-label::before {
+  /* tape holding the label on */
+  content: '';
+  position: absolute;
+  top: -8px;
+  left: 50%;
+  width: 54px;
+  height: 16px;
+  background: rgba(236, 226, 205, 0.78);
+  box-shadow: 0 1px 1px rgba(0, 0, 0, 0.1);
+  transform: translateX(-50%) rotate(3deg);
+}
+.cfile-sticker {
+  position: absolute;
+  top: -20px;
+  right: 14px;
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  background: #fffdf8;
+  font-size: 24px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+  transform: rotate(8deg);
+  transition: transform 0.15s ease;
+}
+.cfile-sticker:hover,
+.cfile-sticker:focus-visible {
+  transform: rotate(-6deg) scale(1.12);
+  outline: none;
+}
+.cfile-meta {
+  position: absolute;
+  inset: auto 16px 11px 16px;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  color: #5a4520;
+  font-family: var(--font-ui);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.cfile-open {
+  margin-left: 8px;
+  padding-left: 8px;
+  border-left: 1px solid rgba(74, 54, 16, 0.3);
+  color: #a32a24;
+}
+.cfile-open::before {
+  content: '●';
+  margin-right: 4px;
+}
+.cfile-trash {
+  margin: -4px -6px -4px 0;
+  padding: 4px;
+  border-radius: 6px;
+  color: #6b5227;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.cfile:hover .cfile-trash,
+.cfile-trash:focus-visible {
+  opacity: 1;
+}
+.cfile-trash:hover {
+  background: rgba(0, 0, 0, 0.08);
+  color: #a32a24;
+}
+.cfile-shred {
+  position: absolute;
+  inset: auto 10px 30px 10px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: #fffdf8;
+  color: var(--color-ink);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+.cfile-new {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 26px;
+  height: 210px;
+  border: 2px dashed rgba(246, 239, 225, 0.35);
+  border-radius: 10px;
+  color: rgba(246, 239, 225, 0.7);
+  transition: all 0.2s ease;
+}
+.cfile-new:hover,
+.cfile-new:focus-visible {
+  border-color: var(--color-mustard);
+  color: var(--color-mustard);
+  background: rgba(220, 168, 63, 0.06);
+  outline: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .cfile,
+  .cfile-front,
+  .cfile-paper,
+  .cfile-photo {
+    transition: none;
+  }
+}

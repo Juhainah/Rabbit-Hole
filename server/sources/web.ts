@@ -1,0 +1,298 @@
+import { JSDOM } from 'jsdom';
+import type { SourceItem } from '../../shared/types';
+import { BROWSER_UA, enc, getJson, getText, stripHtml, throttle } from '../http';
+import { host, type SearchFn } from './types';
+
+const HTML_HEADERS = { 'User-Agent': BROWSER_UA, Accept: 'text/html', 'Accept-Language': 'en-US,en;q=0.9' };
+const braveQueue = throttle(2500);
+const ddgQueue = throttle(3000);
+
+function toItem(url: string, title: string, snippet: string, source = 'web'): SourceItem {
+  const h = host(url);
+  return {
+    id: `${source}:${url}`,
+    source,
+    kind: 'article',
+    title: title.trim() || h || url,
+    snippet: snippet.replace(/\s+/g, ' ').trim(),
+    url,
+    meta: h ? { site: h } : undefined,
+  };
+}
+
+async function brave(q: string, limit: number, signal?: AbortSignal): Promise<SourceItem[]> {
+  const html = await braveQueue(() =>
+    getText(`https://search.brave.com/search?q=${enc(q)}&source=web`, { signal, timeout: 12000, headers: HTML_HEADERS }),
+  );
+  const doc = new JSDOM(html).window.document;
+  const out: SourceItem[] = [];
+  for (const r of doc.querySelectorAll('.snippet[data-type="web"]')) {
+    const a = r.querySelector<HTMLAnchorElement>('a[href^="http"]');
+    const href = a?.getAttribute('href');
+    if (!href || href.includes('search.brave.com')) continue;
+    const title = r.querySelector('.search-snippet-title, .title')?.textContent ?? a?.textContent ?? '';
+    const snippet = r.querySelector('.generic-snippet .content, .snippet-description')?.textContent ?? '';
+    out.push(toItem(href, title, snippet));
+    if (out.length >= limit) break;
+  }
+  if (!out.length && /captcha|are you a robot/i.test(html)) throw new Error('Brave asked for a captcha');
+  return out;
+}
+
+async function duckduckgo(q: string, limit: number, signal?: AbortSignal): Promise<SourceItem[]> {
+  const html = await ddgQueue(() =>
+    getText(`https://html.duckduckgo.com/html/?q=${enc(q)}&kl=us-en`, { signal, timeout: 12000, headers: HTML_HEADERS }),
+  );
+  const doc = new JSDOM(html).window.document;
+  if (doc.querySelector('.anomaly-modal, #challenge-form')) throw new Error('DuckDuckGo asked for a captcha');
+  const out: SourceItem[] = [];
+  for (const r of doc.querySelectorAll('.result')) {
+    if (r.classList.contains('result--ad')) continue;
+    const a = r.querySelector<HTMLAnchorElement>('a.result__a');
+    if (!a) continue;
+    let href = a.getAttribute('href') ?? '';
+    const uddg = href.match(/[?&]uddg=([^&]+)/);
+    if (uddg) href = decodeURIComponent(uddg[1]);
+    if (href.startsWith('//')) href = `https:${href}`;
+    if (!/^https?:/.test(href) || /duckduckgo\.com\/y\.js|bing\.com\/aclick/.test(href)) continue;
+    out.push(toItem(href, a.textContent ?? '', r.querySelector('.result__snippet')?.textContent ?? ''));
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
+/** Tavily: free 1,000 searches/month, no card. Built for AI research. */
+async function tavily(q: string, limit: number, signal?: AbortSignal): Promise<SourceItem[]> {
+  const key = process.env.TAVILY_API_KEY?.trim();
+  if (!key) return [];
+  const j = await getJson('https://api.tavily.com/search', {
+    method: 'POST',
+    signal,
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
+    body: JSON.stringify({ query: q, max_results: limit, search_depth: 'basic' }),
+  });
+  return (j.results ?? []).map((r: any) => toItem(r.url, r.title ?? '', stripHtml(r.content, 400)));
+}
+
+/** Serper (Google results): 2,500 free searches, no card. */
+async function serper(q: string, limit: number, signal?: AbortSignal): Promise<SourceItem[]> {
+  const key = process.env.SERPER_API_KEY?.trim();
+  if (!key) return [];
+  const j = await getJson('https://google.serper.dev/search', {
+    method: 'POST',
+    signal,
+    headers: { 'Content-Type': 'application/json', 'X-API-KEY': key },
+    body: JSON.stringify({ q, num: limit }),
+  });
+  return (j.organic ?? []).map((r: any) => toItem(r.link, r.title ?? '', r.snippet ?? ''));
+}
+
+const webCache = new Map<string, { at: number; items: SourceItem[] }>();
+
+/**
+ * Web search chain: optional free-key engines first (Tavily, Serper), then
+ * keyless scraping (Brave honours site:, DuckDuckGo as last resort).
+ */
+export async function webSearch(q: string, limit: number, signal?: AbortSignal): Promise<SourceItem[]> {
+  const key = `${q}|${limit}`;
+  const hit = webCache.get(key);
+  if (hit && Date.now() - hit.at < 30 * 60_000) return hit.items;
+  const errors: string[] = [];
+  for (const engine of [tavily, serper, brave, duckduckgo]) {
+    try {
+      const items = await engine(q, limit, signal);
+      if (items.length) {
+        webCache.set(key, { at: Date.now(), items });
+        return items;
+      }
+    } catch (e) {
+      if (signal?.aborted) throw e;
+      errors.push(e instanceof Error ? e.message : String(e));
+    }
+  }
+  if (errors.length) throw new Error(errors.join('; '));
+  return [];
+}
+
+export const web: SearchFn = (q, { limit, signal }) => webSearch(q, limit, signal);
+
+export const wiby: SearchFn = async (q, { limit, signal }) => {
+  const j = await getJson<any[]>(`https://wiby.me/json/?q=${enc(q)}`, { signal });
+  return j.slice(0, limit).map((r) => toItem(r.URL, stripHtml(r.Title), stripHtml(r.Snippet, 300), 'wiby'));
+};
+
+export const github: SearchFn = async (q, { limit, signal }) => {
+  const headers: Record<string, string> = { Accept: 'application/vnd.github+json' };
+  if (process.env.GITHUB_TOKEN) headers.Authorization = `Bearer ${process.env.GITHUB_TOKEN}`;
+  const j = await getJson(`https://api.github.com/search/repositories?q=${enc(q)}&per_page=${limit}&sort=stars`, {
+    signal,
+    headers,
+  });
+  return (j.items ?? []).map((r: any) => ({
+    id: `github:${r.id}`,
+    source: 'github',
+    kind: 'code' as const,
+    title: r.full_name,
+    snippet: r.description ?? '',
+    url: r.html_url,
+    image: r.owner?.avatar_url,
+    date: r.pushed_at?.slice(0, 10),
+    meta: { stars: r.stargazers_count ?? 0, ...(r.language ? { lang: r.language } : {}) },
+  }));
+};
+
+// ── Niche corners of the internet ────────────────────────────────────────────
+
+/** Atlas Obscura's own search, plus each place's coordinates and photo. */
+export const atlasobscura: SearchFn = async (q, { limit, signal }) => {
+  const hits = await getJson<{ id: number; title: string; slug: string }[]>(
+    `https://www.atlasobscura.com/search/places?q=${enc(q)}&format=json`,
+    { signal, headers: { 'User-Agent': BROWSER_UA } },
+  );
+  const details = await Promise.allSettled(
+    hits.slice(0, limit).map((h) =>
+      getJson(`https://www.atlasobscura.com/places/${h.slug}.json`, { signal, headers: { 'User-Agent': BROWSER_UA } }),
+    ),
+  );
+  return hits.slice(0, limit).map((h, i) => {
+    const d: any = details[i].status === 'fulfilled' ? (details[i] as PromiseFulfilledResult<any>).value : {};
+    return {
+      id: `atlasobscura:${h.id}`,
+      source: 'atlasobscura',
+      kind: 'place' as const,
+      title: h.title,
+      snippet: [d.subtitle, d.location].filter(Boolean).join(' — '),
+      url: d.url ?? `https://www.atlasobscura.com/places/${h.slug}`,
+      image: d.thumbnail_url_3x2 ?? d.thumbnail_url,
+      lat: d.coordinates?.lat,
+      lon: d.coordinates?.lng,
+      meta: d.physical_status && d.physical_status !== 'active' ? { status: d.physical_status } : undefined,
+    };
+  });
+};
+
+/** Finds the fandom wikis that match, then searches inside the top two. */
+export const fandom: SearchFn = async (q, { limit, signal }) => {
+  const s = await getJson(
+    `https://services.fandom.com/unified-search/community-search?query=${enc(q)}&lang=en&limit=3`,
+    { signal, headers: { 'User-Agent': BROWSER_UA } },
+  );
+  const wikis: { name: string; url: string }[] = (s.results ?? [])
+    .slice(0, 2)
+    .map((w: any) => ({ name: w.name, url: String(w.url).replace(/\/$/, '') }));
+  const per = Math.ceil(limit / Math.max(1, wikis.length));
+  const batches = await Promise.allSettled(
+    wikis.map(async (w) => {
+      const base = w.url.startsWith('http') ? w.url : `https://${w.url}`;
+      const j = await getJson(
+        `${base}/api.php?action=query&list=search&srsearch=${enc(q)}&srlimit=${per}&format=json&formatversion=2`,
+        { signal, headers: { 'User-Agent': BROWSER_UA } },
+      );
+      return (j.query?.search ?? []).map((r: any) => ({
+        id: `fandom:${base}:${r.pageid}`,
+        source: 'fandom',
+        kind: 'article' as const,
+        title: r.title,
+        snippet: stripHtml(r.snippet, 300),
+        url: `${base}/wiki/${enc(r.title.replace(/ /g, '_'))}`,
+        meta: { wiki: w.name },
+      }));
+    }),
+  );
+  return batches.flatMap((b) => (b.status === 'fulfilled' ? b.value : [])).slice(0, limit);
+};
+
+/** WordPress-powered curiosity sites expose a public posts API. */
+function wordpress(id: string, base: string): SearchFn {
+  return async (q, { limit, signal }) => {
+    const headers = { 'User-Agent': BROWSER_UA };
+    const j = await getJson<any[]>(
+      `${base}/wp-json/wp/v2/posts?search=${enc(q)}&per_page=${limit}&_fields=id,title,link,date,excerpt,jetpack_featured_media_url`,
+      { signal, headers },
+    );
+    if (!j.length) {
+      // Some sites keep stories in custom post types; the generic search endpoint sees those.
+      const s = await getJson<any[]>(`${base}/wp-json/wp/v2/search?search=${enc(q)}&per_page=${limit}`, { signal, headers });
+      return s.map((r) => ({
+        id: `${id}:${r.id}`,
+        source: id,
+        kind: 'article' as const,
+        title: stripHtml(r.title, 200),
+        url: r.url,
+      }));
+    }
+    return j.map((p) => ({
+      id: `${id}:${p.id}`,
+      source: id,
+      kind: 'article' as const,
+      title: stripHtml(p.title?.rendered, 200),
+      snippet: stripHtml(p.excerpt?.rendered, 320),
+      url: p.link,
+      image: p.jetpack_featured_media_url || undefined,
+      date: p.date?.slice(0, 10),
+    }));
+  };
+}
+
+export const damninteresting = wordpress('damninteresting', 'https://www.damninteresting.com');
+export const futilitycloset = wordpress('futilitycloset', 'https://www.futilitycloset.com');
+
+/** Stanford Encyclopedia of Philosophy's own search page. */
+export const sep: SearchFn = async (q, { limit, signal }) => {
+  const html = await getText(`https://plato.stanford.edu/search/searcher.py?query=${enc(q)}`, {
+    signal,
+    headers: HTML_HEADERS,
+  });
+  const doc = new JSDOM(html).window.document;
+  const out: SourceItem[] = [];
+  const seen = new Set<string>();
+  for (const a of doc.querySelectorAll<HTMLAnchorElement>('a[href*="entry=/entries/"]')) {
+    const entry = a.getAttribute('href')?.match(/entry=(\/entries\/[^/&]+\/)/)?.[1];
+    if (!entry || seen.has(entry)) continue;
+    seen.add(entry);
+    const block = a.closest('.result_listing, li, div');
+    out.push({
+      id: `sep:${entry}`,
+      source: 'sep',
+      kind: 'article',
+      title: a.textContent?.trim() || entry,
+      snippet: stripHtml(block?.querySelector('.result_snippet, .result_snippets')?.textContent ?? '', 300),
+      url: `https://plato.stanford.edu${entry}`,
+    });
+    if (out.length >= limit) break;
+  }
+  return out;
+};
+
+/** Sites with no API at all, searched through site-restricted web search. */
+export const SITE_SEARCH: Record<string, string[]> = {
+  lostmedia: ['lostmediawiki.com'],
+  scp: ['scp-wiki.wikidot.com'],
+  tvtropes: ['tvtropes.org'],
+  rationalwiki: ['rationalwiki.org'],
+  snopes: ['snopes.com'],
+  knowyourmeme: ['knowyourmeme.com'],
+  blackvault: ['theblackvault.com'],
+  muckrock: ['muckrock.com'],
+  truecrime: ['websleuths.com', 'doenetwork.org'],
+  smithsonianmag: ['smithsonianmag.com'],
+  substack: ['substack.com'],
+  bellingcat: ['bellingcat.com'],
+  dtic: ['apps.dtic.mil'],
+  publicdomainreview: ['publicdomainreview.org'],
+  cryptome: ['cryptome.org'],
+};
+
+export const siteSearchers: Record<string, SearchFn> = Object.fromEntries(
+  Object.entries(SITE_SEARCH).map(([id, sites]) => [
+    id,
+    (async (q, { limit, signal }) => {
+      const query = sites.length === 1 ? `${q} site:${sites[0]}` : `${q} (${sites.map((s) => `site:${s}`).join(' OR ')})`;
+      const items = await webSearch(query, limit + 4, signal);
+      return items
+        .filter((it) => sites.some((s) => host(it.url)?.endsWith(s)))
+        .slice(0, limit)
+        .map((it) => ({ ...it, id: `${id}:${it.url}`, source: id }));
+    }) satisfies SearchFn,
+  ]),
+);
