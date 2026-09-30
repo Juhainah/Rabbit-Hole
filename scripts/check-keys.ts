@@ -174,11 +174,12 @@ await check('Settings', 'CONTACT_EMAIL', ['CONTACT_EMAIL'], async () => {
   const good = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(env('CONTACT_EMAIL'));
   return { ok: good, detail: good ? 'set · Wikipedia and OpenStreetMap see who to contact' : "doesn't look like an email address" };
 });
-await check('Settings', 'Firebase sign-in', ['VITE_FIREBASE_API_KEY', 'VITE_FIREBASE_PROJECT_ID'], async () => {
-  const { body } = await fetchJson(`https://www.googleapis.com/identitytoolkit/v3/relyingparty/getProjectConfig?key=${env('VITE_FIREBASE_API_KEY')}`);
-  const domains: string[] = body?.authorizedDomains ?? [];
-  const right = body?.projectId === env('VITE_FIREBASE_PROJECT_ID');
-  return { ok: right, detail: right ? `project ${body.projectId} · sign-in allowed on: ${domains.join(', ') || 'no domains yet'}` : `the API key belongs to "${body?.projectId}", not "${env('VITE_FIREBASE_PROJECT_ID')}"` };
+await check('Settings', 'Supabase sign-in', ['VITE_SUPABASE_URL', 'VITE_SUPABASE_ANON_KEY'], async () => {
+  const { body } = await fetchJson(`${env('VITE_SUPABASE_URL').replace(/\/+$/, '')}/auth/v1/settings`, { headers: { apikey: env('VITE_SUPABASE_ANON_KEY') } });
+  const on = Object.entries(body?.external ?? {}).filter(([k, v]) => v === true && k !== 'email' && k !== 'phone').map(([k]) => k);
+  const wanted = (env('VITE_AUTH_PROVIDERS') || 'github').split(',').map((s) => s.trim()).filter(Boolean);
+  const missing = wanted.filter((p) => !on.includes(p));
+  return { ok: !missing.length, detail: missing.length ? `switch on ${missing.join(' and ')} in Supabase → Authentication → Sign In / Providers` : `project reachable · sign-in with: ${on.join(', ') || 'none yet'}` };
 }, 'not set up yet (only needed for the online version)');
 
 // ── Report ──

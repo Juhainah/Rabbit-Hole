@@ -22,7 +22,7 @@ serve({ fetch: app.fetch, port: PORT, hostname: HOST }, (info) => {
   console.log(`\n  🕳️  Rabbit Hole API on http://${HOST}:${info.port}`);
   console.log(`  🧠 AI chain: ${brains.map((b) => b.name).join(' → ') || 'none!'}`);
   console.log(`  📚 ${availableSources().length} research sources ready`);
-  console.log(authProject() ? `  🔐 Sign-in required (Firebase project ${authProject()})` : '  🔓 Sign-in is off (no Firebase project set)');
+  console.log(authProject() ? `  🔐 Sign-in required (Supabase: ${authProject()})` : '  🔓 Sign-in is off (no Supabase project set)');
   if (!process.env.CONTACT_EMAIL?.trim()) {
     console.log("  ⚠️  Set CONTACT_EMAIL in .env. Wikipedia and OpenStreetMap throttle apps that don't identify themselves.");
   }

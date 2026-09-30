@@ -26,7 +26,7 @@ import { Glyph } from '../SourceBadge';
 const ACTION_LINE = /^[ \t]*(?:[-*•+][ \t]+|\d+[.)][ \t]+)?\**[ \t]*ACTION[ \t]*\**[ \t]*:[ \t]*\**[ \t]*(.+?)[ \t]*$\n?/gim;
 
 function splitAnswer(content: string, pending = false) {
-  let text = content.replace(/<think>[\s\S]*?(<\/think>|$)/gi, '');
+  let text = content.replace(/<(think|thought)>[\s\S]*?(<\/(think|thought)>|$)/gi, '');
   // Board actions are instructions for the app, not for reading.
   const actions = [...text.matchAll(ACTION_LINE)].map((m) => m[1].replace(/\*\*/g, '').trim()).filter(Boolean);
   text = text.replace(ACTION_LINE, '').replace(/\n{3,}/g, '\n\n');

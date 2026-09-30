@@ -1,11 +1,13 @@
 import { createRemoteJWKSet, jwtVerify } from 'jose';
 
-// Sign-in is Firebase's job; the server only checks the ticket each request carries.
-// Google publishes the keys Firebase signs with, so no service account is needed.
-const GOOGLE_KEYS = createRemoteJWKSet(new URL('https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com'));
+// Sign-in is Supabase's job; the server only checks the ticket each request carries.
+// Tickets are verified against the project's published keys, so no secret is needed.
 
-/** The Firebase project visitors sign in to. Empty means sign-in is off (local use). */
-export const authProject = () => (process.env.VITE_FIREBASE_PROJECT_ID ?? process.env.FIREBASE_PROJECT_ID ?? '').trim();
+const supabaseUrl = () => (process.env.VITE_SUPABASE_URL ?? process.env.SUPABASE_URL ?? '').trim().replace(/\/+$/, '');
+const anonKey = () => (process.env.VITE_SUPABASE_ANON_KEY ?? process.env.SUPABASE_ANON_KEY ?? '').trim();
+
+/** The Supabase project visitors sign in to. Empty means sign-in is off (local use). */
+export const authProject = () => supabaseUrl();
 
 export interface Visitor {
   uid: string;
@@ -13,22 +15,42 @@ export interface Visitor {
   verified: boolean;
 }
 
-/** Reads and checks a Firebase ID token from an Authorization header. */
+let keys: ReturnType<typeof createRemoteJWKSet> | undefined;
+let keysFor = '';
+// A checked ticket is trusted for a few minutes, so a dig's burst of requests costs one check.
+const checked = new Map<string, { visitor: Visitor | null; until: number }>();
+
+/** Reads and checks a Supabase access token from an Authorization header. */
 export async function verifyVisitor(header: string | undefined): Promise<Visitor | null> {
-  const project = authProject();
+  const base = supabaseUrl();
   const token = header?.match(/^Bearer\s+(.+)$/i)?.[1];
-  if (!project || !token) return null;
+  if (!base || !token) return null;
+  const hit = checked.get(token);
+  if (hit && hit.until > Date.now()) return hit.visitor;
+
+  let visitor: Visitor | null = null;
   try {
-    const { payload } = await jwtVerify(token, GOOGLE_KEYS, {
-      issuer: `https://securetoken.google.com/${project}`,
-      audience: project,
-      algorithms: ['RS256'],
-    });
-    if (!payload.sub || (typeof payload.auth_time === 'number' && payload.auth_time * 1000 > Date.now() + 60_000)) return null;
-    return { uid: payload.sub, email: typeof payload.email === 'string' ? payload.email.toLowerCase() : undefined, verified: payload.email_verified === true };
+    if (keysFor !== base) {
+      keys = createRemoteJWKSet(new URL(`${base}/auth/v1/.well-known/jwks.json`));
+      keysFor = base;
+    }
+    const { payload } = await jwtVerify(token, keys!, { issuer: `${base}/auth/v1`, audience: 'authenticated' });
+    if (payload.sub) visitor = { uid: payload.sub, email: typeof payload.email === 'string' ? payload.email.toLowerCase() : undefined, verified: true };
   } catch {
-    return null;
+    // Projects still signing with the older shared secret: ask Supabase who this is instead.
+    try {
+      const res = await fetch(`${base}/auth/v1/user`, { headers: { Authorization: `Bearer ${token}`, apikey: anonKey() }, signal: AbortSignal.timeout(8000) });
+      if (res.ok) {
+        const u = (await res.json()) as { id?: string; email?: string; email_confirmed_at?: string; confirmed_at?: string };
+        if (u.id) visitor = { uid: u.id, email: u.email?.toLowerCase(), verified: !!(u.email_confirmed_at || u.confirmed_at) };
+      }
+    } catch {
+      /* treated as signed out */
+    }
   }
+  checked.set(token, { visitor, until: Date.now() + (visitor ? 5 * 60_000 : 30_000) });
+  if (checked.size > 1000) checked.delete(checked.keys().next().value!);
+  return visitor;
 }
 
 /** ALLOWED_EMAILS=a@x.com,b@y.com keeps the site to a guest list. Empty lets anyone signed in use it. */

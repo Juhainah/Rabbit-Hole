@@ -12,6 +12,8 @@ export interface ProviderPreset {
   model: string;
   /** Substrings used to auto-pick a replacement when the default model is retired. */
   modelHints: string[];
+  /** More free models on the same key. Each has its own daily allowance, so they back each other up. */
+  alternates?: string[];
   envKey?: string;
   keyless?: boolean;
   keyUrl: string;
@@ -25,6 +27,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     baseUrl: 'https://api.groq.com/openai/v1',
     model: 'openai/gpt-oss-120b',
     modelHints: ['gpt-oss-120b', 'llama-3.3-70b', 'qwen', 'kimi', 'llama'],
+    alternates: ['qwen/qwen3.8-27b', 'openai/gpt-oss-20b'],
     envKey: 'GROQ_API_KEY',
     keyUrl: 'https://console.groq.com/keys',
     note: 'Very fast. ~1,000 requests/day free.',
@@ -33,8 +36,9 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     id: 'gemini',
     name: 'Google Gemini',
     baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
-    model: 'gemini-2.5-flash',
-    modelHints: ['gemini-3-flash', 'gemini-2.5-flash', 'flash', 'gemma'],
+    model: 'gemini-3.5-flash',
+    modelHints: ['gemini-3.5-flash', 'flash', 'gemma'],
+    alternates: ['gemini-3.5-flash-lite', 'gemini-3.1-flash-lite', 'gemma-4-26b-a4b-it'],
     envKey: 'GEMINI_API_KEY',
     keyUrl: 'https://aistudio.google.com/apikey',
     note: 'Big context, great at synthesis. Free via AI Studio.',

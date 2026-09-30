@@ -2,7 +2,8 @@
 // trailing commas, or get cut off mid-object. This digs the JSON out and repairs it.
 
 export function stripThinking(text: string): string {
-  return text.replace(/<think>[\s\S]*?<\/think>/gi, '').replace(/^[\s\S]*?<\/think>/i, '');
+  // Reasoning models wrap their working in <think> (or Gemma's <thought>) tags; only the answer counts.
+  return text.replace(/<(think|thought)>[\s\S]*?<\/(think|thought)>/gi, '').replace(/^[\s\S]*?<\/(think|thought)>/i, '');
 }
 
 /**

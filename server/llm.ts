@@ -63,17 +63,42 @@ export function resolveProviders(only?: string[]): ResolvedProvider[] {
       console.warn(`[ai] OPENROUTER_MODEL "${model}" is not a free model; using ${preset.model} instead.`);
       model = preset.model;
     }
-    out.push({
-      id,
-      name: preset.name,
-      baseUrl: baseUrl.replace(/\/+$/, ''),
-      chatPath: preset.chatPath ?? '/chat/completions',
-      apiKey,
-      model,
-      hints: preset.modelHints,
-    });
+    const base = { id, name: preset.name, baseUrl: baseUrl.replace(/\/+$/, ''), chatPath: preset.chatPath ?? '/chat/completions', apiKey, hints: preset.modelHints };
+    out.push({ ...base, model });
+    // The same key's other free models: separate daily allowances that back each other up.
+    for (const alt of preset.alternates ?? []) if (alt !== model) out.push({ ...base, model: alt });
   }
   return out;
+}
+
+// ── Sharing the free allowances ──
+// A model that hit its daily cap is skipped for an hour instead of slowing every
+// request; a busy or broken one sits out briefly. Models on the same key take turns.
+const coolUntil = new Map<string, number>();
+const turns = new Map<string, number>();
+const keyOf = (p: ResolvedProvider) => `${p.id}|${p.model}`;
+
+/** The order to try providers in for this request: fresh ones first, taking turns within each provider. */
+function plan(providers: ResolvedProvider[]): ResolvedProvider[] {
+  const groups = new Map<string, ResolvedProvider[]>();
+  for (const p of providers) groups.set(p.id, [...(groups.get(p.id) ?? []), p]);
+  const ordered: ResolvedProvider[] = [];
+  for (const [id, list] of groups) {
+    const k = (turns.get(id) ?? 0) % list.length;
+    turns.set(id, k + 1);
+    ordered.push(...list.slice(k), ...list.slice(0, k));
+  }
+  const now = Date.now();
+  const resting = (p: ResolvedProvider) => (coolUntil.get(keyOf(p)) ?? 0) > now;
+  return [...ordered.filter((p) => !resting(p)), ...ordered.filter(resting)];
+}
+
+function rest(p: ResolvedProvider, e: unknown) {
+  const m = e instanceof HttpError ? `${e.message} ${e.body}` : errMsg(e);
+  const status = e instanceof HttpError ? e.status : 0;
+  const mins =
+    status === 429 ? (/per day|daily|TPD|RPD|quota|exceeded your current/i.test(m) ? 60 : 1.5) : status === 401 || status === 403 || status === 404 || status === 410 ? 360 : status >= 500 || /timed out|no response/i.test(m) ? 0.5 : 0;
+  if (mins) coolUntil.set(keyOf(p), Date.now() + mins * 60_000);
 }
 
 const info = (p: ResolvedProvider): ProviderInfo => ({ id: p.id, name: p.name, model: p.usedModel ?? p.model });
@@ -211,13 +236,14 @@ export async function completeWithFallback<T>(
 ): Promise<{ value: T; provider: ProviderInfo }> {
   if (!providers.length) throw new Error('No AI providers are enabled. Open Settings → AI and enable one.');
   const errors: string[] = [];
-  for (const p of providers) {
+  for (const p of plan(providers)) {
     try {
       const text = await withModelRecovery(p, (model) => completeOnce(p, model, call));
       if (!text) throw new Error('empty reply');
       return { value: validate(text), provider: info(p) };
     } catch (e) {
       if (call.signal?.aborted) throw e;
+      rest(p, e);
       const m = errMsg(e);
       errors.push(`${p.name}: ${m}`);
       onFail?.(info(p), m);
@@ -275,7 +301,7 @@ export async function* streamWithFallback(
 ): AsyncGenerator<StreamPiece> {
   if (!providers.length) throw new Error('No AI providers are enabled. Open Settings → AI and enable one.');
   const errors: string[] = [];
-  for (const p of providers) {
+  for (const p of plan(providers)) {
     let started = false;
     const ctrl = new AbortController();
     const firstByte = setTimeout(() => ctrl.abort(new Error('no response in 45s')), 45000);
@@ -295,6 +321,7 @@ export async function* streamWithFallback(
     } catch (e) {
       if (call.signal?.aborted) throw e;
       if (started) throw new Error(`${p.name} stopped mid-answer: ${errMsg(e)}`);
+      rest(p, e);
       const m = errMsg(e);
       errors.push(`${p.name}: ${m}`);
       onFail?.(info(p), m);
