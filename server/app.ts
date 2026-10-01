@@ -17,7 +17,13 @@ import { archiveMedia, periodIn, siteIn, waybackImages } from './sources/archive
 import { youtubeTranscript } from './sources/media';
 
 // Words that say what to do, not what to look for.
-const META_WORDS = new Set('yes yeah okay please connection connections connect link links linked relation related add pin note card cards board source sources photo photos picture pictures image images info information detail details anything something thing more show find bring tell explain give check work working api here there case clue clues about'.split(' '));
+const META_WORDS = new Set(
+  ('yes yeah okay please connection connections connect link links linked relation related add pin note card cards board source sources photo photos picture pictures image images info information detail details anything something thing more show find bring tell explain give check work working api here there case clue clues about ' +
+    'strange stranger strangest weird weirdest odd oddest interesting important explanation happened happen think theory theories real fact facts evidence missing know story stories most best worst skeptic skeptics contradict contradicts summary summarize recap overlooked missed').split(' '),
+);
+
+/** Questions about the board itself ("strangest detail on this board?") are answered from the board, not the archives. */
+const ABOUT_THE_BOARD = /\b(this|the|my|our)\s+(board|investigation|cards?|clues?|evidence)\b|\bthese\s+(cards?|clues?|cases?|photos?|sources?|people)\b|\bon (the|this|my) board\b|\b(contradict\w*|skeptic\w*|summari[sz]e|recap|so far)\b/i;
 
 export const app = new Hono<{ Variables: { visitor?: Visitor } }>();
 
@@ -118,7 +124,8 @@ app.post('/api/chat', async (c) => {
       // Sources carried over from the previous answer keep their numbers first.
       const carried = (body.carrySources ?? []).slice(0, 10);
       let sources: SourceItem[] = carried;
-      if (body.research && question) {
+      const aboutBoard = ABOUT_THE_BOARD.test(question) && !/\b(find|search|fetch|bring|pin|get|look up)\b/i.test(question);
+      if (body.research && question && !aboutBoard) {
         emit({ type: 'status', message: 'Checking the archives…' });
         const allowed = new Set(availableSources());
         // Questions and instructions search badly as-is; search the subject instead.

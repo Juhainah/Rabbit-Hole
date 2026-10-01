@@ -13,13 +13,14 @@ Rules:
 - Output ONLY a JSON object. No markdown, no commentary.`;
 
 const SCHEMA = `{
-  "title": "evocative case title, max 6 words",
+  "title": "evocative case title, max 6 words, about this topic only",
   "summary": "4-6 sentences: what it is, why it matters, what is strange about it",
   "hook": "one gripping sentence",
   "entities": [{"name": "", "type": "person|place|org|event|concept|object|work", "description": "1-2 specific sentences", "date": "YYYY or YYYY-MM-DD (omit if none)", "place": "for places/events: geocodable location, e.g. 'Kholat Syakhl, Russia' (omit otherwise)"}],
   "relations": [{"from": "entity name or TOPIC", "to": "entity name", "label": "2-4 word verb phrase"}],
   "timeline": [{"date": "YYYY[-MM[-DD]] (negative year for BC)", "event": "short line"}],
   "tangents": [{"title": "", "hook": "one sentence on why it's a rabbit hole", "query": "best search query for it"}],
+  (tangents must connect through substance: the same people, events, places, phenomena or mechanisms; never through a shared word or name, like another person who happens to be called the same)
   "questions": ["open question"],
   "offtopic": [evidence numbers that are NOT really about this topic, e.g. lists or posts that only mention it in passing]
 }
@@ -37,10 +38,13 @@ export function digMessages(
   const lines: string[] = [`TOPIC: ${topic}`];
   if (fromCase) {
     lines.push(
-      `THIS IS A DEEPER DIG INSIDE THE CASE "${fromCase}". The user wants ${topic}'s part in that story: make the summary, hook, entities and relations about how ${topic} connects to ${fromCase}. Background that has nothing to do with ${fromCase} goes in "offtopic".`,
+      `THIS IS A DEEPER DIG INSIDE THE CASE "${fromCase}". The user wants ${topic}'s part in that story: make the summary, hook, entities and relations about how ${topic} connects to ${fromCase}, as far as the evidence shows. If the sources show no real link, say so plainly instead of inventing one. Background that has nothing to do with ${fromCase} goes in "offtopic".`,
     );
   }
-  if (trail.length) lines.push(`HOW THEY GOT HERE (rabbit-hole trail): ${trail.join(' → ')} → ${topic}`);
+  if (trail.length) {
+    lines.push(`HOW THEY GOT HERE (rabbit-hole trail): ${trail.join(' → ')} → ${topic}`);
+    if (!fromCase) lines.push(`This is a NEW rabbit hole. Make the case file about ${topic} itself. Mention an earlier step only where the sources show a real link; never invent one.`);
+  }
   if (primary) {
     lines.push(`\nMAIN ARTICLE: ${primary.title} (${sourceMeta(primary.source).name})\n${primary.extract.slice(0, compact ? 1800 : 5500)}`);
     if (primary.related?.length) lines.push(`\nRELATED ARTICLES (tangent seeds): ${primary.related.slice(0, compact ? 8 : 12).join('; ')}`);
@@ -148,6 +152,7 @@ export const CHAT_SYSTEM = `You are the user's research partner inside "Rabbit H
 - Use short paragraphs and tight bullet lists. Bold the key names.
 - When SOURCES are provided, cite them inline as [1], [2]. Never invent citations.
 - Separate established fact from theory and speculation.
+- If some SOURCES have nothing to do with the question, ignore them silently. Never comment on the search, on source quality, or on how the app works; just answer from what is relevant (the board counts).
 - If the board context is relevant, connect your answer to clues already on the board.
 - Whenever you mention a card that is on the board, write its EXACT title in double square brackets, like [[Leonid Kulik]]. The user can click it to fly to that card. Only link titles that appear in the CARDS list.
 - Asked where cards came from ("anything from the Smithsonian?", "is there data.gov stuff?"), answer from WHERE THE CARDS CAME FROM: name the archive (and the other name it goes by) and link EVERY one of its cards as [[exact title]], copying the title exactly as listed. Never say a source is missing without checking that list.

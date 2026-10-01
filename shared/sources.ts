@@ -73,9 +73,10 @@ export const SOURCES: SourceMeta[] = [
   { id: 'oeis', name: 'OEIS', group: 'Academic', glyph: 'Σ', color: '#7c3aed', description: 'Integer sequences (math rabbit holes)', dig: false },
 
   // Community
-  { id: 'reddit', name: 'Reddit', group: 'Community', glyph: 'r/', color: '#ff4500', description: 'Threads and theories (via PullPush archive)', dig: true },
+  { id: 'reddit', name: 'Reddit', group: 'Community', glyph: 'r/', color: '#ff4500', description: 'Threads and theories', dig: true },
   { id: 'hackernews', name: 'Hacker News', group: 'Community', glyph: 'Y', color: '#ff6600', description: 'Tech discussions', dig: true },
-  { id: 'lemmy', name: 'Lemmy', group: 'Community', glyph: 'L', color: '#00bc8c', description: 'Fediverse forum posts', dig: false },
+  { id: 'lemmy', name: 'Lemmy', group: 'Community', glyph: 'L', color: '#00bc8c', description: 'Fediverse forum posts', dig: true },
+  { id: 'forums', name: 'Forums', group: 'Community', glyph: '💬', color: '#8b5cf6', description: 'AboveTopSecret, Unexplained Mysteries, 4chan /x/ archive, MetaFilter, Quora and more', dig: true },
   { id: 'stackexchange', name: 'Stack Exchange', group: 'Community', glyph: 'SE', color: '#f48024', description: 'Skeptics, History and Stack Overflow Q&A', dig: false },
 
   // News

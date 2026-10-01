@@ -10,11 +10,10 @@ const anonKey = (import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined)?.
 /** Without a Supabase project (local use), there's no sign-in at all. */
 export const authEnabled = !!(url && anonKey);
 
-/** Which sign-in buttons to show: VITE_AUTH_PROVIDERS=github,google (GitHub alone by default). */
-export const AUTH_PROVIDERS = ((import.meta.env.VITE_AUTH_PROVIDERS as string | undefined) ?? 'github')
-  .split(',')
-  .map((p) => p.trim().toLowerCase())
-  .filter((p): p is 'github' | 'google' => p === 'github' || p === 'google');
+/** Ways to sign in: VITE_AUTH_PROVIDERS=google,github,email (all three by default). */
+const methods = ((import.meta.env.VITE_AUTH_PROVIDERS as string | undefined) || 'google,github,email').split(',').map((p) => p.trim().toLowerCase());
+export const AUTH_PROVIDERS = methods.filter((p): p is 'github' | 'google' => p === 'github' || p === 'google');
+export const EMAIL_SIGN_IN = methods.includes('email');
 
 interface AuthState {
   status: 'off' | 'loading' | 'signed-out' | 'signed-in';
@@ -22,7 +21,9 @@ interface AuthState {
   email?: string;
   photo?: string;
   error?: string;
-  busy?: 'github' | 'google';
+  busy?: 'github' | 'google' | 'email';
+  /** A note that isn't an error ("check your inbox"). */
+  notice?: string;
 }
 
 export const useAuth = create<AuthState>(() => ({ status: authEnabled ? 'loading' : 'off' }));
@@ -72,6 +73,41 @@ export async function signIn(provider: 'github' | 'google') {
     useAuth.setState({
       busy: undefined,
       error: /not enabled|unsupported provider/i.test(m) ? `${provider === 'github' ? 'GitHub' : 'Google'} sign-in isn't switched on in Supabase yet.` : 'Sign-in failed. Try again.',
+    });
+  }
+}
+
+/** Email and password: signs in, or creates the account first when `create` is set. */
+export async function emailSignIn(email: string, password: string, create: boolean) {
+  useAuth.setState({ busy: 'email', error: undefined, notice: undefined });
+  try {
+    const sb = await client();
+    if (create) {
+      const { data, error } = await sb.auth.signUp({ email, password, options: { emailRedirectTo: window.location.origin } });
+      if (error) throw error;
+      // With email confirmation on, there is no session until the link in the email is clicked.
+      if (!data.session) useAuth.setState({ busy: undefined, notice: `Almost there: open the link we sent to ${email} to finish creating your account.` });
+    } else {
+      const { error } = await sb.auth.signInWithPassword({ email, password });
+      if (error) throw error;
+    }
+  } catch (e) {
+    const m = e instanceof Error ? e.message : String(e);
+    useAuth.setState({
+      busy: undefined,
+      error: /invalid login/i.test(m)
+        ? 'That email and password don’t match. New here? Choose “Create account”.'
+        : /already registered|already exists/i.test(m)
+          ? 'There’s already an account with that email. Choose “Sign in”.'
+          : /not confirmed/i.test(m)
+            ? 'Open the link in the email we sent you first, then sign in.'
+            : /password/i.test(m) && /least|short|weak/i.test(m)
+              ? 'Use a password of at least 6 characters.'
+              : /rate limit|too many/i.test(m)
+                ? 'Too many tries. Wait a minute and try again.'
+                : /signups? not allowed|disabled/i.test(m)
+                  ? 'Email sign-up is switched off for this site.'
+                  : `Sign-in failed: ${m}`,
     });
   }
 }

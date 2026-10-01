@@ -1,5 +1,6 @@
 import { Loader2 } from 'lucide-react';
-import { AUTH_PROVIDERS, signIn, useAuth } from '../lib/auth';
+import { useState } from 'react';
+import { AUTH_PROVIDERS, EMAIL_SIGN_IN, emailSignIn, signIn, useAuth } from '../lib/auth';
 
 // Google's own "G", as their sign-in button guidelines ask for.
 function GoogleG() {
@@ -24,7 +25,8 @@ function GitHubMark() {
 
 /** The front door: a case folder on the desk, opened by signing in. */
 export function SignIn() {
-  const { status, error, busy } = useAuth();
+  const { status, error, busy, notice } = useAuth();
+  const [mode, setMode] = useState<'in' | 'up'>('in');
   const loading = status === 'loading';
   return (
     <div className="desk grid h-full place-items-center overflow-y-auto px-4 py-10">
@@ -50,6 +52,44 @@ export function SignIn() {
                 </button>
               ))}
             </div>
+            {EMAIL_SIGN_IN && (
+              <>
+                {AUTH_PROVIDERS.length > 0 && (
+                  <div className="my-4 flex items-center gap-3 font-ui text-[12px] uppercase tracking-wider text-ink-soft">
+                    <span className="h-px flex-1 bg-ink/15" /> or with email <span className="h-px flex-1 bg-ink/15" />
+                  </div>
+                )}
+                <form
+                  className="grid gap-2"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    const f = new FormData(e.currentTarget);
+                    void emailSignIn(String(f.get('email')).trim(), String(f.get('password')), mode === 'up');
+                  }}
+                >
+                  <div className="flex gap-1 rounded-lg bg-ink/5 p-1 font-ui text-[13px]">
+                    {(['in', 'up'] as const).map((m) => (
+                      <button key={m} type="button" onClick={() => setMode(m)} aria-pressed={mode === m} className={`flex-1 rounded-md py-1.5 font-medium transition ${mode === m ? 'bg-white text-ink shadow-sm' : 'text-ink-soft hover:text-ink'}`}>
+                        {m === 'in' ? 'Sign in' : 'Create account'}
+                      </button>
+                    ))}
+                  </div>
+                  <label className="sr-only" htmlFor="auth-email">Email</label>
+                  <input id="auth-email" name="email" type="email" required autoComplete="email" placeholder="you@example.com" className="rounded-lg border border-ink/20 bg-white px-3 py-2.5 font-ui text-[14.5px] text-ink outline-none focus:border-ink/50" />
+                  <label className="sr-only" htmlFor="auth-password">Password</label>
+                  <input id="auth-password" name="password" type="password" required minLength={6} autoComplete={mode === 'up' ? 'new-password' : 'current-password'} placeholder={mode === 'up' ? 'Choose a password (6+ characters)' : 'Password'} className="rounded-lg border border-ink/20 bg-white px-3 py-2.5 font-ui text-[14.5px] text-ink outline-none focus:border-ink/50" />
+                  <button type="submit" disabled={loading || !!busy} className="btn-stamp flex items-center justify-center gap-2 py-2.5 text-[13px] tracking-wider disabled:cursor-wait disabled:opacity-70">
+                    {busy === 'email' && <Loader2 size={15} className="animate-spin" />}
+                    {mode === 'in' ? 'SIGN IN' : 'CREATE ACCOUNT'}
+                  </button>
+                </form>
+              </>
+            )}
+            {notice && (
+              <p role="status" className="mt-3 rounded-md bg-[#3f7f86]/10 px-3 py-2 font-ui text-[13.5px] leading-snug text-[#2f6b72]">
+                {notice}
+              </p>
+            )}
             {error && (
               <p role="alert" className="mt-3 font-ui text-[13.5px] leading-snug text-string">
                 {error}

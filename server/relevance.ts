@@ -12,7 +12,7 @@ const STOP = new Set(
 
 // Words too generic to identify a topic on their own ("incident", "mystery"…).
 const GENERIC = new Set(
-  'people thing things world life part case cases story stories history historical theory theories mystery mysteries mysterious secret secrets strange weird unknown unexplained famous real truth true fact facts event events incident incidents death deaths dead die died killed murder war wars battle city town place places country countries state states government group family name names book books film films movie movies video videos article articles news report reports list top best worst one two three four five six seven eight nine ten hundred thousand million century centuries modern ancient early late known found discovered use used using make made based man men woman women day days year years time times old new first last long great little many much good way even back really explained explain why what'.split(
+  'people thing things world life part case cases story stories history historical theory theories mystery mysteries mysterious secret secrets strange weird unknown unexplained famous real truth true fact facts event events incident incidents death deaths dead die died killed murder war wars battle city town place places country countries state states government group family name names book books film films movie movies video videos article articles news report reports list top best worst one two three four five six seven eight nine ten hundred thousand million century centuries modern ancient early late known found discovered use used using make made based man men woman women day days year years time times old new first last long great little many much good way even back really explained explain why what conspiracy conspiracies hoax hoaxes legend legends myth myths rumor rumors rumour rumours controversy scandal'.split(
     ' ',
   ),
 );
@@ -25,6 +25,20 @@ export const norm = (s: string) =>
 
 const stem = (w: string) => (w.length > 4 && w.endsWith('s') && !w.endsWith('ss') ? w.slice(0, -1) : w);
 const tokens = (s: string) => norm(s).split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+
+/** The words that name the subject ("talking", "angela" in "Talking Angela conspiracy theories"), as typed. */
+export function subjectWords(q: string): string[] {
+  const anchors = new Set(phrasing(q).anchors);
+  return tokens(q).filter((w) => anchors.has(stem(w)) || anchors.has(w));
+}
+
+/** Does this text name the subject? All its distinctive words for short names, most of them for long ones. */
+export function namesSubject(q: string, text: string): boolean {
+  const p = phrasing(q);
+  if (!p.anchors.length) return true;
+  const hits = hitsIn(tokens(text), p).size;
+  return p.anchors.length <= 2 ? hits === p.anchors.length : hits >= p.anchors.length - 1;
+}
 
 /** Topic words (stemmed, de-duplicated), in the order they appear. */
 export function terms(q: string): string[] {
@@ -42,7 +56,14 @@ interface Phrasing {
 function phrasing(q: string): Phrasing {
   const toks = tokens(q);
   const kept = toks.map((w, i) => ({ w: stem(w), i })).filter(({ w }) => w.length >= 3 && !STOP.has(w));
-  const anchors = kept.filter(({ w }) => !GENERIC.has(w));
+  let anchors = kept.filter(({ w }) => !GENERIC.has(w));
+  if (!anchors.length) {
+    const numbers = toks.map((w, i) => ({ w, i })).filter(({ w }) => /^\d+$/.test(w));
+    if (numbers.length) {
+      anchors = numbers;
+      kept.push(...numbers);
+    }
+  }
   const pairs: [string, string][] = [];
   for (let k = 1; k < anchors.length; k++) if (anchors[k].i - anchors[k - 1].i === 1) pairs.push([anchors[k - 1].w, anchors[k].w]);
   return { all: [...new Set(kept.map((x) => x.w))], anchors: [...new Set(anchors.map((x) => x.w))], pairs, whole: toks.join(' ') };

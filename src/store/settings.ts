@@ -61,11 +61,13 @@ export const useSettings = create<SettingsState>()(
     }),
     {
       name: 'rabbit-hole-prefs',
-      version: 3,
+      version: 4,
       // v3: sources backed by newly added free keys join every dig.
       migrate: (saved, version) => {
         const s = saved as SettingsState;
         if (version < 3 && Array.isArray(s?.digSources)) s.digSources = [...new Set([...s.digSources, 'smithsonian', 'courtlistener', 'github'])];
+        // v4: more forums.
+        if (version < 4 && Array.isArray(s?.digSources)) s.digSources = [...new Set([...s.digSources, 'forums', 'lemmy'])];
         return s;
       },
     },

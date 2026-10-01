@@ -1,12 +1,13 @@
-import type { DigEvent, DigRequest, Primary, SourceItem } from '../shared/types';
+import type { Analysis, DigEvent, DigRequest, Primary, SourceItem } from '../shared/types';
 import { errMsg, sleep } from './http';
 import { parseJsonLoose } from './json';
 import { completeWithFallback, resolveProviders } from './llm';
 import { digMessages, normalizeAnalysis, normalizeTangents, tangentMessages } from './prompts';
-import { norm, rankRelevant, relevanceFilter, terms } from './relevance';
+import { namesSubject, norm, rankRelevant, relevanceFilter, subjectWords, terms } from './relevance';
 import { ogImage, primaryFromUrl } from './scrape';
 import { availableSources, searchSource } from './sources';
 import { archiveMedia, siteIn, waybackImages } from './sources/archives';
+import { nameMatcher, norm as nameKey, tokenize } from '../shared/names';
 import { enrichEntities, wikiPrimary } from './sources/knowledge';
 
 export type Emit = (ev: DigEvent) => void;
@@ -18,11 +19,9 @@ const NO_PAGE_IMAGES = new Set([
 ]);
 
 /** Does the Wikipedia hit actually match the topic, or did search wander off? */
+/** The main article has to be about the subject, not just share a word like "theory" with it. */
 function primaryMatches(query: string, p: Primary) {
-  const t = terms(query);
-  if (!t.length) return true;
-  const text = norm(`${p.title} ${p.extract.slice(0, 600)}`);
-  return t.some((w) => text.includes(w));
+  return namesSubject(query, `${p.title} ${p.extract.slice(0, 1500)}`);
 }
 
 /** Long questions search badly. "why did the hikers die in 1959" searches better as "Dyatlov Pass incident". */
@@ -64,7 +63,27 @@ export function topicFromUrl(url: string, title?: string): string {
 }
 
 // Sources whose search understands "subject + case" as one question (news, forums, video, the web).
-const STORY_SOURCES = new Set(['web', 'reddit', 'hackernews', 'youtube', 'googlenews', 'gdelt', 'podcasts', 'dailymotion', 'archive', 'declassified', 'courtlistener', 'lostmedia', 'atlasobscura', 'fandom']);
+const STORY_SOURCES = new Set(['web', 'reddit', 'forums', 'lemmy', 'hackernews', 'youtube', 'googlenews', 'gdelt', 'podcasts', 'dailymotion', 'archive', 'declassified', 'courtlistener', 'lostmedia', 'atlasobscura', 'fandom']);
+
+const CHECKED_KINDS = new Set(['person', 'place', 'org']);
+
+/**
+ * Drops people, places and organisations that no source names. The AI is fluent
+ * and sometimes wrong ("Talking Angela, by ZeptoLab, of Istanbul"); a card on the
+ * board should be something the evidence actually mentions. Returns what was dropped.
+ */
+function groundEntities(analysis: Analysis, primary: Primary | null, evidence: SourceItem[]): string[] {
+  const read = [primary?.title, primary?.extract, ...evidence.map((e) => `${e.title} ${e.snippet ?? ''} ${e.author ?? ''}`)].filter(Boolean).join(' \n ');
+  const corpus = tokenize(read);
+  if (corpus.length < 80) return []; // too little was read to judge
+  const dropped = analysis.entities.filter((e) => CHECKED_KINDS.has(e.type) && !nameMatcher(e.name, e.type === 'person')(corpus));
+  // Never strip a case bare.
+  if (!dropped.length || analysis.entities.length - dropped.length < 3) return [];
+  const gone = new Set(dropped.map((e) => nameKey(e.name)));
+  analysis.entities = analysis.entities.filter((e) => !gone.has(nameKey(e.name)));
+  analysis.relations = analysis.relations.filter((r) => !gone.has(nameKey(r.from)) && !gone.has(nameKey(r.to)));
+  return dropped.map((e) => e.name);
+}
 
 export async function runDig(req: DigRequest, emit: Emit, signal: AbortSignal) {
   const topic = String(req.topic ?? '').trim().slice(0, 200);
@@ -90,6 +109,12 @@ export async function runDig(req: DigRequest, emit: Emit, signal: AbortSignal) {
     // The main article comes first (about a second) because it sharpens every other search.
     primary = await Promise.race([wikiPrimary(query, signal).catch(() => null), sleep(4500).then(() => null)]);
     if (primary && !primaryMatches(query, primary)) primary = null;
+    // "Talking Angela conspiracy theories" can land on a broader article; look the name up on its own.
+    const name = subjectWords(query).join(' ');
+    if (name && name !== norm(query) && (!primary || !namesSubject(name, primary.title))) {
+      const alt = await Promise.race([wikiPrimary(name, signal).catch(() => null), sleep(3500).then(() => null)]);
+      if (alt && namesSubject(name, `${alt.title} ${alt.extract.slice(0, 1500)}`)) primary = alt;
+    }
   }
   if (primary) emit({ type: 'primary', primary });
 
@@ -220,6 +245,12 @@ export async function runDig(req: DigRequest, emit: Emit, signal: AbortSignal) {
     const offtopic = (analysis.offtopic ?? []).map((n) => shown[n - 1]?.id).filter((id): id is string => !!id);
     if (offtopic.length && offtopic.length <= Math.ceil(shown.length * 0.4)) emit({ type: 'prune', ids: offtopic });
     delete analysis.offtopic;
+
+    // People, places and organisations must come from what the archives returned, not the AI's memory.
+    const ungrounded = groundEntities(analysis, primary, evidence);
+    if (ungrounded.length) {
+      emit({ type: 'status', message: `Left off ${ungrounded.length} name${ungrounded.length === 1 ? '' : 's'} the sources never mention: ${ungrounded.slice(0, 4).join(', ')}`, level: 'warn' });
+    }
 
     // Every case needs somewhere to fall next.
     if (analysis.tangents.length < 3) {

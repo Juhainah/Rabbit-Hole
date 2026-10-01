@@ -281,6 +281,7 @@ export const SITE_SEARCH: Record<string, string[]> = {
   dtic: ['apps.dtic.mil'],
   publicdomainreview: ['publicdomainreview.org'],
   cryptome: ['cryptome.org'],
+  forums: ['abovetopsecret.com', 'unexplained-mysteries.com', 'godlikeproductions.com', 'archive.4plebs.org', 'metafilter.com', 'quora.com', 'stackexchange.com', 'tildes.net', 'city-data.com', 'forums.somethingawful.com'],
 };
 
 export const siteSearchers: Record<string, SearchFn> = Object.fromEntries(

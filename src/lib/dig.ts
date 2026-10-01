@@ -60,7 +60,8 @@ export async function startDig(opts: { query: string; parentId?: string; url?: s
   const depth = parentTopic ? (parentTopic.data.depth ?? 0) + 1 : 0;
   const trail = parentTopic ? ancestors(board, parentTopic) : [];
   // The investigation this dig belongs to, as the user first searched it ("rotten.com").
-  const rootCase = parentTopic ? rootTopic(board, parentTopic) : undefined;
+  // Tangents are new holes, not parts of the case: framing them by it made the AI invent links.
+  const rootCase = parentTopic && parent?.type !== 'tangent' ? rootTopic(board, parentTopic) : undefined;
   const caseQuery = rootCase ? (rootCase.data.query ?? rootCase.data.title) : undefined;
   const center = clusterCenter(board.nodes, parent);
   const clusterId = nanoid(8);

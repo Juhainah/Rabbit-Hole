@@ -1,5 +1,6 @@
 import type { SourceItem } from '../../shared/types';
 import { enc, errMsg, getJson, stripHtml } from '../http';
+import { webSearch } from './web';
 import { host, type SearchFn } from './types';
 
 // Reddit blocks most anonymous JSON traffic now. We try the official API (with
@@ -61,15 +62,35 @@ export const reddit: SearchFn = async (q, { limit, signal }) => {
       console.warn(`[reddit] official API unavailable (${errMsg(e)}), using PullPush`);
     }
   }
-  const j = await getJson(`https://api.pullpush.io/reddit/search/submission/?q=${enc(q)}&size=${Math.min(100, limit * 4)}`, {
-    signal,
-    timeout: 15000,
-  });
-  const posts = (j.data ?? []).filter(
-    (d: any) => !d.over_18 && d.title && d.selftext !== '[removed]' && d.selftext !== '[deleted]',
-  );
-  posts.sort((a: any, b: any) => (b.score ?? 0) + (b.num_comments ?? 0) - ((a.score ?? 0) + (a.num_comments ?? 0)));
-  return posts.slice(0, limit).map(redditItem);
+  // The archive, matching post titles (its full-text search returns anything that mentions a word once).
+  const archived = await getJson(`https://api.pullpush.io/reddit/search/submission/?title=${enc(q)}&size=${Math.min(100, limit * 4)}`, { signal, timeout: 9000 })
+    .then((j) =>
+      (j.data ?? []).filter((d: any) => !d.over_18 && d.title && d.selftext !== '[removed]' && d.selftext !== '[deleted]'),
+    )
+    .catch((e) => {
+      if (signal?.aborted) throw e;
+      return [] as any[];
+    });
+  archived.sort((a: any, b: any) => (b.score ?? 0) + (b.num_comments ?? 0) - ((a.score ?? 0) + (a.num_comments ?? 0)));
+  const items: SourceItem[] = archived.slice(0, limit).map(redditItem);
+  if (items.length >= Math.min(2, limit)) return items;
+  // Too little: the threads a search engine ranks best for this topic.
+  const found = await webSearch(`${q} site:reddit.com`, limit + 3, signal).catch(() => []);
+  const seen = new Set(items.map((i) => i.url));
+  for (const it of found) {
+    const m = it.url?.match(/reddit\.com\/r\/([^/]+)\/comments\/([a-z0-9]+)/i);
+    if (!m || seen.has(it.url)) continue;
+    seen.add(it.url);
+    items.push({
+      ...it,
+      id: `reddit:${m[2]}`,
+      source: 'reddit',
+      kind: 'post',
+      title: it.title.replace(/\s*:\s*r\/\w+\s*$/i, '').replace(/\s*[-|]\s*Reddit\s*$/i, '').trim(),
+      meta: { sub: `r/${m[1]}` },
+    });
+  }
+  return items.slice(0, limit);
 };
 
 export const hackernews: SearchFn = async (q, { limit, signal }) => {
