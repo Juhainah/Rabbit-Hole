@@ -179,13 +179,13 @@ export function ReaderPanel() {
       )}
       {page.image && !page.media && <img src={page.image} alt="" className="mt-3 max-h-[320px] w-full rounded object-cover shadow" />}
       {page.format === 'markdown' ? (
-        <article className="prose-rh mt-3 !text-[14px] [&_img]:max-w-full [&_img]:rounded">
+        <article className="prose-rh reader-text mt-3 [&_img]:max-w-full [&_img]:rounded">
           <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ a: ({ href, children }) => <a href={href} target="_blank" rel="noreferrer">{children}</a> }}>
             {page.text.slice(0, showAll ? 120000 : 12000)}
           </ReactMarkdown>
         </article>
       ) : (
-        <article className="mt-3 space-y-3 font-serif text-[14.5px] leading-[1.65] text-ink/90">
+        <article className="reader-text mt-3 space-y-3.5">
           {paras.slice(0, showAll ? 2000 : 60).map((p, i) => (
             <p key={i} className="whitespace-pre-line">{p}</p>
           ))}

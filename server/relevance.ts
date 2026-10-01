@@ -36,8 +36,19 @@ export function subjectWords(q: string): string[] {
 export function namesSubject(q: string, text: string): boolean {
   const p = phrasing(q);
   if (!p.anchors.length) return true;
-  const hits = hitsIn(tokens(text), p).size;
-  return p.anchors.length <= 2 ? hits === p.anchors.length : hits >= p.anchors.length - 1;
+  const hit = hitsIn(tokens(text), p);
+  if (p.anchors.length > 2 && !subjectHead(p).every((w) => hit.has(w))) return false;
+  return p.anchors.length <= 2 ? hit.size === p.anchors.length : hit.size >= p.anchors.length - 1;
+}
+
+/** The subject's name as typed ("star girl" in "star girl mobile game controversy"). */
+export function subjectName(q: string): string {
+  const p = phrasing(q);
+  if (!p.anchors.length) return q;
+  const head = new Set(subjectHead(p));
+  const toks = tokens(q);
+  const first = toks.findIndex((w) => head.has(stem(w)) || head.has(w));
+  return toks.slice(first, first + head.size).join(' ') || q;
 }
 
 /** Topic words (stemmed, de-duplicated), in the order they appear. */
@@ -138,10 +149,13 @@ export function checkPremise(q: string, docs: { title: string; snippet?: string 
     const near = [...seenWords].find((s) => Math.abs(s.length - w.length) <= 2 && editDistance(w, s) <= (w.length >= 6 ? 2 : 1));
     if (near) typos[w] = near;
   }
-  const unknown = original(unknownStems).filter((w) => !typos[w]);
+  // Only something name-like is set aside: "storm8", or a word typed with a capital. An ordinary
+  // word the first results happen to miss ("children") stays in the search.
+  const nameLike = (w: string) => /\d/.test(w) || new RegExp(`(^|[^\\p{L}])${w[0].toUpperCase()}${w.slice(1)}`, 'u').test(q);
+  const unknown = original(unknownStems).filter((w) => !typos[w] && nameLike(w));
   const unlinked = original(unlinkedStems);
   const drop = new Set([...unknown, ...unlinked]);
-  const focus = typed.filter((w) => !drop.has(w)).map((w) => typos[w] ?? w).join(' ');
+  const focus = typed.filter((w) => !drop.has(w) && (w.length > 1 || /\d/.test(w))).map((w) => typos[w] ?? w).join(' ');
   return { focus: focus || q, unknown, unlinked, typos };
 }
 
@@ -168,12 +182,22 @@ function namesFirstSubject(toks: string[], p: Phrasing): boolean {
   return hit.has(pair[0]) && hit.has(pair[1]);
 }
 
+/** The subject's own name: the leading pair of words that sit together ("star girl"), or the first word. */
+function subjectHead(p: Phrasing): string[] {
+  const pair = p.pairs[0];
+  return pair && p.anchors.indexOf(pair[0]) === 0 ? pair : [p.anchors[0]];
+}
+
 function passes(toks: string[], p: Phrasing, lenient: boolean, post = false): boolean {
   if (!p.all.length) return true;
   if (post && p.anchors.length > 2 && namesFirstSubject(toks, p)) return true;
   if (!p.anchors.length) return p.all.filter((w) => positions(toks, w).length).length >= Math.ceil(p.all.length / 2);
-  const hits = hitsIn(toks, p).size;
+  const hit = hitsIn(toks, p);
+  const hits = hit.size;
   const n = p.anchors.length;
+  // Every result must name the subject, the name the search starts with: "Star Girl" needs both
+  // words together (not Honkai Star Rail, not a T-shirt with "stars"); "Apollo 11" needs "Apollo".
+  if (n > 2 && !subjectHead(p).every((w) => hit.has(w))) return false;
   if (lenient) return hits >= Math.min(n, n <= 2 ? n : n - 1) || (n > 2 && hits >= 2);
   if (n <= 2) return hits === n;
   if (n <= 4) return hits >= n - 1;

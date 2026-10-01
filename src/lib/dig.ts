@@ -89,6 +89,9 @@ export async function startDig(opts: { query: string; parentId?: string; url?: s
   const newIds: string[] = [topicId];
   const innerIds: string[] = [topicId];
   const itemNodes = new Map<string, string>();
+  const itemsById = new Map<string, SourceItem>();
+  let photosLeft = 6;
+  let mediaLeft = 3;
   const entityIds = new Map<string, string>();
   const geo: MapPoint[] = [];
   let evIndex = 0;
@@ -113,6 +116,7 @@ export async function startDig(opts: { query: string; parentId?: string; url?: s
       if (it.url) seenUrls.add(it.url);
       const node = itemToNode(it, evidencePos(center, evIndex++), { clusterId });
       itemNodes.set(it.id, node.id);
+      itemsById.set(it.id, it);
       nodes.push(node);
       edges.push(makeEdge(topicId, node.id, { kind: 'evidence' }, 'pin', true));
       if (it.lat != null && it.lon != null) geo.push({ lat: it.lat, lon: it.lon, label: it.title.slice(0, 26), nodeId: node.id });
@@ -232,7 +236,7 @@ export async function startDig(opts: { query: string; parentId?: string; url?: s
             break;
           case 'source':
             log(`${sourceMeta(ev.source).name}: ${ev.items.length ? `${ev.items.length} found` : 'nothing'}`, ev.items.length ? 'ok' : 'info', ev.source);
-            addEvidence(ev.items);
+            addEvidence(ev.items, ev.limit);
             break;
           case 'source-error':
             log(`${sourceMeta(ev.source).name}: ${ev.error}`, 'warn', ev.source);
@@ -258,11 +262,13 @@ export async function startDig(opts: { query: string; parentId?: string; url?: s
             applyEnrich(ev.entities);
             break;
           case 'photos':
-            addEvidence(ev.items, 8);
+            addEvidence(ev.items, photosLeft);
+            photosLeft = Math.max(0, photosLeft - ev.items.length);
             log(`📷 Pinned photos from the archives`, 'ok', 'commons');
             break;
           case 'media': {
-            addEvidence(ev.items, 6);
+            addEvidence(ev.items, mediaLeft);
+            mediaLeft = Math.max(0, mediaLeft - ev.items.length);
             const audio = ev.items.filter((i) => i.kind === 'audio').length;
             const films = ev.items.length - audio;
             log(`🎙 Found ${[audio && `${audio} recording${audio === 1 ? '' : 's'}`, films && `${films} film${films === 1 ? '' : 's'}`].filter(Boolean).join(' and ')}`, 'ok', 'archive');
@@ -274,6 +280,34 @@ export async function startDig(opts: { query: string; parentId?: string; url?: s
             for (const [itemId, image] of Object.entries(ev.images)) {
               const id = itemNodes.get(itemId);
               if (id && !nodes.find((n) => n.id === id)?.data.image) s.updateNode(id, { image });
+            }
+            break;
+          }
+          case 'gallery': {
+            const g = ev.gallery;
+            const card = makeNode('gallery', evidencePos(center, evIndex++), {
+              title: g.title,
+              url: g.url,
+              source: g.source,
+              clusterId,
+              items: g.items.map((p) => ({ title: p.title, image: p.image, url: p.url })),
+            });
+            useBoards.getState().addNodes([card]);
+            useBoards.getState().addEdges([makeEdge(topicId, card.id, { kind: 'evidence' }, 'pin', true)]);
+            newIds.push(card.id);
+            log(`🗂 Who's who: ${g.items.length} from ${g.title}`, 'ok', g.source);
+            break;
+          }
+          case 'extras': {
+            // Good but not essential: off the board, into the case file's "More finds".
+            const moved = ev.ids.map((i) => itemsById.get(i)).filter((it): it is SourceItem => !!it);
+            const nodeIds = ev.ids.map((i) => itemNodes.get(i)).filter((id): id is string => !!id);
+            if (nodeIds.length) {
+              const s = useBoards.getState();
+              const topic = currentBoard().nodes.find((n) => n.id === topicId);
+              s.updateNode(topicId, { extras: [...(topic?.data.extras ?? []), ...moved] });
+              s.onNodesChange(nodeIds.map((id) => ({ id, type: 'remove' as const })));
+              log(`🗂 Kept the board to the key evidence; ${nodeIds.length} more finds are in the case file`, 'ok');
             }
             break;
           }

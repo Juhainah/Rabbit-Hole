@@ -3,8 +3,9 @@ import { errMsg, sleep } from './http';
 import { parseJsonLoose } from './json';
 import { completeWithFallback, resolveProviders } from './llm';
 import { digMessages, normalizeAnalysis, normalizeTangents, tangentMessages } from './prompts';
-import { checkPremise, namesSubject, norm, rankRelevant, relevanceFilter, subjectWords, terms } from './relevance';
+import { checkPremise, namesSubject, norm, rankRelevant, relevanceFilter, subjectName, subjectWords, terms } from './relevance';
 import { webSearch } from './sources/web';
+import { deepResearch, type Research } from './research';
 import { ogImage, primaryFromUrl } from './scrape';
 import { availableSources, searchSource } from './sources';
 import { archiveMedia, siteIn, waybackImages } from './sources/archives';
@@ -73,8 +74,8 @@ const CHECKED_KINDS = new Set(['person', 'place', 'org']);
  * and sometimes wrong ("Talking Angela, by ZeptoLab, of Istanbul"); a card on the
  * board should be something the evidence actually mentions. Returns what was dropped.
  */
-function groundEntities(analysis: Analysis, primary: Primary | null, evidence: SourceItem[]): string[] {
-  const read = [primary?.title, primary?.extract, ...evidence.map((e) => `${e.title} ${e.snippet ?? ''} ${e.author ?? ''}`)].filter(Boolean).join(' \n ');
+function groundEntities(analysis: Analysis, primary: Primary | null, evidence: SourceItem[], alsoRead = ''): string[] {
+  const read = [primary?.title, primary?.extract, alsoRead, ...evidence.map((e) => `${e.title} ${e.snippet ?? ''} ${e.author ?? ''}`)].filter(Boolean).join(' \n ');
   const corpus = tokenize(read);
   if (corpus.length < 80) return []; // too little was read to judge
   const dropped = analysis.entities.filter((e) => CHECKED_KINDS.has(e.type) && !nameMatcher(e.name, e.type === 'person')(corpus));
@@ -127,8 +128,9 @@ export async function runDig(req: DigRequest, emit: Emit, signal: AbortSignal) {
   // results use, and a name no result connects to the rest is flagged instead of built into the case.
   const notes: string[] = [];
   let query = asked;
-  if (topic && !caseQuery) {
-    const scout = await Promise.race([webSearch(asked, 6, signal).catch(() => [] as SourceItem[]), sleep(6000).then(() => [] as SourceItem[])]);
+  let scout: SourceItem[] = [];
+  if (topic && !caseQuery && !req.trail?.length) {
+    scout = await Promise.race([webSearch(asked, 6, signal).catch(() => [] as SourceItem[]), sleep(6000).then(() => [] as SourceItem[])]);
     const check = checkPremise(asked, scout);
     for (const [typo, word] of Object.entries(check.typos)) notes.push(`Read “${typo}” as “${word}”.`);
     if (check.unknown.length) notes.push(`No source found mentions ${listWords(check.unknown)}.`);
@@ -173,6 +175,18 @@ export async function runDig(req: DigRequest, emit: Emit, signal: AbortSignal) {
   const framedPick = (items: SourceItem[], n: number, general = 1) =>
     framed ? [...items.filter(mentionsCase), ...items.filter((it) => !mentionsCase(it)).slice(0, general)].slice(0, n) : items.slice(0, n);
   const isRelevant = relevanceFilter(topicOf);
+
+  // Deep research runs alongside the sources: planned searches, the subject's wiki, pages read in full.
+  const researchTopic = framed ? `${query} ${framed}` : query;
+  const researchTask: Promise<Research | null> = venue
+    ? Promise.resolve(null)
+    : (async () => {
+        const sc = scout.length ? scout : await Promise.race([webSearch(researchTopic, 6, signal).catch(() => [] as SourceItem[]), sleep(6000).then(() => [] as SourceItem[])]);
+        return deepResearch(researchTopic, sc, isRelevant, signal, (message) => emit({ type: 'status', message }));
+      })().catch((e) => {
+        console.warn(`[research] ${errMsg(e)}`);
+        return null;
+      });
   const seen = new Set<string>();
   const keep = (items: SourceItem[]) =>
     items.filter((it) => {
@@ -183,6 +197,8 @@ export async function runDig(req: DigRequest, emit: Emit, signal: AbortSignal) {
     });
 
   const evidence: SourceItem[] = [];
+  /** Photos and recordings pinned outside the main evidence (their titles still count as read). */
+  const sideItems: SourceItem[] = [];
   let dropped = 0;
   // A venue dig searches that venue for the case; any other dig searches every chosen source.
   const plan: { id: string; run: () => Promise<SourceItem[]> }[] = venue
@@ -214,7 +230,7 @@ export async function runDig(req: DigRequest, emit: Emit, signal: AbortSignal) {
   });
 
   // A dedicated photo pass, so every board gets real pictures, not just text.
-  const photoTask = (async () => {
+  const photoTask: Promise<SourceItem[]> = (async () => {
     const ids = ['commons', 'openverse'].filter((id) => allowed.has(id));
     // A website as the subject: its own pictures, as the Wayback Machine saved them.
     const site = siteIn(query);
@@ -223,9 +239,8 @@ export async function runDig(req: DigRequest, emit: Emit, signal: AbortSignal) {
       ...(site ? [waybackImages(site, undefined, 6, signal)] : []),
     ]);
     const items = rankRelevant(keep(batches.flatMap((b) => (b.status === 'fulfilled' ? b.value : [])).filter((it) => it.image)), { ...topicOf, phrasings: [phrase, titleHelps] });
-    const picked = venue ? [] : framedPick(items, 8, 1);
-    if (picked.length && !signal.aborted) emit({ type: 'photos', items: picked });
-  })();
+    return venue ? [] : framedPick(items, 8, 1);
+  })().catch(() => []);
 
   // And a pass for things to listen to and watch: old broadcasts, oral histories, newsreels, podcasts.
   const mediaTask = (async () => {
@@ -236,12 +251,31 @@ export async function runDig(req: DigRequest, emit: Emit, signal: AbortSignal) {
     ]);
     const [audio, films, pods] = batches.map((b) => (b.status === 'fulfilled' ? rankRelevant(keep(b.value), { ...topicOf, phrasings: [phrase, titleHelps] }) : []));
     const items = [...audio.slice(0, 2), ...films.slice(0, 2), ...pods.slice(0, 2)];
+    sideItems.push(...items);
     if (items.length && !signal.aborted) emit({ type: 'media', items });
   })();
 
   // Slow sources keep streaming in, but the AI doesn't wait on them forever.
   await Promise.race([Promise.allSettled(tasks), sleep(18000)]);
   if (signal.aborted) return;
+  const research = await Promise.race([researchTask, sleep(14000).then(() => null)]);
+  if (signal.aborted) return;
+  {
+    const fromArchives = await Promise.race([photoTask, sleep(4000).then(() => [] as SourceItem[])]);
+    const seenPhotos = new Set<string>();
+    const photos = [...(research?.photos ?? []), ...fromArchives].filter((p) => p.image && !seenPhotos.has(p.image) && seenPhotos.add(p.image)).slice(0, 6);
+    sideItems.push(...photos);
+    if (photos.length && !signal.aborted) emit({ type: 'photos', items: photos });
+  }
+  if (research) {
+    // The research finds go on the board like any other evidence, grouped by where they came from.
+    const fresh = keep(research.items);
+    evidence.unshift(...fresh);
+    const bySource = new Map<string, SourceItem[]>();
+    for (const it of fresh) bySource.set(it.source, [...(bySource.get(it.source) ?? []), it]);
+    for (const [source, items] of bySource) emit({ type: 'source', source, items, limit: items.length });
+    if (research.gallery) emit({ type: 'gallery', gallery: { ...research.gallery, source: 'fandom' } });
+  }
 
   // Too little to go on: say so, rather than let the AI write the case from memory.
   if (evidence.length + (primary ? 2 : 0) < 3) {
@@ -287,7 +321,7 @@ export async function runDig(req: DigRequest, emit: Emit, signal: AbortSignal) {
     completeWithFallback(
       providers,
       {
-        messages: digMessages(venue ? `${framed} on ${venue.name}` : query, trail, primary, listed(compact), compact, framed, notes.length ? `The user typed “${asked}”. ${notes.join(' ')}` : undefined, venue?.name),
+        messages: digMessages(venue ? `${framed} on ${venue.name}` : query, trail, primary, listed(compact), compact, framed, notes.length ? `The user typed “${asked}”. ${notes.join(' ')}` : undefined, venue?.name, research?.reading ?? []),
         temperature: 0.6,
         maxTokens: compact ? 4000 : 8000,
         signal,
@@ -316,8 +350,23 @@ export async function runDig(req: DigRequest, emit: Emit, signal: AbortSignal) {
     // The AI read every clue; toss the ones it flagged as off-topic (but never most of the board).
     const shown = listed(compact);
     const offtopic = (analysis.offtopic ?? []).map((n) => shown[n - 1]?.id).filter((id): id is string => !!id);
-    if (offtopic.length && offtopic.length <= Math.ceil(shown.length * 0.4)) emit({ type: 'prune', ids: offtopic });
+    const pruned = offtopic.length && offtopic.length <= Math.ceil(shown.length * 0.4) ? offtopic : [];
+    if (pruned.length) emit({ type: 'prune', ids: pruned });
     delete analysis.offtopic;
+    const BUDGET = 14;
+    const keepNums = analysis.keep ?? [];
+    delete analysis.keep;
+    const tossed = new Set(pruned);
+    const picked: string[] = [];
+    const flagged = new Set(offtopic);
+    const add = (id?: string) => id && !flagged.has(id) && !picked.includes(id) && picked.push(id);
+    for (const c of analysis.citations ?? []) add(shown[c.evidence - 1]?.id);
+    for (const n of keepNums) add(shown[n - 1]?.id);
+    // No usable picks from the AI: the strongest matches stand in.
+    if (picked.length < 5) for (const it of rankRelevant(evidence, { ...topicOf, phrasings: [phrase, titleHelps] })) add(it.id);
+    const board = new Set(picked.slice(0, BUDGET));
+    const extras = evidence.filter((it) => !board.has(it.id) && !tossed.has(it.id)).map((it) => it.id);
+    if (extras.length) emit({ type: 'extras', ids: extras });
     // Evidence numbers → the items they name, for strings between key sources and the cards they prove.
     const named = new Set(analysis.entities.map((e) => e.name.toLowerCase()));
     analysis.cites = (analysis.citations ?? [])
@@ -328,7 +377,11 @@ export async function runDig(req: DigRequest, emit: Emit, signal: AbortSignal) {
     if (notes.length) analysis.premise = `${notes.join(' ')} This case follows “${query}”.`;
 
     // People, places and organisations must come from what the archives returned, not the AI's memory.
-    const ungrounded = groundEntities(analysis, primary, evidence);
+    const readInFull = [
+      ...(research?.reading ?? []).map((r) => `${r.title} ${r.text}`),
+      ...[...(research?.photos ?? []), ...(research?.gallery?.items ?? []), ...sideItems].map((p) => `${p.title} ${p.snippet ?? ''}`),
+    ].join(' \n ');
+    const ungrounded = groundEntities(analysis, primary, evidence, readInFull);
     if (ungrounded.length) {
       emit({ type: 'status', message: `Left off ${ungrounded.length} name${ungrounded.length === 1 ? '' : 's'} the sources never mention: ${ungrounded.slice(0, 4).join(', ')}`, level: 'warn' });
     }
@@ -354,6 +407,28 @@ export async function runDig(req: DigRequest, emit: Emit, signal: AbortSignal) {
         analysis.tangents.push(t);
       }
     }
+    const inCase = [subjectName(query), ...(framed ? [subjectName(framed)] : []), ...analysis.entities.map((e) => e.name)];
+    const matchers = inCase.map((n) => nameMatcher(n, false));
+    const squash = (s: string) => tokenize(s).join('');
+    // Documents of this case: what it read, and the evidence titles. A name two of them discuss is part of the case.
+    const docs = [
+      ...(research?.reading ?? []).map((r) => new Set(tokenize(r.text))),
+      ...evidence.map((e) => new Set(tokenize(`${e.title} ${e.snippet ?? ''}`))),
+      new Set(tokenize(primary?.extract ?? '')),
+    ];
+    const PLAIN_WORDS = new Set('about after their there which would could should these those other first story stories history theory theories mystery secret secrets strange dark truth inside behind world games game music video videos legacy impact future story real rise fall power life death'.split(' '));
+    const discussed = (text: string) =>
+      [...new Set(tokenize(text))].some((w) => w.length >= 5 && !PLAIN_WORDS.has(w) && docs.filter((d) => d.has(w)).length >= 2);
+    const grounded = (text: string) => {
+      const toks = tokenize(text);
+      const flat = squash(text);
+      return matchers.some((m) => m(toks)) || inCase.some((n) => squash(n).length >= 6 && flat.includes(squash(n))) || discussed(text);
+    };
+    const before = analysis.tangents.length + analysis.questions.length;
+    analysis.tangents = analysis.tangents.filter((t) => grounded(`${t.title} ${t.hook} ${t.query}`));
+    analysis.questions = analysis.questions.filter(grounded);
+    const cut = before - analysis.tangents.length - analysis.questions.length;
+    if (cut) console.log(`[dig] dropped ${cut} tangent/question idea(s) that don't touch the case`);
     emit({ type: 'analysis', analysis });
 
     emit({ type: 'status', message: 'Pinning photos and locations…' });

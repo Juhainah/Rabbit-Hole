@@ -2,6 +2,7 @@ import { XMLParser } from 'fast-xml-parser';
 import type { SourceItem } from '../../shared/types';
 import { BROWSER_UA, enc, getJson, getText, stripHtml, throttle } from '../http';
 import { arr, num, type SearchFn } from './types';
+import { decodeGoogleNews } from '../gnews';
 
 const YT_HEADERS = {
   'User-Agent': BROWSER_UA,
@@ -235,7 +236,7 @@ export const googlenews: SearchFn = async (q, { limit, signal }) => {
     signal,
     headers: { Accept: 'application/rss+xml' },
   });
-  return arr(xml.parse(text)?.rss?.channel?.item)
+  const items = arr(xml.parse(text)?.rss?.channel?.item)
     .slice(0, limit)
     .map((it: any) => {
       const src = typeof it.source === 'object' ? it.source['#text'] : it.source;
@@ -251,6 +252,8 @@ export const googlenews: SearchFn = async (q, { limit, signal }) => {
         meta: src ? { site: String(src) } : undefined,
       };
     });
+  const real = await Promise.all(items.map((it) => decodeGoogleNews(it.url, signal)));
+  return items.map((it, i) => (real[i] ? { ...it, url: real[i]!, meta: { ...it.meta, via: 'Google News' } } : it));
 };
 
 const gdeltQueue = throttle(5500);

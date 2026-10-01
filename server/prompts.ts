@@ -21,9 +21,10 @@ const SCHEMA = `{
   "relations": [{"from": "entity name or TOPIC", "to": "entity name", "label": "2-4 word verb phrase"}],
   "timeline": [{"date": "YYYY[-MM[-DD]] (negative year for BC)", "event": "short line"}],
   "tangents": [{"title": "", "hook": "one sentence on why it's a rabbit hole", "query": "best search query for it"}],
-  (tangents must connect through substance: the same people, events, places, phenomena or mechanisms; never through a shared word or name, like another person who happens to be called the same)
+  (tangents must connect through substance: the same people, events, places, phenomena or mechanisms; never through a shared word or name, like another person who happens to be called the same. Each tangent and each question must name someone or something in this case.)
   "questions": ["open question"],
   "cites": [{"evidence": 3, "entity": "exact entity name from entities", "label": "2-5 words: what this source shows about it"}],
+  "keep": [the 10-14 evidence numbers that best tell this case, best first: what actually happened (reporting from the time AND later look-backs or explainers), first-hand accounts and forum threads, official statements or documents; one of any near-duplicates; minor or generic items left out],
   "offtopic": [evidence numbers that are NOT really about this topic, e.g. lists or posts that only mention it in passing],
   "premise": "one sentence if the topic as typed contains a name, link or claim the evidence does not support (a wrong company, a connection no source documents), saying what the sources do show; otherwise an empty string"
 }
@@ -39,6 +40,7 @@ export function digMessages(
   fromCase?: string,
   premiseNote?: string,
   venue?: string,
+  reading: { title: string; url: string; text: string }[] = [],
 ): ChatMessage[] {
   const lines: string[] = [`TOPIC: ${topic}`];
   if (premiseNote) lines.push(`PREMISE CHECK: ${premiseNote} Build the case only from what the evidence shows, and say this plainly in "premise".`);
@@ -65,6 +67,18 @@ export function digMessages(
     return bits.join(' ');
   });
   if (ev.length) lines.push(`\nEVIDENCE FROM THE ARCHIVES:\n${ev.join('\n')}`);
+  if (reading.length) {
+    // Full pages read for this case: the most reliable facts, dates and names.
+    let room = compact ? 2600 : 7500;
+    const pages: string[] = [];
+    for (const r of reading) {
+      if (room < 200) break;
+      const text = r.text.slice(0, Math.min(room, compact ? 650 : 1500));
+      room -= text.length;
+      pages.push(`• ${r.title} (${r.url.replace(/^https?:\/\/(www\.)?/, '').split('/')[0]})\n${text}`);
+    }
+    lines.push(`\nPAGES READ IN FULL (trust these most for what happened, dates and names; build the timeline from them):\n${pages.join('\n\n')}`);
+  }
   lines.push(`\nReturn JSON in exactly this shape:\n${SCHEMA}`);
   return [
     { role: 'system', content: DIG_SYSTEM },
@@ -153,6 +167,9 @@ export function normalizeAnalysis(raw: any, topic: string): Analysis {
       .map((c) => ({ evidence: Number(c?.evidence), entity: str(c?.entity, 80), label: str(c?.label, 40) || undefined }))
       .filter((c) => Number.isInteger(c.evidence) && c.evidence > 0 && c.entity)
       .slice(0, 16),
+    keep: list(raw.keep)
+      .map((n) => Number(n))
+      .filter((n) => Number.isInteger(n) && n > 0),
     offtopic: list(raw.offtopic)
       .map((n) => Number(n))
       .filter((n) => Number.isInteger(n) && n > 0),
@@ -176,7 +193,8 @@ export const CHAT_SYSTEM = `You are the user's research partner inside "Rabbit H
   ACTION: pin 3            (pins source [3]; use for photos, documents, videos. Several: ACTION: pin 2, 5)
   ACTION: connect [[Card A]] -> [[Card B]] : short label
   ACTION: note Chat feature removed in 2014; no abuse was ever proven [3]
-  ACTION: remove [[Card]]          (only when the user asks to remove or clean up)
+  ACTION: remove [[Card]]          (only when the user asks to remove or clean up; removing a case file removes its whole case)
+  To clean up ("remove anything unrelated", "clean the board"): go through EVERY card in the CARDS list, judge it against the case the user names (or the first case), and write one ACTION: remove line per card or case file that is not about it. Do it; don't ask for permission. List what you removed in one short line.
   ACTION: rename [[Card]] : New title
   ACTION: add to [[Card]] : a fact to write on that card, ending with its source like [2]
   ACTION: card person Jeffrey Epstein : one line on who this is in the case

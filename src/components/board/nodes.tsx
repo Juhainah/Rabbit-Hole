@@ -114,6 +114,18 @@ export function TopicNode({ id, data, selected }: P) {
         ) : (
           <p className="mt-3 font-type text-[13px] text-ink-soft shovel-dots">Pulling files</p>
         )}
+        {(data.extras?.length ?? 0) > 0 && (
+          <button
+            className="more-finds nodrag"
+            onClick={(e) => {
+              e.stopPropagation();
+              useUi.getState().select(id);
+              useUi.getState().openTab('inspect');
+            }}
+          >
+            + {data.extras!.length} more finds in this file
+          </button>
+        )}
         <div className="mt-3 flex items-end justify-between gap-2">
           <SourceBadge id={data.source} />
           <span className={clsx('stamp status-stamp text-[13px]', data.status === 'done' && 'done')}>
@@ -201,6 +213,36 @@ export function NoteNode({ id, data, selected }: P) {
           {data.text || data.title || <span className="opacity-50">double-click to write</span>}
         </div>
       )}
+    </Card>
+  );
+}
+
+// ─── Who's who: a contact sheet of portraits from the subject's wiki ─────────
+export function GalleryNode({ id, data, selected }: P) {
+  const people = data.items ?? [];
+  return (
+    <Card id={id} data={data} selected={selected} className="clue-gallery" pin={data.pin ?? '#c8322f'}>
+      <div className="gallery-head">
+        <span className="label-caps">Who's who</span>
+        <h3 className="clue-title">{data.title}</h3>
+      </div>
+      <div className="gallery-grid">
+        {people.slice(0, 10).map((p) => (
+          <button
+            key={p.title}
+            className="gallery-face nodrag"
+            title={`Read about ${p.title}`}
+            onClick={(e) => {
+              e.stopPropagation();
+              if (p.url) read(id, p.url);
+            }}
+          >
+            {p.image && <img src={p.image} alt="" draggable={false} loading="lazy" />}
+            <span>{p.title}</span>
+          </button>
+        ))}
+      </div>
+      <SourceBadge id={data.source} className="mt-2 max-w-full" />
     </Card>
   );
 }
@@ -485,4 +527,5 @@ export const nodeTypes = {
   quote: QuoteNode,
   label: LabelNode,
   map: MapNode,
+  gallery: GalleryNode,
 };

@@ -23,7 +23,7 @@ export function boardContext(): string {
     for (const t of topics) lines.push(`- ${t.data.title}${t.data.depth ? ` (depth ${t.data.depth})` : ''}: ${(t.data.text ?? '').slice(0, 280)}`);
   }
   // Every card title, so the partner can link them as [[title]].
-  const cards = board.nodes.filter((n) => n.data.title && n.type !== 'label').slice(0, 90);
+  const cards = board.nodes.filter((n) => n.data.title && n.type !== 'label').slice(0, 160);
   if (cards.length) {
     lines.push('\nCARDS ON THE BOARD, each with the archive it came from (link any you mention as [[exact title]]):');
     for (const n of cards) {

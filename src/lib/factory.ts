@@ -17,6 +17,7 @@ export const SIZE: Record<ClueType, { w: number; h: number }> = {
   quote: { w: 250, h: 170 },
   map: { w: 540, h: 400 },
   label: { w: 150, h: 56 },
+  gallery: { w: 520, h: 330 },
 };
 
 export type Point = { x: number; y: number };

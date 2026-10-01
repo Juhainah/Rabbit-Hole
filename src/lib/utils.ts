@@ -36,6 +36,7 @@ export const TYPE_COLORS: Record<ClueType, string> = {
   quote: '#9aa0a6',
   map: '#6fa8a0',
   label: '#f5efe2',
+  gallery: '#e7d8b8',
 };
 
 export const TYPE_LABEL: Record<ClueType, string> = {
@@ -51,6 +52,7 @@ export const TYPE_LABEL: Record<ClueType, string> = {
   quote: 'Quote',
   map: 'Map',
   label: 'Scrap label',
+  gallery: 'Who\'s who',
 };
 
 export const PIN_COLORS = ['#c8322f', '#1f1f1f', '#2f5fb3', '#e0a526', '#3f8f55', '#f2f2f2', '#9b4dca'];

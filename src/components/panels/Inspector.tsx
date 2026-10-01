@@ -1,7 +1,7 @@
 import clsx from 'clsx';
 import { ArrowDown, BookOpen, ExternalLink, History, MessageCircle, Plus, Scissors, Search, Trash2 } from 'lucide-react';
 import type { EntityType } from '../../../shared/types';
-import { askAbout, startDig } from '../../lib/dig';
+import { askAbout, pinItem, startDig } from '../../lib/dig';
 import { cut, openTiePicker } from '../../lib/tie';
 import { ENTITY_COLORS, ENTITY_LABEL, NOTE_COLORS, PIN_COLORS, STRING_COLORS, TYPE_LABEL } from '../../lib/utils';
 import { useBoards, useCurrentBoard } from '../../store/boards';
@@ -150,6 +150,36 @@ export function Inspector() {
             <a className="chip" href={`https://web.archive.org/web/*/${d.url}`} target="_blank" rel="noreferrer">
               <History size={13} /> Wayback
             </a>
+          </div>
+        </>
+      )}
+
+      {(d.extras?.length ?? 0) > 0 && (
+        <>
+          <Label>More finds ({d.extras!.length})</Label>
+          <p className="mb-1.5 text-[12px] leading-snug text-ink-soft">Good sources that didn't make the board. Pin any you want.</p>
+          <div className="grid gap-0.5">
+            {d.extras!.map((it) => (
+              <div key={it.id} className="flex items-center gap-2 rounded-md px-1.5 py-1 hover:bg-paper-2">
+                <SourceBadge id={it.source} />
+                <button
+                  className="min-w-0 flex-1 truncate text-left text-[12.5px] text-ink"
+                  title={it.title}
+                  onClick={() => it.url && (ui.set({ readerUrl: it.url }), ui.openTab('read'))}
+                >
+                  {it.title}
+                </button>
+                <button
+                  className="chip shrink-0 !px-2 !py-0.5 !text-[11.5px]"
+                  onClick={() => {
+                    pinItem(it, { near: node.id });
+                    update({ extras: d.extras!.filter((x) => x.id !== it.id) });
+                  }}
+                >
+                  Pin
+                </button>
+              </div>
+            ))}
           </div>
         </>
       )}

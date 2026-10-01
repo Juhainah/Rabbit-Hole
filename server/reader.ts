@@ -1,6 +1,7 @@
 import type { ScrapeResult } from '../shared/types';
 import { enc, errMsg, getJson, getText, stripHtml } from './http';
 import { assertPublicUrl, scrape } from './scrape';
+import { decodeGoogleNews, isGoogleNews } from './gnews';
 
 // Many sources wall their web pages (logins, bot checks) but publish the same
 // content through open APIs. These readers use the APIs, so a clue opens as real
@@ -201,6 +202,10 @@ async function readViaJina(url: URL): Promise<ScrapeResult | null> {
 }
 
 export async function readAnything(raw: string): Promise<ScrapeResult> {
+  if (isGoogleNews(raw)) {
+    const real = await decodeGoogleNews(raw);
+    if (real) return readAnything(real);
+  }
   const url = assertPublicUrl(raw);
   const host = url.hostname.replace(/^www\./, '');
   for (const [re, reader] of SPECIAL) {

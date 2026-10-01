@@ -146,7 +146,9 @@ function runActions(actions: string[], sources: SourceItem[]): string[] {
     addClue('entity', { title, entityType, text: card[3]?.trim().slice(0, 400) }, { near });
     done.push(`Added a card for “${title}”`);
   }
-  for (const a of actions.slice(0, 12)) {
+  const removals = new Set<string>();
+  const removedTitles: string[] = [];
+  for (const a of actions.slice(0, 40)) {
     if (/^card\s/i.test(a)) continue;
     const fact = a.match(/^add\s+to\s+\[\[(.+?)\]\]\s*:\s*(.+)/i);
     if (fact) {
@@ -182,10 +184,11 @@ function runActions(actions: string[], sources: SourceItem[]): string[] {
     const gone = a.match(/^remove\s+\[\[(.+?)\]\]/i);
     if (gone) {
       const card = findCard(gone[1]);
-      if (card && card.type !== 'topic') {
-        useBoards.getState().removeNodes([card.id], `Removed “${card.data.title}”`);
-        done.push(`Removed “${card.data.title}” (Ctrl+Z brings it back)`);
-      }
+      if (!card || removals.has(card.id)) continue;
+      // A case file goes with everything dug up in that case.
+      const ids = card.type === 'topic' ? currentBoard().nodes.filter((n) => n.data.clusterId === card.data.clusterId).map((n) => n.id) : [card.id];
+      ids.forEach((id) => removals.add(id));
+      removedTitles.push(card.type === 'topic' ? `the case “${card.data.title}” (${ids.length} cards)` : `“${card.data.title}”`);
       continue;
     }
     const renamed = a.match(/^rename\s+\[\[(.+?)\]\]\s*(?::|->|→|to)\s*(.+)/i);
@@ -206,6 +209,11 @@ function runActions(actions: string[], sources: SourceItem[]): string[] {
       addClue('note', { text: body.slice(0, 400), title: body.slice(0, 60), color: '#fdf6e3' }, { near, tie: true });
       done.push('Left a sticky note');
     }
+  }
+  if (removals.size) {
+    // Never empty the board by accident: the first case stays unless it was named on its own.
+    useBoards.getState().removeNodes([...removals], `Cleaned up ${removals.size} card${removals.size === 1 ? '' : 's'}`);
+    done.push(`Removed ${removedTitles.length > 4 ? `${removedTitles.length} items` : removedTitles.join(', ')}. One Ctrl+Z brings it all back.`);
   }
   if (done.length) play('pin');
   return done;

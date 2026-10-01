@@ -84,6 +84,8 @@ export interface Analysis {
   questions: string[];
   /** Evidence numbers the AI judged off-topic (server-internal). */
   offtopic?: number[];
+  /** Evidence numbers the AI chose for the board, best first (server-internal). */
+  keep?: number[];
   /** Key evidence and the card it supports, with what it shows ("first account of the chat's removal"). */
   cites?: { item: string; entity: string; label?: string }[];
   /** Evidence numbers behind `cites`, before the server maps them to items (server-internal). */
@@ -121,7 +123,8 @@ export interface ProviderInfo {
 export type DigEvent =
   | { type: 'status'; message: string; level?: 'info' | 'warn' }
   | { type: 'source-start'; source: string }
-  | { type: 'source'; source: string; items: SourceItem[] }
+  /** `limit`: how many of these to pin (research batches are pinned whole, then curated). */
+  | { type: 'source'; source: string; items: SourceItem[]; limit?: number }
   | { type: 'source-error'; source: string; error: string }
   | { type: 'primary'; primary: Primary }
   | { type: 'analysis'; analysis: Analysis }
@@ -134,6 +137,10 @@ export type DigEvent =
   | { type: 'thumbs'; images: Record<string, string> }
   /** Item ids the AI judged off-topic; the board unpins them. */
   | { type: 'prune'; ids: string[] }
+  /** Item ids that are good but not the best: moved off the board into the case's "More finds". */
+  | { type: 'extras'; ids: string[] }
+  /** A who's-who list from the subject's wiki (characters, members), pinned as one card of portraits. */
+  | { type: 'gallery'; gallery: { title: string; url: string; source: string; items: SourceItem[] } }
   | { type: 'error'; message: string }
   /** Heartbeat so the client can tell a slow answer from a dead connection. */
   | { type: 'ping' }

@@ -23,7 +23,7 @@ const META_WORDS = new Set(
 );
 
 /** Questions about the board itself ("strangest detail on this board?") are answered from the board, not the archives. */
-const ABOUT_THE_BOARD = /\b(this|the|my|our)\s+(board|investigation|cards?|clues?|evidence)\b|\bthese\s+(cards?|clues?|cases?|photos?|sources?|people)\b|\bon (the|this|my) board\b|\b(contradict\w*|skeptic\w*|summari[sz]e|recap|so far)\b/i;
+const ABOUT_THE_BOARD = /\b(clean|tidy|declutter|remove|delete|get rid of|unpin)\b|\b(this|the|my|our)\s+(board|investigation|cards?|clues?|evidence)\b|\bthese\s+(cards?|clues?|cases?|photos?|sources?|people)\b|\bon (the|this|my) board\b|\b(contradict\w*|skeptic\w*|summari[sz]e|recap|so far)\b/i;
 
 export const app = new Hono<{ Variables: { visitor?: Visitor } }>();
 
@@ -72,7 +72,27 @@ function ndjson<E extends { type: string }>(c: Context, run: (emit: (e: E) => vo
   });
 }
 
-app.get('/api/health', (c) => c.json({ ok: true, ai: resolveProviders().length > 0, signIn: !!authProject(), node: process.version }));
+app.get('/api/health', async (c) => {
+  const base = { ok: true, ai: resolveProviders().length > 0, signIn: !!authProject(), node: process.version };
+  if (!c.req.query('probe')) return c.json(base);
+  // Which outside services this server can reach (status codes only, nothing user-specific).
+  const probe = async (url: string) => {
+    const t0 = Date.now();
+    try {
+      const r = await fetch(url, { headers: { 'User-Agent': 'RabbitHole health check' }, signal: AbortSignal.timeout(12000) });
+      return `${r.status} in ${Date.now() - t0}ms`;
+    } catch (e) {
+      return `failed: ${errMsg(e)}`;
+    }
+  };
+  const [pullpush, reddit, wiki, gnews] = await Promise.all([
+    probe('https://api.pullpush.io/reddit/search/submission/?ids=1azw9tr'),
+    probe('https://www.reddit.com/r/MobileGaming/comments/1azw9tr/.json'),
+    probe('https://en.wikipedia.org/api/rest_v1/page/summary/Rabbit_hole'),
+    probe('https://news.google.com/rss/search?q=test'),
+  ]);
+  return c.json({ ...base, reach: { pullpush, reddit, wiki, gnews } });
+});
 
 // When sign-in is on, every other API call must carry a valid Firebase ticket.
 app.use('/api/*', async (c, next) => {

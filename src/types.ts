@@ -13,7 +13,8 @@ export type ClueType =
   | 'question'
   | 'quote'
   | 'map'
-  | 'label';
+  | 'label'
+  | 'gallery';
 
 export interface MapPoint {
   lat: number;
@@ -54,6 +55,10 @@ export type ClueData = {
   points?: MapPoint[];
   width?: number;
   height?: number;
+  /** A gallery card's portraits (a wiki's list of characters, members…). */
+  items?: { title: string; image?: string; url?: string }[];
+  /** Good finds that didn't make the case's hand-picked board, one click from being pinned. */
+  extras?: SourceItem[];
 };
 
 export type ClueNode = Node<ClueData, ClueType>;
