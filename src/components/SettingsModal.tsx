@@ -1,5 +1,6 @@
 import clsx from 'clsx';
 import { Download, Upload, X } from 'lucide-react';
+import { PictureButton } from './ShareModal';
 import { useRef, type ReactNode } from 'react';
 import { SOURCE_GROUPS, SOURCES } from '../../shared/sources';
 import { currentBoard, useBoards } from '../store/boards';
@@ -150,6 +151,7 @@ function DataTab() {
           <button onClick={exportBoard} className="chip">
             <Download size={14} /> Export as file
           </button>
+          <PictureButton />
           <button onClick={() => file.current?.click()} className="chip">
             <Upload size={14} /> Import a hole
           </button>

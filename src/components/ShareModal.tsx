@@ -1,7 +1,9 @@
 import clsx from 'clsx';
-import { Check, Cloud, CloudOff, Copy, Link2, LoaderCircle, Share2, X } from 'lucide-react';
+import { Check, Cloud, CloudOff, Copy, ImageDown, Link2, LoaderCircle, Share2, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { shareBoard, sharedLink, stopSharing, useCloud } from '../lib/cloud';
+import { downloadBoardPicture } from '../lib/snapshot';
 import { useBoards } from '../store/boards';
 import { useUi } from '../store/ui';
 
@@ -10,6 +12,27 @@ const NOTES = {
   saved: 'Saved to your account. Your boards follow you to any device you sign in on.',
   offline: "Can't reach your account right now. Your boards are safe on this device and will save when the connection is back.",
 } as const;
+
+/** Downloads the whole board as a PNG, ready to post. */
+export function PictureButton({ className = 'chip' }: { className?: string }) {
+  const [busy, setBusy] = useState(false);
+  const save = async () => {
+    setBusy(true);
+    try {
+      await downloadBoardPicture();
+      useUi.getState().set({ toast: { text: 'Saved the board as a picture', at: Date.now() } });
+    } catch (e) {
+      useUi.getState().set({ toast: { text: e instanceof Error ? e.message : "Couldn't make the picture.", at: Date.now() } });
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <button onClick={() => void save()} disabled={busy} className={clsx(className, 'disabled:opacity-60')}>
+      {busy ? <LoaderCircle size={14} className="animate-spin" /> : <ImageDown size={14} />} {busy ? 'Making the picture…' : 'Save as picture'}
+    </button>
+  );
+}
 
 /** Top-bar save indicator and the Share button. Both stay hidden when there's no account to save to. */
 export function CloudStatus() {
@@ -30,7 +53,8 @@ export function CloudStatus() {
         <Share2 size={14} />
         <span className="hidden lg:inline">Share</span>
       </button>
-      {open && <ShareModal onClose={() => setOpen(false)} />}
+      {/* Drawn at the top of the page, so the top bar's styles (no wrapping, tight layout) don't leak in. */}
+      {open && createPortal(<ShareModal onClose={() => setOpen(false)} />, document.body)}
     </>
   );
 }
@@ -118,7 +142,11 @@ function ShareModal({ onClose }: { onClose: () => void }) {
           </button>
         )}
         {error && <div className="mt-3 rounded-md bg-[#b3261e]/10 px-3 py-2 text-[12.5px] text-[#8c1d17]">{error}</div>}
-        <p className="mt-4 border-t border-dashed border-ink/15 pt-3 text-[11.5px] leading-snug text-ink-soft">
+        <div className="mt-4 flex items-center gap-3 border-t border-dashed border-ink/15 pt-3">
+          <PictureButton />
+          <span className="text-[12px] leading-snug text-ink-soft">The whole board as one image, for posting anywhere.</span>
+        </div>
+        <p className="mt-3 text-[11.5px] leading-snug text-ink-soft">
           Strings between cards are suggested by AI and can be wrong, especially about real people. Check the sources before you share a theory as fact.
         </p>
       </div>

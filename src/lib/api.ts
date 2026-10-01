@@ -119,4 +119,11 @@ export const api = {
     if (!res.ok) return [];
     return ((await res.json()) as { available: string[] }).available;
   },
+
+  /** A picture from another site, fetched by our server so it can go into a saved board picture. */
+  async image(url: string): Promise<Blob> {
+    const res = await call(`/api/image?url=${encodeURIComponent(url)}`);
+    if (!res.ok) throw new Error(await readError(res));
+    return res.blob();
+  },
 };

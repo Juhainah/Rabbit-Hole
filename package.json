@@ -26,6 +26,7 @@
     "dotenv": "^18.0.4",
     "fast-xml-parser": "^5.11.1",
     "hono": "^4.13.9",
+    "html-to-image": "1.11.11",
     "idb-keyval": "^6.3.0",
     "jose": "^6.2.12",
     "jsdom": "^26.1.0",
