@@ -95,6 +95,8 @@ interface BoardsState {
   removeEdge: (id: string) => void;
 
   addTimeline: (entries: TimelineEntry[]) => void;
+  /** Changes one moment on the timeline, or removes it when the change is null. Undoable. */
+  editTimeline: (id: string, change: Partial<TimelineEntry> | null) => void;
   addTrail: (step: TrailStep) => void;
   nextCaseNo: () => number;
 
@@ -267,6 +269,12 @@ export const useBoards = create<BoardsState>()(
         },
 
         addTimeline: (entries) => patch((b) => ({ timeline: [...b.timeline, ...entries] })),
+        editTimeline: (id, change) => {
+          snap(change ? 'Edited a moment' : 'Removed a moment');
+          patch((b) => ({
+            timeline: change ? b.timeline.map((t) => (t.id === id ? { ...t, ...change, id } : t)) : b.timeline.filter((t) => t.id !== id),
+          }));
+        },
         addTrail: (step) => patch((b) => ({ trail: [...b.trail, step] })),
         nextCaseNo: () => {
           const b = get().boards[get().currentId];
