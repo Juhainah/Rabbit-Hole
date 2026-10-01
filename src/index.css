@@ -1554,3 +1554,29 @@ button {
 .react-flow__edgelabel-renderer {
   z-index: 2000;
 }
+
+/* A correction pinned to the case file: the search named something the sources don't support. */
+.premise-slip {
+  position: relative;
+  margin-top: 12px;
+  padding: 18px 12px 9px;
+  background: #fff6c9;
+  border: 1px dashed rgba(168, 112, 0, 0.55);
+  color: #5b4300;
+  font-family: var(--font-ui);
+  font-size: 12.5px;
+  line-height: 1.45;
+  transform: rotate(-0.8deg);
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.15);
+}
+.premise-slip p {
+  margin: 0;
+}
+.premise-stamp {
+  position: absolute;
+  top: -10px;
+  left: 10px;
+  color: #b3261e;
+  background: #fff6c9;
+  font-size: 10.5px;
+}

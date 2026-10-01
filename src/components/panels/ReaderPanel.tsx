@@ -9,6 +9,7 @@ import { addClue, pinUrl, startDig } from '../../lib/dig';
 import { domain, prettyDate } from '../../lib/utils';
 import { currentBoard, useBoards } from '../../store/boards';
 import { useUi } from '../../store/ui';
+import { InThisCase } from './InThisCase';
 
 const ytId = (url: string) => url.match(/(?:youtube\.com\/(?:watch\?v=|shorts\/|embed\/)|youtu\.be\/)([\w-]{11})/)?.[1];
 
@@ -137,8 +138,11 @@ export function ReaderPanel() {
   }
 
   const paras = page.text.split(/\n{2,}/).filter((p) => p.trim().length > 1);
+  // Reading an index card's page: its part in the case comes before the general article.
+  const card = currentBoard().nodes.find((n) => n.id === selected && n.data.url === url && n.type === 'entity');
   return (
     <div className="px-4 py-4">
+      {card && <InThisCase node={card} page={page} />}
       {page.via === 'wayback' && (
         <div className="mb-2 inline-block rotate-[-1deg] bg-[#fff3cd] px-2 py-1 font-type text-[11px] text-[#7a5a00] shadow-sm">
           recovered from the Wayback Machine{page.archivedAt ? `, ${page.archivedAt.slice(0, 4)}` : ''}

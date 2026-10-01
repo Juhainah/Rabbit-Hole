@@ -102,6 +102,12 @@ export function TopicNode({ id, data, selected }: P) {
             </div>
           )}
         </div>
+        {data.premise && (
+          <div className="premise-slip" role="note">
+            <span className="stamp premise-stamp">Check this</span>
+            <p>{data.premise}</p>
+          </div>
+        )}
         {data.hook && <p className="font-hand text-[21px] leading-[1.05] text-[#7a1d17] mt-2.5">{data.hook}</p>}
         {data.text ? (
           <p className="nowheel mt-2.5 text-[12.5px] leading-[1.55] text-ink/85 line-clamp-[10]">{data.text}</p>

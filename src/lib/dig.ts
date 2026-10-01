@@ -127,7 +127,8 @@ export async function startDig(opts: { query: string; parentId?: string; url?: s
 
   const applyAnalysis = (a: Analysis) => {
     const s = useBoards.getState();
-    s.updateNode(topicId, { title: a.title || query, hook: a.hook, text: a.summary, statusText: 'Mapping connections…' });
+    s.updateNode(topicId, { title: a.title || query, hook: a.hook, text: a.summary, premise: a.premise, statusText: 'Mapping connections…' });
+    if (a.premise) useUi.getState().log(`⚠ ${a.premise}`, 'warn');
 
     const nodes: ClueNode[] = [];
     const edges: StringEdge[] = [];
@@ -145,6 +146,12 @@ export async function startDig(opts: { query: string; parentId?: string; url?: s
       nodes.push(n);
     });
     const idFor = (name: string) => (name === 'TOPIC' ? topicId : entityIds.get(name.toLowerCase()));
+    // Key evidence, strung to the card it is evidence for, labelled with what it shows.
+    for (const c of a.cites ?? []) {
+      const ev = itemNodes.get(c.item);
+      const to = idFor(c.entity);
+      if (ev && to && ev !== to) edges.push(makeEdge(to, ev, { kind: 'evidence', label: c.label }));
+    }
     const linked = new Set<string>();
     for (const r of a.relations) {
       const from = idFor(r.from);

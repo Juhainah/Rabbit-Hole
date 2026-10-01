@@ -179,9 +179,31 @@ function runActions(actions: string[], sources: SourceItem[]): string[] {
       }
       continue;
     }
+    const gone = a.match(/^remove\s+\[\[(.+?)\]\]/i);
+    if (gone) {
+      const card = findCard(gone[1]);
+      if (card && card.type !== 'topic') {
+        useBoards.getState().removeNodes([card.id], `Removed “${card.data.title}”`);
+        done.push(`Removed “${card.data.title}” (Ctrl+Z brings it back)`);
+      }
+      continue;
+    }
+    const renamed = a.match(/^rename\s+\[\[(.+?)\]\]\s*(?::|->|→|to)\s*(.+)/i);
+    if (renamed) {
+      const card = findCard(renamed[1]);
+      if (card) {
+        useBoards.getState().snapshot(`Renamed “${card.data.title}”`);
+        useBoards.getState().updateNode(card.id, { title: renamed[2].replace(/^["“]|["”]$/g, '').trim().slice(0, 90) });
+        done.push(`Renamed “${card.data.title}”`);
+      }
+      continue;
+    }
     const note = a.match(/^note\s+(.+)/i);
     if (note) {
-      addClue('note', { text: note[1].slice(0, 400), title: note[1].slice(0, 60), color: '#fdf6e3' }, { near, tie: true });
+      // Some models copy the instruction wording ("the text of a sticky note: …"); keep only the note.
+      const body = note[1].replace(/^(the\s+)?text\s+of\s+(a|the)\s+sticky\s+note\s*:?\s*/i, '').replace(/^["“](.*)["”]$/s, '$1').trim();
+      if (!body) continue;
+      addClue('note', { text: body.slice(0, 400), title: body.slice(0, 60), color: '#fdf6e3' }, { near, tie: true });
       done.push('Left a sticky note');
     }
   }

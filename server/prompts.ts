@@ -4,12 +4,13 @@ import { sourceMeta } from '../shared/sources';
 const DIG_SYSTEM = `You are the research engine inside "Rabbit Hole", an app where curious people fall down rabbit holes on a detective-style evidence board. You receive a topic plus raw evidence from many sources, and you turn it into a web of clues.
 
 Rules:
-- Be factual. Lean on the evidence; add well-established facts only when confident. Flag speculation as speculation.
+- Use only facts that appear in the MAIN ARTICLE or the EVIDENCE. Never fill gaps from memory: no names, companies, dates, places or claims the sources don't contain. If the evidence is thin, make a small case and say so. Flag speculation as speculation.
 - Prefer the surprising, strange and specific: names, dates, places, numbers, documents.
 - Entities are concrete things (a real person, place, organisation, event, object, work, or a named concept), never vague themes.
 - Relations should form a WEB: connect entities to each other, not only to the topic.
 - Tangents are the rabbit holes: adjacent, genuinely intriguing topics a curious person would click next. Each hook must create an itch to know more. Never just rephrase the topic.
 - Questions are open mysteries, contradictions, or live debates.
+- The timeline is what happened in the story (releases, removals, incidents, rulings, when a rumour began), never when an article or video about it was published.
 - Output ONLY a JSON object. No markdown, no commentary.`;
 
 const SCHEMA = `{
@@ -22,9 +23,11 @@ const SCHEMA = `{
   "tangents": [{"title": "", "hook": "one sentence on why it's a rabbit hole", "query": "best search query for it"}],
   (tangents must connect through substance: the same people, events, places, phenomena or mechanisms; never through a shared word or name, like another person who happens to be called the same)
   "questions": ["open question"],
-  "offtopic": [evidence numbers that are NOT really about this topic, e.g. lists or posts that only mention it in passing]
+  "cites": [{"evidence": 3, "entity": "exact entity name from entities", "label": "2-5 words: what this source shows about it"}],
+  "offtopic": [evidence numbers that are NOT really about this topic, e.g. lists or posts that only mention it in passing],
+  "premise": "one sentence if the topic as typed contains a name, link or claim the evidence does not support (a wrong company, a connection no source documents), saying what the sources do show; otherwise an empty string"
 }
-Counts: 7-10 entities, 8-14 relations, 4-8 timeline items, 5-7 tangents, 2-4 questions. offtopic may be empty.`;
+Counts: 7-10 entities, 8-14 relations, 4-8 timeline items, 5-7 tangents, 2-4 questions, 4-12 cites (every important piece of evidence, especially first-hand accounts, threads and documents, tied to the entity it is evidence about). offtopic may be empty.`;
 
 /** `compact` trims the case file for small/anonymous models that choke on long prompts. */
 export function digMessages(
@@ -34,9 +37,15 @@ export function digMessages(
   evidence: SourceItem[],
   compact = false,
   fromCase?: string,
+  premiseNote?: string,
+  venue?: string,
 ): ChatMessage[] {
   const lines: string[] = [`TOPIC: ${topic}`];
-  if (fromCase) {
+  if (premiseNote) lines.push(`PREMISE CHECK: ${premiseNote} Build the case only from what the evidence shows, and say this plainly in "premise".`);
+  if (venue && fromCase) {
+    lines.push(`THIS DIG COLLECTS WHAT PEOPLE ON ${venue.toUpperCase()} SAY ABOUT "${fromCase}". Summarise those discussions: the claims, who made them, what was debunked. Do not describe ${venue} itself.`);
+  }
+  if (fromCase && !venue) {
     lines.push(
       `THIS IS A DEEPER DIG INSIDE THE CASE "${fromCase}". The user wants ${topic}'s part in that story: make the summary, hook, entities and relations about how ${topic} connects to ${fromCase}, as far as the evidence shows. If the sources show no real link, say so plainly instead of inventing one. Background that has nothing to do with ${fromCase} goes in "offtopic".`,
     );
@@ -124,6 +133,7 @@ export function normalizeAnalysis(raw: any, topic: string): Analysis {
   return {
     title: str(raw.title, 80) || topic,
     summary: str(raw.summary, 1400),
+    premise: str(raw.premise, 320) || undefined,
     hook: str(raw.hook, 240),
     entities,
     relations,
@@ -139,6 +149,10 @@ export function normalizeAnalysis(raw: any, topic: string): Analysis {
       .map((q) => str(typeof q === 'string' ? q : q?.question, 240))
       .filter(Boolean)
       .slice(0, 5),
+    citations: list(raw.cites)
+      .map((c) => ({ evidence: Number(c?.evidence), entity: str(c?.entity, 80), label: str(c?.label, 40) || undefined }))
+      .filter((c) => Number.isInteger(c.evidence) && c.evidence > 0 && c.entity)
+      .slice(0, 16),
     offtopic: list(raw.offtopic)
       .map((n) => Number(n))
       .filter((n) => Number.isInteger(n) && n > 0),
@@ -149,6 +163,8 @@ export const CHAT_SYSTEM = `You are the user's research partner inside "Rabbit H
 
 - Everything is about the user's investigation. When they ask about a card (a city, a person, an object), answer about its role in THEIR case, never a generic encyclopedia entry.
 - Answer directly first, then add the fascinating details.
+- Only state facts found in the SOURCES or the BOARD CONTEXT. If neither covers something, say you don't know rather than guessing; never invent companies, dates, places, quotes or links.
+- If the user says they made a mistake (a wrong name, a typo), agree plainly, say what the sources actually show, and offer to tidy up with the remove or rename actions below.
 - Use short paragraphs and tight bullet lists. Bold the key names.
 - When SOURCES are provided, cite them inline as [1], [2]. Never invent citations.
 - Separate established fact from theory and speculation.
@@ -156,10 +172,12 @@ export const CHAT_SYSTEM = `You are the user's research partner inside "Rabbit H
 - If the board context is relevant, connect your answer to clues already on the board.
 - Whenever you mention a card that is on the board, write its EXACT title in double square brackets, like [[Leonid Kulik]]. The user can click it to fly to that card. Only link titles that appear in the CARDS list.
 - Asked where cards came from ("anything from the Smithsonian?", "is there data.gov stuff?"), answer from WHERE THE CARDS CAME FROM: name the archive (and the other name it goes by) and link EVERY one of its cards as [[exact title]], copying the title exactly as listed. Never say a source is missing without checking that list.
-- You can act on the board. When the user asks you to add, pin, bring, show, connect or note something, put one line per action right before the TANGENTS line:
+- You can act on the board. When the user asks you to add, pin, bring, show, connect, note, remove or rename something, put one line per action right before the TANGENTS line:
   ACTION: pin 3            (pins source [3]; use for photos, documents, videos. Several: ACTION: pin 2, 5)
   ACTION: connect [[Card A]] -> [[Card B]] : short label
-  ACTION: note the text of a sticky note
+  ACTION: note Chat feature removed in 2014; no abuse was ever proven [3]
+  ACTION: remove [[Card]]          (only when the user asks to remove or clean up)
+  ACTION: rename [[Card]] : New title
   ACTION: add to [[Card]] : a fact to write on that card, ending with its source like [2]
   ACTION: card person Jeffrey Epstein : one line on who this is in the case
     (card kinds: person, place, event, org, object, concept; then connect it in the same reply)

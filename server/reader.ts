@@ -107,11 +107,16 @@ const reddit: Reader = async (url) => {
   ]);
   const p = post.data?.[0];
   if (!p) return null;
-  const r = base(url, p.title);
+  const r = base(url, p.title || 'Reddit thread');
   r.siteName = `r/${p.subreddit}`;
   r.byline = p.author ? `u/${p.author}` : undefined;
   r.published = p.created_utc ? new Date(p.created_utc * 1000).toISOString().slice(0, 10) : undefined;
-  r.text = p.selftext && p.selftext !== '[removed]' ? p.selftext : p.url && !String(p.url).includes('reddit.com') ? `Link post: ${p.url}` : '';
+  r.text =
+    p.selftext && !['[removed]', '[deleted]'].includes(p.selftext)
+      ? p.selftext
+      : p.url && !String(p.url).includes('reddit.com')
+        ? `Link post: ${p.url}`
+        : `_The post's own text was removed. Here is what people said underneath._`;
   r.format = 'markdown';
   r.comments = (comments.data ?? [])
     .filter((c: any) => c.body && c.body !== '[deleted]' && c.body !== '[removed]')
@@ -184,6 +189,17 @@ export function looksBlocked(r: ScrapeResult) {
 }
 
 /** Read any link: site API first, then the page, then the Wayback Machine, then an honest "locked". */
+/** Jina Reader returns any public page as clean text. A backup for sites that block servers. */
+async function readViaJina(url: URL): Promise<ScrapeResult | null> {
+  const res = await fetch(`https://r.jina.ai/${url.toString()}`, { headers: { Accept: 'application/json', 'X-Return-Format': 'markdown' }, signal: AbortSignal.timeout(25000) });
+  if (!res.ok) return null;
+  const j = (await res.json().catch(() => null)) as { data?: { title?: string; content?: string; url?: string } } | null;
+  const text = (j?.data?.content ?? '').trim();
+  // A login wall or bot check is not the page.
+  if (text.length < 400 || WALL.test(text.slice(0, 600)) || /you've been blocked|verify you are human|log in to continue/i.test(text.slice(0, 800))) return null;
+  return { ...base(url, j?.data?.title || url.hostname), text: text.slice(0, 150000), format: 'markdown', via: 'reader', siteName: url.hostname.replace(/^www\./, '') };
+}
+
 export async function readAnything(raw: string): Promise<ScrapeResult> {
   const url = assertPublicUrl(raw);
   const host = url.hostname.replace(/^www\./, '');
@@ -205,7 +221,11 @@ export async function readAnything(raw: string): Promise<ScrapeResult> {
   }
   if (page && !looksBlocked(page) && page.text.trim().length > 200) return page;
 
-  // Blocked or empty: the Wayback Machine often has a clean copy.
+  // Blocked or empty: a reading service fetches it from elsewhere (free, no key needed).
+  const viaJina = await readViaJina(url).catch(() => null);
+  if (viaJina) return viaJina;
+
+  // Still nothing: the Wayback Machine often has a clean copy.
   const snap = await getJson(`https://archive.org/wayback/available?url=${enc(url.toString())}`, { timeout: 12000 }).catch(() => null);
   const s = snap?.archived_snapshots?.closest;
   if (s?.available) {

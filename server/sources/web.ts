@@ -7,8 +7,27 @@ const HTML_HEADERS = { 'User-Agent': BROWSER_UA, Accept: 'text/html', 'Accept-La
 const braveQueue = throttle(2500);
 const ddgQueue = throttle(3000);
 
+const FORUM_SITES: Record<string, string> = { 'quora.com': 'Quora', 'abovetopsecret.com': 'AboveTopSecret', 'unexplained-mysteries.com': 'Unexplained Mysteries', 'godlikeproductions.com': 'Godlike Productions', 'archive.4plebs.org': '4chan /x/', 'metafilter.com': 'MetaFilter', 'stackexchange.com': 'Stack Exchange', 'tildes.net': 'Tildes', 'city-data.com': 'City-Data', 'forums.somethingawful.com': 'Something Awful' };
+
 function toItem(url: string, title: string, snippet: string, source = 'web'): SourceItem {
   const h = host(url);
+  // A Reddit thread or forum post found by web search is a discussion, and is shown as one.
+  const thread = url.match(/reddit\.com\/r\/([^/]+)\/comments\/([a-z0-9]+)/i);
+  if (thread) {
+    return {
+      id: `reddit:${thread[2]}`,
+      source: 'reddit',
+      kind: 'post',
+      title: title.replace(/\s*:\s*r\/\w+\s*$/i, '').replace(/\s*[-|]\s*Reddit\s*$/i, '').trim() || 'Reddit thread',
+      snippet: snippet.replace(/\s+/g, ' ').trim(),
+      url,
+      meta: { sub: `r/${thread[1]}` },
+    };
+  }
+  const forum = h && Object.entries(FORUM_SITES).find(([site]) => h === site || h.endsWith(`.${site}`));
+  if (forum) {
+    return { id: `forums:${url}`, source: 'forums', kind: 'post', title: title.replace(/\s*[-|]\s*Quora\s*$/i, '').trim() || h!, snippet: snippet.replace(/\s+/g, ' ').trim(), url, meta: { sub: forum[1] } };
+  }
   return {
     id: `${source}:${url}`,
     source,
@@ -293,7 +312,7 @@ export const siteSearchers: Record<string, SearchFn> = Object.fromEntries(
       return items
         .filter((it) => sites.some((s) => host(it.url)?.endsWith(s)))
         .slice(0, limit)
-        .map((it) => ({ ...it, id: `${id}:${it.url}`, source: id }));
+        .map((it) => (it.kind === 'post' ? it : { ...it, id: `${id}:${it.url}`, source: id }));
     }) satisfies SearchFn,
   ]),
 );

@@ -92,8 +92,85 @@ function hitsIn(toks: string[], p: Phrasing): Set<string> {
   return hit;
 }
 
-function passes(toks: string[], p: Phrasing, lenient: boolean): boolean {
+export interface PremiseCheck {
+  /** The search with typos and unconnected names taken out ("talking angela theories"). */
+  focus: string;
+  /** Names no result contains at all ("storm8" next to Talking Angela). */
+  unknown: string[];
+  /** Names the results mention, but never together with the rest of the search. */
+  unlinked: string[];
+  /** Misspellings and the word the results use instead ({ theroies: "theories" }). */
+  typos: Record<string, string>;
+}
+
+/**
+ * Checks a search against what the web actually says before digging. Words that
+ * appear in no result are dropped (typos), and a name that only ever appears
+ * apart from the rest of the search is flagged rather than built into the case.
+ */
+export function checkPremise(q: string, docs: { title: string; snippet?: string }[]): PremiseCheck {
+  const none: PremiseCheck = { focus: q, unknown: [], unlinked: [], typos: {} };
+  const p = phrasing(q);
+  if (p.anchors.length < 2 || docs.length < 3) return none;
+  const docToks = docs.map((d) => tokens(`${d.title} ${d.snippet ?? ''}`));
+  const mentions = (a: string) => docToks.filter((dt) => positions(dt, a).length).length;
+  const present = p.anchors.filter((a) => mentions(a) > 0);
+  if (!present.length) return none; // nothing matched at all: leave it to the dig to say so
+  // Group the words that appear together in results; the biggest group is the real subject.
+  const root = new Map(present.map((a) => [a, a]));
+  const find = (a: string): string => (root.get(a) === a ? a : find(root.get(a)!));
+  for (const dt of docToks) {
+    const here = present.filter((a) => positions(dt, a).length);
+    for (const a of here.slice(1)) root.set(find(a), find(here[0]));
+  }
+  const weight = new Map<string, number>();
+  for (const a of present) weight.set(find(a), (weight.get(find(a)) ?? 0) + mentions(a));
+  const main = [...weight].sort((a, b) => b[1] - a[1])[0][0];
+  const unlinkedStems = present.filter((a) => find(a) !== main);
+  const unknownStems = p.anchors.filter((a) => !present.includes(a));
+  // Keep the words as typed, minus the dropped ones.
+  const typed = tokens(q);
+  const original = (stems: string[]) => stems.map((s) => typed.find((w) => stem(w) === s) ?? s);
+  // A word missing from every result is either a typo of one that's there, or a name nobody connects.
+  const seenWords = new Set(docToks.flat().filter((w) => w.length >= 4));
+  const typos: Record<string, string> = {};
+  for (const w of original(unknownStems)) {
+    const near = [...seenWords].find((s) => Math.abs(s.length - w.length) <= 2 && editDistance(w, s) <= (w.length >= 6 ? 2 : 1));
+    if (near) typos[w] = near;
+  }
+  const unknown = original(unknownStems).filter((w) => !typos[w]);
+  const unlinked = original(unlinkedStems);
+  const drop = new Set([...unknown, ...unlinked]);
+  const focus = typed.filter((w) => !drop.has(w)).map((w) => typos[w] ?? w).join(' ');
+  return { focus: focus || q, unknown, unlinked, typos };
+}
+
+/** Optimal string alignment distance: "theroies" → "theories" is 1 (a swap). */
+function editDistance(a: string, b: string): number {
+  const d = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]);
+  for (let j = 1; j <= b.length; j++) d[0][j] = j;
+  for (let i = 1; i <= a.length; i++)
+    for (let j = 1; j <= b.length; j++) {
+      d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) d[i][j] = Math.min(d[i][j], d[i - 2][j - 2] + 1);
+    }
+  return d[a.length][b.length];
+}
+
+/**
+ * A thread title names its subject and little else ("My Dark History With Star Girl"), so a post
+ * passes when it names the subject, the first name in the search, even without the descriptive words.
+ */
+function namesFirstSubject(toks: string[], p: Phrasing): boolean {
+  const pair = p.pairs[0];
+  if (!pair || p.anchors.indexOf(pair[0]) !== 0) return false;
+  const hit = hitsIn(toks, p);
+  return hit.has(pair[0]) && hit.has(pair[1]);
+}
+
+function passes(toks: string[], p: Phrasing, lenient: boolean, post = false): boolean {
   if (!p.all.length) return true;
+  if (post && p.anchors.length > 2 && namesFirstSubject(toks, p)) return true;
   if (!p.anchors.length) return p.all.filter((w) => positions(toks, w).length).length >= Math.ceil(p.all.length / 2);
   const hits = hitsIn(toks, p).size;
   const n = p.anchors.length;
@@ -148,7 +225,7 @@ export function relevanceFilter(topic: Topic) {
       const title = tokens(item.title);
       if (!ps.some((p) => hitsIn(title, p).size > 0)) return false;
     }
-    if (!ps.some((p) => passes(toks, p, LENIENT.has(item.source)))) return false;
+    if (!ps.some((p) => passes(toks, p, LENIENT.has(item.source), item.kind === 'post'))) return false;
     // Named only in passing (a line-up, an author list)? Then it must also touch the case's
     // subject, or it's likely a namesake: Leonid Kulik the noise band, not the meteorite hunter.
     if (ctx.size && !LENIENT.has(item.source) && !ps.some((p) => hitsIn(tokens(item.title), p).size)) return toks.some((t) => ctx.has(stem(t)));

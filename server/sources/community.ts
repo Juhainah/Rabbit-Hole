@@ -73,8 +73,8 @@ export const reddit: SearchFn = async (q, { limit, signal }) => {
     });
   archived.sort((a: any, b: any) => (b.score ?? 0) + (b.num_comments ?? 0) - ((a.score ?? 0) + (a.num_comments ?? 0)));
   const items: SourceItem[] = archived.slice(0, limit).map(redditItem);
-  if (items.length >= Math.min(2, limit)) return items;
-  // Too little: the threads a search engine ranks best for this topic.
+  if (items.length >= limit) return items;
+  // Not enough: add the threads a search engine ranks best for this topic.
   const found = await webSearch(`${q} site:reddit.com`, limit + 3, signal).catch(() => []);
   const seen = new Set(items.map((i) => i.url));
   for (const it of found) {

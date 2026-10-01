@@ -42,6 +42,8 @@ export type ClueData = {
   media?: SourceItem['media'];
   query?: string;
   hook?: string;
+  /** A correction to the search that opened this case ("no source connects Storm8…"). */
+  premise?: string;
   status?: 'digging' | 'done' | 'error';
   statusText?: string;
   depth?: number;

@@ -84,6 +84,12 @@ export interface Analysis {
   questions: string[];
   /** Evidence numbers the AI judged off-topic (server-internal). */
   offtopic?: number[];
+  /** Key evidence and the card it supports, with what it shows ("first account of the chat's removal"). */
+  cites?: { item: string; entity: string; label?: string }[];
+  /** Evidence numbers behind `cites`, before the server maps them to items (server-internal). */
+  citations?: { evidence: number; entity: string; label?: string }[];
+  /** A correction to the search itself: a name no source connects, a likely mix-up, or "almost nothing found". */
+  premise?: string;
 }
 
 export interface Primary {
