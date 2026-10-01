@@ -1,5 +1,5 @@
-import { JSDOM } from 'jsdom';
 import type { SourceItem } from '../../shared/types';
+import { parseHtml } from '../dom';
 import { BROWSER_UA, enc, getJson, getText, stripHtml, throttle } from '../http';
 import { host, type SearchFn } from './types';
 
@@ -24,7 +24,7 @@ async function brave(q: string, limit: number, signal?: AbortSignal): Promise<So
   const html = await braveQueue(() =>
     getText(`https://search.brave.com/search?q=${enc(q)}&source=web`, { signal, timeout: 12000, headers: HTML_HEADERS }),
   );
-  const doc = new JSDOM(html).window.document;
+  const doc = await parseHtml(html);
   const out: SourceItem[] = [];
   for (const r of doc.querySelectorAll('.snippet[data-type="web"]')) {
     const a = r.querySelector<HTMLAnchorElement>('a[href^="http"]');
@@ -43,7 +43,7 @@ async function duckduckgo(q: string, limit: number, signal?: AbortSignal): Promi
   const html = await ddgQueue(() =>
     getText(`https://html.duckduckgo.com/html/?q=${enc(q)}&kl=us-en`, { signal, timeout: 12000, headers: HTML_HEADERS }),
   );
-  const doc = new JSDOM(html).window.document;
+  const doc = await parseHtml(html);
   if (doc.querySelector('.anomaly-modal, #challenge-form')) throw new Error('DuckDuckGo asked for a captcha');
   const out: SourceItem[] = [];
   for (const r of doc.querySelectorAll('.result')) {
@@ -243,7 +243,7 @@ export const sep: SearchFn = async (q, { limit, signal }) => {
     signal,
     headers: HTML_HEADERS,
   });
-  const doc = new JSDOM(html).window.document;
+  const doc = await parseHtml(html);
   const out: SourceItem[] = [];
   const seen = new Set<string>();
   for (const a of doc.querySelectorAll<HTMLAnchorElement>('a[href*="entry=/entries/"]')) {

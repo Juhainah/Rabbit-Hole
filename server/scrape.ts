@@ -1,10 +1,7 @@
-import { Readability } from '@mozilla/readability';
-import { JSDOM, VirtualConsole } from 'jsdom';
 import type { Primary, ScrapeResult } from '../shared/types';
+import { parseHtml, readArticle } from './dom';
 import { BROWSER_UA, enc, errMsg, getJson, getText, http } from './http';
 import { youtubeTranscript } from './sources/media';
-
-const quiet = () => new VirtualConsole();
 
 /** Refuse obviously internal addresses so the scraper can't be pointed at the host's own network. */
 export function assertPublicUrl(raw: string): URL {
@@ -57,8 +54,7 @@ async function fetchHtml(url: string): Promise<{ html: string; finalUrl: string;
 export async function scrape(raw: string): Promise<ScrapeResult> {
   const url = assertPublicUrl(raw).toString();
   const { html, finalUrl, via, archivedAt } = await fetchHtml(url);
-  const dom = new JSDOM(html, { url: finalUrl, virtualConsole: quiet() });
-  const doc = dom.window.document;
+  const doc = await parseHtml(html, finalUrl);
   const meta = (sel: string) => doc.querySelector(sel)?.getAttribute('content')?.trim() || undefined;
   const abs = (src?: string | null) => {
     try {
@@ -88,7 +84,7 @@ export async function scrape(raw: string): Promise<ScrapeResult> {
     })
     .slice(0, 60);
 
-  const article = new Readability(doc).parse();
+  const article = await readArticle(doc);
   let text = (article?.textContent ?? '').replace(/[ \t]+/g, ' ').replace(/\n\s*\n+/g, '\n\n').trim();
   let finalVia = via;
   if (text.length < 400 && via === 'direct') {

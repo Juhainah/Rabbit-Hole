@@ -66,7 +66,7 @@ function ndjson<E extends { type: string }>(c: Context, run: (emit: (e: E) => vo
   });
 }
 
-app.get('/api/health', (c) => c.json({ ok: true, ai: resolveProviders().length > 0, signIn: !!authProject() }));
+app.get('/api/health', (c) => c.json({ ok: true, ai: resolveProviders().length > 0, signIn: !!authProject(), node: process.version }));
 
 // When sign-in is on, every other API call must carry a valid Firebase ticket.
 app.use('/api/*', async (c, next) => {
