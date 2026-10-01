@@ -176,7 +176,7 @@ await check('Settings', 'CONTACT_EMAIL', ['CONTACT_EMAIL'], async () => {
 });
 await check('Settings', 'Supabase sign-in', ['VITE_SUPABASE_URL', 'VITE_SUPABASE_ANON_KEY'], async () => {
   const { body } = await fetchJson(`${env('VITE_SUPABASE_URL').replace(/\/+$/, '')}/auth/v1/settings`, { headers: { apikey: env('VITE_SUPABASE_ANON_KEY') } });
-  const on = Object.entries(body?.external ?? {}).filter(([k, v]) => v === true && k !== 'email' && k !== 'phone').map(([k]) => k);
+  const on = Object.entries(body?.external ?? {}).filter(([k, v]) => v === true && k !== 'phone').map(([k]) => k);
   const wanted = (env('VITE_AUTH_PROVIDERS') || 'github').split(',').map((s) => s.trim()).filter(Boolean);
   const missing = wanted.filter((p) => !on.includes(p));
   return { ok: !missing.length, detail: missing.length ? `switch on ${missing.join(' and ')} in Supabase → Authentication → Sign In / Providers` : `project reachable · sign-in with: ${on.join(', ') || 'none yet'}` };
