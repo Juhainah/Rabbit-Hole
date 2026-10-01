@@ -474,12 +474,14 @@ export function askAbout(nodeId: string) {
   const topicName = caseName(node);
   const title = node.data.title;
   let text: string;
-  if (node.type === 'topic') text = `What is the strangest, most disputed part of "${title}"? What would you dig into next?`;
+  if (node.type === 'topic') text = `What actually happened in "${title}"? Give me the key facts in order, then the most interesting open question.`;
   else if (node.type === 'question') text = topicName ? `${title} (in the case of ${topicName})` : title;
   else if (node.type === 'image' || node.type === 'video')
     text = `What does ${node.type === 'image' ? 'this picture' : 'this recording'} show, and where does it come from?${node.data.date ? ` It was saved ${node.data.date}.` : ''}${topicName ? ` What does it add to ${topicName}?` : ''}`;
-  else if (topicName && topicName.toLowerCase() !== title.toLowerCase()) text = `How is "${title}" connected to ${topicName}? What's strange or disputed about that link?`;
-  else text = `What's the story behind "${title}"? What's strange or disputed about it?`;
+  else if (['clip', 'post', 'quote'].includes(String(node.type)))
+    text = topicName ? `What does "${title}" tell us about ${topicName}? Pull out the key facts, names and dates it adds.` : `What are the key facts in "${title}"?`;
+  else if (topicName && topicName.toLowerCase() !== title.toLowerCase()) text = `What is "${title}"'s part in ${topicName}? What do the sources say about it?`;
+  else text = `What's the story behind "${title}"?`;
   ui.set({ chatPrefill: { text, at: Date.now() } });
   ui.openTab('ai');
 }

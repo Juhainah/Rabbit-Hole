@@ -173,7 +173,57 @@ const wikipedia: Reader = async (url) => {
   return r;
 };
 
+/** Fandom wikis: their pages sit behind a bot check, but the wiki's own API serves the article. */
+const fandom: Reader = async (url) => {
+  const title = decodeURIComponent(url.pathname.match(/^\/wiki\/(.+)$/)?.[1] ?? '').replace(/_/g, ' ');
+  if (!title) return null;
+  if (/^File:/i.test(title)) {
+    const info = await getJson(`${url.origin}/api.php?action=query&titles=${enc(title)}&prop=imageinfo&iiprop=url|extmetadata&iiurlwidth=1000&format=json&formatversion=2`, { timeout: 12000 });
+    const ii = info?.query?.pages?.[0]?.imageinfo?.[0];
+    if (!ii) return null;
+    const r = base(url, title.replace(/^File:/i, '').replace(/\.\w+$/, '').replace(/[_-]+/g, ' '));
+    r.siteName = url.hostname.replace(/\.fandom\.com$/, '').replace(/-/g, ' ') + ' wiki';
+    r.image = ii.thumburl ?? ii.url;
+    r.images = [r.image!];
+    r.text = stripHtml(ii.extmetadata?.ImageDescription?.value ?? '', 2000) || 'A picture from the wiki.';
+    r.format = 'text';
+    return r;
+  }
+  const api = `${url.origin}/api.php?action=parse&page=${enc(title)}&prop=text|images|displaytitle&redirects=1&format=json&formatversion=2`;
+  const j = await getJson(api, { timeout: 15000, headers: { 'User-Agent': 'Mozilla/5.0 (compatible; RabbitHole research)' } });
+  const html = String(j?.parse?.text ?? '');
+  if (!html) return null;
+  const r = base(url, stripHtml(j.parse.displaytitle ?? title, 200) || title);
+  r.siteName = url.hostname.replace(/\.fandom\.com$/, '').replace(/-/g, ' ') + ' wiki';
+  // Infoboxes and tables are where character and episode pages keep their facts: keep them as lines.
+  r.text = stripHtml(
+    html
+      .replace(/<(script|style|noscript)[\s\S]*?<\/\1>/gi, ' ')
+      .replace(/<(h[2-6]|th|dt)[^>]*>/gi, '\n')
+      .replace(/<\/(th|dt|h[2-6])>/gi, ': ')
+      .replace(/<\/(td|dd)>/gi, ' · ')
+      .replace(/<\/(p|li|div|tr|section|aside|figure|figcaption)>/gi, '\n')
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/\[\s*edit\s*\]/gi, ''),
+    60000,
+  )
+    .replace(/\[\s*\]/g, '')
+    .replace(/( · )+(\n|$)/g, '$2')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+  r.format = 'text';
+  // Pictures on the page (the API lists file names; their addresses come from one more call).
+  const files = ((j.parse.images ?? []) as string[]).filter((f) => !/(icon|logo|badge|button|wordmark|\.svg$)/i.test(f)).slice(0, 9);
+  if (files.length) {
+    const info = await getJson(`${url.origin}/api.php?action=query&titles=${enc(files.map((f) => `File:${f}`).join('|'))}&prop=imageinfo&iiprop=url&iiurlwidth=640&format=json&formatversion=2`, { timeout: 12000 }).catch(() => null);
+    r.images = ((info?.query?.pages ?? []) as any[]).map((p) => p.imageinfo?.[0]?.thumburl).filter(Boolean);
+    r.image = r.images[0];
+  }
+  return r;
+};
+
 const SPECIAL: [RegExp, Reader][] = [
+  [/(^|\.)fandom\.com$/, fandom],
   [/(^|\.)archive\.org$/, internetArchive],
   [/(^|\.)openlibrary\.org$/, openLibrary],
   [/(^|\.)reddit\.com$/, reddit],
@@ -181,7 +231,7 @@ const SPECIAL: [RegExp, Reader][] = [
   [/(^|\.)wikipedia\.org$/, wikipedia],
 ];
 
-const WALL = /human verification|just a moment|attention required|access denied|are you a robot|captcha|verify you are human|enable javascript|please (log|sign) in|sign in to continue|you('|’)re offline|checking your browser|request unsuccessful/i;
+const WALL = /human verification|security verification|just a moment|attention required|access denied|are you a robot|captcha|verify you are human|enable javascript|please (log|sign) in|sign in to continue|you('|’)re offline|checking your browser|request unsuccessful/i;
 
 /** Looks like a bot check or login wall rather than the page itself. */
 export function looksBlocked(r: ScrapeResult) {
@@ -197,7 +247,7 @@ async function readViaJina(url: URL): Promise<ScrapeResult | null> {
   const j = (await res.json().catch(() => null)) as { data?: { title?: string; content?: string; url?: string } } | null;
   const text = (j?.data?.content ?? '').trim();
   // A login wall or bot check is not the page.
-  if (text.length < 400 || WALL.test(text.slice(0, 600)) || /you've been blocked|verify you are human|log in to continue/i.test(text.slice(0, 800))) return null;
+  if (text.length < 400 || WALL.test(`${j?.data?.title ?? ''} ${text.slice(0, 600)}`) || /you've been blocked|verify you are human|log in to continue/i.test(text.slice(0, 800))) return null;
   return { ...base(url, j?.data?.title || url.hostname), text: text.slice(0, 150000), format: 'markdown', via: 'reader', siteName: url.hostname.replace(/^www\./, '') };
 }
 
@@ -214,7 +264,7 @@ export async function readAnything(raw: string): Promise<ScrapeResult> {
       console.warn(`[reader] ${host} API failed: ${errMsg(e)}`);
       return null;
     });
-    if (r && (r.text || r.comments?.length || r.media)) return r;
+    if (r && (r.text.trim() || r.comments?.length || r.media || r.images?.length)) return r;
   }
 
   let page: ScrapeResult | null = null;

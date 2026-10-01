@@ -348,7 +348,7 @@ export function MediaNode({ id, data, selected }: P) {
     <Card id={id} data={data} selected={selected} className="clue-video" pin="#1f1f1f">
       <div className="screen nodrag nowheel">
         {playing && embed ? (
-          <iframe src={embed} className="absolute inset-0 w-full h-full" allow="autoplay; encrypted-media; picture-in-picture" allowFullScreen title={data.title} />
+          <iframe src={embed} referrerPolicy="strict-origin-when-cross-origin" className="absolute inset-0 w-full h-full" allow="autoplay; encrypted-media; picture-in-picture" allowFullScreen title={data.title} />
         ) : playing && media?.type === 'audio' ? (
           <div className="absolute inset-0 grid place-items-center bg-[#1b1714] p-3">
             {data.image && <img src={data.image} alt="" className="absolute inset-0 opacity-30 blur-sm" />}

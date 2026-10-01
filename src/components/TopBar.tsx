@@ -10,7 +10,7 @@ import { CloudStatus } from './ShareModal';
 
 export function Logo() {
   return (
-    <div className="flex select-none items-center gap-2">
+    <div className="flex shrink-0 select-none items-center gap-2 whitespace-nowrap">
       <svg width="34" height="34" viewBox="0 0 40 40" className="shrink-0">
         <ellipse cx="20" cy="31" rx="16" ry="6" fill="#000" />
         <ellipse cx="20" cy="31" rx="16" ry="6" fill="none" stroke="#6b4a2f" strokeWidth="2" />
@@ -20,7 +20,7 @@ export function Logo() {
         <path d="M23.5 27 C 24 19, 25.5 9, 27 8.5 C 28.5 10, 26.5 20, 25 27 Z" fill="#f2b8b0" />
       </svg>
       <div className="leading-none">
-        <div className="font-hand text-[29px] font-bold tracking-tight text-paper">Rabbit Hole</div>
+        <div className="hidden font-hand text-[29px] font-bold tracking-tight text-paper min-[1280px]:block">Rabbit Hole</div>
       </div>
     </div>
   );
@@ -40,11 +40,11 @@ function DepthMeter() {
   const count = useBoards((s) => s.boards[s.currentId]?.nodes.length ?? 0);
   const level = Math.min(depth, 5);
   return (
-    <div className="hidden items-center gap-2.5 xl:flex" title={`${count} clues on this board`}>
+    <div className="hidden shrink-0 items-center gap-2.5 whitespace-nowrap md:flex" title={`Depth ${depth}: ${DEPTH_NAMES[level]} · ${count} clues on this board`}>
       <div className="relative h-9 w-3 overflow-hidden rounded-full bg-[#0c0907] ring-1 ring-white/10">
         <div className="absolute inset-x-0 top-0 bg-gradient-to-b from-[#8ea67c] via-[#7e5a9b] to-[#c8322f] transition-all duration-700" style={{ height: `${18 + level * 16.4}%` }} />
       </div>
-      <div className="leading-tight">
+      <div className="hidden leading-tight min-[2000px]:block">
         <div className="label-caps !text-paper/50">depth {depth}</div>
         <div className="font-hand text-[18px] text-paper/90">{DEPTH_NAMES[level]}</div>
       </div>
@@ -82,7 +82,7 @@ function DigBar() {
         id="dig-input"
         value={q}
         onChange={(e) => setQ(e.target.value)}
-        placeholder={selected ? 'follow a tangent from here…' : 'What do you want to fall into?  ( / )'}
+        placeholder={selected ? 'follow a tangent from here…' : 'What do you want to fall into?'}
         className="min-w-0 flex-1 bg-transparent py-1.5 font-type text-[15px] text-ink outline-none placeholder:text-ink/40"
       />
       <button className="btn-stamp shrink-0 px-4 py-1.5 text-[13px]">{digging ? 'DIGGING…' : 'DIG ↓'}</button>
@@ -96,11 +96,11 @@ function CaseFilesButton() {
   return (
     <button
       onClick={() => useUi.getState().set({ caseFilesOpen: !open })}
-      className={clsx('flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[13px] transition', open ? 'bg-paper text-ink' : 'text-paper/75 hover:bg-white/5 hover:text-paper')}
+      className={clsx('flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[13px] transition', open ? 'bg-paper text-ink' : 'text-paper/75 hover:bg-white/5 hover:text-paper')}
       title="Every board as a case file"
     >
       <FolderOpen size={16} />
-      <span className="hidden lg:inline">Case files</span>
+      <span className="hidden whitespace-nowrap min-[1700px]:inline">Case files</span>
     </button>
   );
 }
@@ -112,8 +112,8 @@ function BoardSwitcher() {
   const currentId = useBoards((s) => s.currentId);
   const current = rows.find((r) => r.startsWith(`${currentId}\u0000`))?.split('\u0000') ?? [];
   return (
-    <div className="relative">
-      <button onClick={() => setOpen((o) => !o)} className="flex max-w-[220px] items-center gap-2 rounded-lg px-2.5 py-1.5 text-paper/85 transition hover:bg-white/5 hover:text-paper" title="Switch board">
+    <div className="relative shrink-0">
+      <button onClick={() => setOpen((o) => !o)} className="flex max-w-[150px] items-center gap-2 rounded-lg px-2.5 py-1.5 text-paper/85 transition hover:bg-white/5 hover:text-paper min-[1500px]:max-w-[220px]" title="Switch board">
         <span className="text-[17px]">{current[1]}</span>
         <span className="truncate text-[13.5px] font-medium">{current[2]}</span>
         <ChevronDown size={14} className="shrink-0 opacity-60" />
@@ -182,27 +182,30 @@ export function TopBar() {
   const view = useUi((s) => s.view);
   const set = useUi((s) => s.set);
   return (
-    <header className="desk relative z-30 flex h-[62px] shrink-0 items-center gap-4 border-b border-black/50 px-3 shadow-[0_8px_20px_-12px_rgba(0,0,0,.9)]">
+    <header className="desk relative z-30 flex h-[62px] shrink-0 items-center gap-2.5 border-b min-[1500px]:gap-4 border-black/50 px-3 shadow-[0_8px_20px_-12px_rgba(0,0,0,.9)]">
       <Logo />
       <span className="h-6 w-px bg-white/10" />
       <BoardSwitcher />
       <CaseFilesButton />
-      <button onClick={newBoard} className="hidden items-center gap-1 rounded-lg border border-white/15 px-2.5 py-1.5 text-[12.5px] text-paper/80 transition hover:border-white/35 hover:text-paper lg:flex" title="Start a new board">
-        <Plus size={14} /> New board
+      <button onClick={newBoard} className="hidden shrink-0 items-center gap-1 rounded-lg border border-white/15 px-2.5 py-1.5 text-[12.5px] text-paper/80 transition hover:border-white/35 hover:text-paper lg:flex" title="Start a new board">
+        <Plus size={14} />
+        <span className="hidden whitespace-nowrap min-[1700px]:inline">New board</span>
       </button>
-      <div className="flex min-w-0 flex-1 justify-center px-2">
+      <div className="flex min-w-[320px] flex-1 justify-center px-1">
         <DigBar />
       </div>
-      <nav className="flex items-end gap-1 self-end">
+      <nav className="flex shrink-0 items-end gap-1 self-end">
         {VIEWS.map((v) => (
-          <button key={v.id} onClick={() => set({ view: v.id, caseFilesOpen: false })} className={clsx('index-tab flex items-center gap-1.5', view === v.id && 'on')}>
+          <button key={v.id} onClick={() => set({ view: v.id, caseFilesOpen: false })} title={v.label} aria-label={v.label} className={clsx('index-tab flex items-center gap-1.5', view === v.id && 'on')}>
             <v.icon size={14} />
-            <span className="hidden lg:inline">{v.label}</span>
+            <span className="hidden min-[1900px]:inline">{v.label}</span>
           </button>
         ))}
       </nav>
       <DepthMeter />
-      <CloudStatus />
+      <div className="flex shrink-0 items-center whitespace-nowrap">
+        <CloudStatus />
+      </div>
       <button onClick={() => set({ helpOpen: true })} className="rounded-lg p-2 text-paper/60 hover:bg-white/5 hover:text-paper" title="How it works">
         <CircleHelp size={18} />
       </button>

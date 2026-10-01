@@ -4,6 +4,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { ScrapeResult } from '../../../shared/types';
 import { api } from '../../lib/api';
+import { readRedditInBrowser, redditThreadId } from '../../lib/reddit';
 import { readerCache } from '../../lib/context';
 import { addClue, pinUrl, startDig } from '../../lib/dig';
 import { domain, prettyDate } from '../../lib/utils';
@@ -32,7 +33,7 @@ function YouTubeReader({ url, id }: { url: string; id: string }) {
   return (
     <div className="px-4 py-4">
       <div className="aspect-video overflow-hidden rounded bg-black shadow">
-        <iframe src={`https://www.youtube-nocookie.com/embed/${id}`} className="h-full w-full" allowFullScreen title="video" />
+        <iframe src={`https://www.youtube-nocookie.com/embed/${id}`} referrerPolicy="strict-origin-when-cross-origin" className="h-full w-full" allowFullScreen title="video" />
       </div>
       <div className="mt-3 flex flex-wrap gap-1.5">
         <button className="btn-stamp px-3 py-1.5 text-[12px]" onClick={() => void startDig({ query: '', url, parentId: selected })}>
@@ -82,8 +83,9 @@ export function ReaderPanel() {
     setPage(null);
     setErr('');
     setLoading(true);
-    api
-      .scrape(url)
+    // Reddit refuses cloud servers, so threads are read from this browser first.
+    const read = redditThreadId(url) ? readRedditInBrowser(url).catch(() => null).then((p) => p ?? api.scrape(url)) : api.scrape(url);
+    read
       .then((p) => {
         readerCache.set(url, p);
         setPage(p);
@@ -174,7 +176,7 @@ export function ReaderPanel() {
       {page.note && <div className="mt-3 rounded-md bg-[#fff3cd]/70 px-3 py-2 text-[12.5px] leading-snug text-[#6b5000]">{page.note}</div>}
       {page.media?.type === 'archive' && (
         <div className="mt-3 overflow-hidden rounded bg-black shadow">
-          <iframe src={`https://archive.org/embed/${page.media.src}`} className="aspect-video w-full" allowFullScreen title={page.title} />
+          <iframe src={`https://archive.org/embed/${page.media.src}`} referrerPolicy="strict-origin-when-cross-origin" className="aspect-video w-full" allowFullScreen title={page.title} />
         </div>
       )}
       {page.image && !page.media && <img src={page.image} alt="" className="mt-3 max-h-[320px] w-full rounded object-cover shadow" />}

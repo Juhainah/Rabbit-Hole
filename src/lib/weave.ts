@@ -2,7 +2,7 @@ import { currentBoard, useBoards } from '../store/boards';
 import { useUi } from '../store/ui';
 import type { ClueNode, StringEdge } from '../types';
 import { centerOf, makeEdge, sizeOf, type Point } from './factory';
-import { RING } from './layout';
+import { RING, untangle } from './layout';
 import { nameMatcher, tokenize } from './names';
 
 // After the AI names the people, places and events, weave the evidence in:
@@ -77,6 +77,11 @@ export function weaveCase(clusterId: string, topicId: string, arrange = true) {
     const y = c.y + Math.sin(best.t) * rings[best.ring] * 0.88;
     positions.set(n.id, { x: Math.round(x - s.w / 2), y: Math.round(y - s.h / 2) });
   }
+
+  // Finally make sure no two cards sit on top of each other (the case file and other cases stay put).
+  const movable = new Set(inCase.filter((n) => n.id !== topicId).map((n) => n.id));
+  const clear = untangle(currentBoard().nodes, movable, positions);
+  for (const [id, p] of clear) positions.set(id, p);
 
   const ui = useUi.getState();
   ui.set({ arranging: true });

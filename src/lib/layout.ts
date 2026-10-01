@@ -188,3 +188,45 @@ export function arrange(nodes: ClueNode[], edges: StringEdge[], mode: ArrangeMod
 }
 
 export const typeOrder: ClueType[] = ['topic', 'entity', 'map', 'image', 'clip', 'post', 'video', 'quote', 'question', 'tangent', 'note', 'label'];
+
+/**
+ * Pushes overlapping cards apart until every card has a little clear space around it.
+ * `movable` cards slide; everything else (the case file, other cases) stays put and
+ * acts as an obstacle. Returns the new positions of the cards that moved.
+ */
+export function untangle(nodes: ClueNode[], movable: Set<string>, start = new Map<string, Point>(), pad = 26, rounds = 80): Map<string, Point> {
+  const boxes = nodes.map((n) => {
+    const s = sizeOf(n);
+    const p = start.get(n.id) ?? n.position;
+    return { id: n.id, x: p.x, y: p.y, w: s.w, h: s.h, free: movable.has(n.id) };
+  });
+  for (let round = 0; round < rounds; round++) {
+    let moved = false;
+    for (let i = 0; i < boxes.length; i++) {
+      const a = boxes[i];
+      for (let j = i + 1; j < boxes.length; j++) {
+        const b = boxes[j];
+        if (!a.free && !b.free) continue;
+        const ox = Math.min(a.x + a.w + pad, b.x + b.w + pad) - Math.max(a.x, b.x);
+        const oy = Math.min(a.y + a.h + pad, b.y + b.h + pad) - Math.max(a.y, b.y);
+        if (ox <= 0 || oy <= 0) continue;
+        moved = true;
+        // Separate along the shorter overlap; a fixed card doesn't budge, so the free one takes the whole step.
+        const share = a.free && b.free ? 0.5 : 1;
+        if (ox < oy) {
+          const d = (ox + 1) * share * (a.x + a.w / 2 < b.x + b.w / 2 ? 1 : -1);
+          if (a.free) a.x -= d;
+          if (b.free) b.x += d;
+        } else {
+          const d = (oy + 1) * share * (a.y + a.h / 2 < b.y + b.h / 2 ? 1 : -1);
+          if (a.free) a.y -= d;
+          if (b.free) b.y += d;
+        }
+      }
+    }
+    if (!moved) break;
+  }
+  const out = new Map<string, Point>();
+  for (const b of boxes) if (b.free) out.set(b.id, { x: Math.round(b.x), y: Math.round(b.y) });
+  return out;
+}
