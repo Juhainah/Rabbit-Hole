@@ -36,7 +36,7 @@ import { Toolbar } from './Toolbar';
  * Moves the cork texture with the camera so the board feels physical, and sets
  * the level of detail: far out, cards drop their small print and show big titles.
  */
-function ViewportSync({ target }: { target: RefObject<HTMLDivElement | null> }) {
+export function ViewportSync({ target }: { target: RefObject<HTMLDivElement | null> }) {
   const { x, y, zoom } = useViewport();
   useEffect(() => {
     const el = target.current;

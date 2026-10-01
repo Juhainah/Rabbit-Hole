@@ -14,6 +14,8 @@ export type Method = 'google' | 'github' | 'email';
 
 interface AuthState {
   status: 'off' | 'loading' | 'signed-out' | 'signed-in';
+  /** The account's id; boards saved online are filed under it. */
+  uid?: string;
   name?: string;
   email?: string;
   photo?: string;
@@ -42,22 +44,23 @@ async function loadMethods() {
 let ready: Promise<SupabaseClient> | null = null;
 
 /** Supabase loads only when sign-in is on, so local use stays light. */
-function client() {
+export function client() {
   ready ??= (async () => {
     const { createClient } = await import('@supabase/supabase-js');
     const sb = createClient(url!, anonKey!, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } });
-    const apply = (user: { email?: string; user_metadata?: Record<string, string> } | null | undefined) =>
+    const apply = (user: { id: string; email?: string; user_metadata?: Record<string, string> } | null | undefined) =>
       useAuth.setState(
         user
           ? {
               status: 'signed-in',
+              uid: user.id,
               email: user.email,
               name: user.user_metadata?.full_name ?? user.user_metadata?.name ?? user.user_metadata?.user_name,
               photo: user.user_metadata?.avatar_url,
               error: undefined,
               busy: undefined,
             }
-          : { status: 'signed-out', name: undefined, email: undefined, photo: undefined, busy: undefined },
+          : { status: 'signed-out', uid: undefined, name: undefined, email: undefined, photo: undefined, busy: undefined },
       );
     sb.auth.onAuthStateChange((_event, session) => apply(session?.user));
     const { data } = await sb.auth.getSession();
@@ -124,8 +127,13 @@ export async function emailSignIn(email: string, password: string, create: boole
   }
 }
 
+const beforeSignOut: (() => Promise<unknown>)[] = [];
+/** Work that must finish while still signed in (saving the last changes online). */
+export const onBeforeSignOut = (fn: () => Promise<unknown>) => void beforeSignOut.push(fn);
+
 export async function signOut() {
   const sb = await client();
+  await Promise.allSettled(beforeSignOut.map((fn) => fn()));
   await sb.auth.signOut();
 }
 

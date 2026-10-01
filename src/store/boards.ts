@@ -106,6 +106,28 @@ interface BoardsState {
   undo: () => string | undefined;
 }
 
+/** A board loaded from storage (this device or the account): anything that was mid-flight
+ *  when it was saved can't still be running. */
+export function settleBoard(b: Board): Board {
+  return {
+    ...b,
+    chat: (b.chat ?? []).map((c) =>
+      c.pending ? { ...c, pending: false, error: !c.content, content: c.content || 'Interrupted before it finished. Try again.' } : c,
+    ),
+    nodes: (b.nodes ?? []).map((n) => {
+      // Boards from older versions: case files sit above strings.
+      const layered = n.type === 'topic' && !n.zIndex ? { ...n, zIndex: 2500 } : n;
+      return layered.data.status === 'digging'
+        ? { ...layered, data: { ...layered.data, status: 'error', statusText: 'Interrupted. Dig again to finish this case.' } }
+        : layered;
+    }),
+    // Older boards drew strings over the cards; they now run behind.
+    edges: (b.edges ?? []).map((e) => (e.zIndex ? { ...e, zIndex: 0 } : e)),
+    timeline: b.timeline ?? [],
+    trail: b.trail ?? [],
+  };
+}
+
 const first = newBoard('My first rabbit hole');
 
 export const useBoards = create<BoardsState>()(
@@ -158,8 +180,8 @@ export const useBoards = create<BoardsState>()(
             return { boards, order, currentId: s.currentId === id ? order[0] : s.currentId };
           }),
         renameBoard: (id, name) =>
-          set((s) => (s.boards[id] ? { boards: { ...s.boards, [id]: { ...s.boards[id], name } } } : s)),
-        setEmoji: (id, emoji) => set((s) => (s.boards[id] ? { boards: { ...s.boards, [id]: { ...s.boards[id], emoji } } } : s)),
+          set((s) => (s.boards[id] ? { boards: { ...s.boards, [id]: { ...s.boards[id], name, updatedAt: Date.now() } } } : s)),
+        setEmoji: (id, emoji) => set((s) => (s.boards[id] ? { boards: { ...s.boards, [id]: { ...s.boards[id], emoji, updatedAt: Date.now() } } } : s)),
         setCurrent: (id) => set({ currentId: id }),
         importBoard: (board) =>
           set((s) => {
@@ -254,26 +276,9 @@ export const useBoards = create<BoardsState>()(
       storage: idbStorage,
       partialize: (s) => ({ boards: s.boards, order: s.order, currentId: s.currentId }),
       onRehydrateStorage: () => (state) => {
-        // Anything that was mid-flight when the page closed can't still be running.
         if (state) {
           const boards: Record<string, Board> = {};
-          for (const [id, b] of Object.entries(state.boards)) {
-            boards[id] = {
-              ...b,
-              chat: b.chat.map((c) =>
-                c.pending ? { ...c, pending: false, error: !c.content, content: c.content || 'Interrupted before it finished. Try again.' } : c,
-              ),
-              nodes: b.nodes.map((n) => {
-                // Boards from older versions: case files sit above strings.
-                const layered = n.type === 'topic' && !n.zIndex ? { ...n, zIndex: 2500 } : n;
-                return layered.data.status === 'digging'
-                  ? { ...layered, data: { ...layered.data, status: 'error', statusText: 'Interrupted. Dig again to finish this case.' } }
-                  : layered;
-              }),
-              // Older boards drew strings over the cards; they now run behind.
-              edges: b.edges.map((e) => (e.zIndex ? { ...e, zIndex: 0 } : e)),
-            };
-          }
+          for (const [id, b] of Object.entries(state.boards)) boards[id] = settleBoard(b);
           useBoards.setState({ boards, hydrated: true });
           return;
         }

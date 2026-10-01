@@ -8,6 +8,7 @@ import { Logo, TopBar } from './components/TopBar';
 import { api } from './lib/api';
 import { useAuth } from './lib/auth';
 import { SignIn } from './components/SignIn';
+import { SharedView } from './components/SharedView';
 import { CaseFiles } from './components/CaseFiles';
 import { EmojiPicker } from './components/EmojiPicker';
 import { Toast } from './components/Toast';
@@ -25,6 +26,15 @@ const typing = (el: EventTarget | null) => el instanceof HTMLElement && (el.isCo
 
 export default function App() {
   const signedIn = useAuth((s) => s.status === 'off' || s.status === 'signed-in');
+  // A shared board's link opens for anyone, signed in or not.
+  const [shared, setShared] = useState(() => new URLSearchParams(window.location.search).get('shared'));
+  if (shared) {
+    const leave = () => {
+      window.history.replaceState(null, '', '/');
+      setShared(null);
+    };
+    return <SharedView sid={shared} onLeave={leave} />;
+  }
   // Nothing of the board loads until the visitor is through the front door.
   return signedIn ? <Desk /> : <SignIn />;
 }

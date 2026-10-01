@@ -6,6 +6,7 @@ import { useShallow } from 'zustand/react/shallow';
 import { useBoards } from '../store/boards';
 import { useUi, type View } from '../store/ui';
 import { newBoard } from './LeftPanel';
+import { CloudStatus } from './ShareModal';
 
 export function Logo() {
   return (
@@ -201,6 +202,7 @@ export function TopBar() {
         ))}
       </nav>
       <DepthMeter />
+      <CloudStatus />
       <button onClick={() => set({ helpOpen: true })} className="rounded-lg p-2 text-paper/60 hover:bg-white/5 hover:text-paper" title="How it works">
         <CircleHelp size={18} />
       </button>

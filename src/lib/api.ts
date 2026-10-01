@@ -109,13 +109,13 @@ export const api = {
     random: { title: string; snippet: string; image?: string }[];
     onThisDay: { year: number; text: string; title: string; image?: string }[];
   }> {
-    const res = await fetch(`/api/inspiration${fresh ? '?fresh=1' : ''}`);
+    const res = await call(`/api/inspiration${fresh ? '?fresh=1' : ''}`);
     if (!res.ok) throw new Error(await readError(res));
     return res.json();
   },
 
   async sources(): Promise<string[]> {
-    const res = await fetch('/api/sources');
+    const res = await call('/api/sources');
     if (!res.ok) return [];
     return ((await res.json()) as { available: string[] }).available;
   },
