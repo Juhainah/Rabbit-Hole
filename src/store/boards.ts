@@ -90,6 +90,8 @@ interface BoardsState {
   updateNodes: (fn: (n: ClueNode) => ClueNode) => void;
   updateEdge: (id: string, patch: Partial<StringData>) => void;
   removeNodes: (ids: string[], label?: string) => void;
+  /** Takes cards (and their strings) off quietly, with no undo step: for tidying the app does itself, like a dig moving extras into "More finds". */
+  dropNodes: (ids: string[]) => void;
   removeEdge: (id: string) => void;
 
   addTimeline: (entries: TimelineEntry[]) => void;
@@ -109,6 +111,8 @@ interface BoardsState {
 /** A board loaded from storage (this device or the account): anything that was mid-flight
  *  when it was saved can't still be running. */
 export function settleBoard(b: Board): Board {
+  // Strings left pointing at a removed card (older versions could leave them) are dropped.
+  const ids = new Set((b.nodes ?? []).map((n) => n.id));
   return {
     ...b,
     chat: (b.chat ?? []).map((c) =>
@@ -122,7 +126,7 @@ export function settleBoard(b: Board): Board {
         : layered;
     }),
     // Older boards drew strings over the cards; they now run behind.
-    edges: (b.edges ?? []).map((e) => (e.zIndex ? { ...e, zIndex: 0 } : e)),
+    edges: (b.edges ?? []).filter((e) => ids.has(e.source) && ids.has(e.target)).map((e) => (e.zIndex ? { ...e, zIndex: 0 } : e)),
     timeline: b.timeline ?? [],
     trail: b.trail ?? [],
   };
@@ -195,9 +199,13 @@ export const useBoards = create<BoardsState>()(
         },
 
         onNodesChange: (changes) => {
-          const removed = changes.filter((c) => c.type === 'remove').length;
-          if (removed) snap(`Unpinned ${plural(removed, 'card')}`);
-          patch((b) => ({ nodes: applyNodeChanges(changes, b.nodes) }));
+          const gone = new Set(changes.flatMap((c) => (c.type === 'remove' ? [c.id] : [])));
+          if (gone.size) snap(`Unpinned ${plural(gone.size, 'card')}`);
+          patch((b) => ({
+            nodes: applyNodeChanges(changes, b.nodes),
+            // A card's strings go with it, or they'd point at nothing (and break the Web and Map views).
+            ...(gone.size ? { edges: b.edges.filter((e) => !gone.has(e.source) && !gone.has(e.target)) } : {}),
+          }));
         },
         onEdgesChange: (changes) => {
           const removed = changes.filter((c) => c.type === 'remove').length;
@@ -240,6 +248,11 @@ export const useBoards = create<BoardsState>()(
             edges: b.edges.filter((e) => !ids.includes(e.source) && !ids.includes(e.target)),
           }));
         },
+        dropNodes: (ids) =>
+          patch((b) => ({
+            nodes: b.nodes.filter((n) => !ids.includes(n.id)),
+            edges: b.edges.filter((e) => !ids.includes(e.source) && !ids.includes(e.target)),
+          })),
         removeEdge: (id) => {
           snap('Cut a string');
           patch((b) => ({ edges: b.edges.filter((e) => e.id !== id) }));

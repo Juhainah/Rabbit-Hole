@@ -34,9 +34,11 @@ export function GraphView() {
       deg.set(e.source, (deg.get(e.source) ?? 0) + 1);
       deg.set(e.target, (deg.get(e.target) ?? 0) + 1);
     }
+    const ids = new Set(board.nodes.map((n) => n.id));
     return {
       nodes: board.nodes.map((n) => ({ id: n.id, title: n.data.title || TYPE_LABEL[n.type as ClueType], color: nodeColor(n), type: n.type as ClueType, deg: deg.get(n.id) ?? 0 })),
-      links: board.edges.map((e) => ({ source: e.source, target: e.target, kind: e.data?.kind })),
+      // A string whose card is gone would stop the whole web from drawing.
+      links: board.edges.filter((e) => ids.has(e.source) && ids.has(e.target)).map((e) => ({ source: e.source, target: e.target, kind: e.data?.kind })),
     };
   }, [shape]); // eslint-disable-line react-hooks/exhaustive-deps
 
