@@ -1,6 +1,6 @@
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
-import { AUTH_PROVIDERS, EMAIL_SIGN_IN, emailSignIn, signIn, useAuth } from '../lib/auth';
+import { emailSignIn, signIn, useAuth } from '../lib/auth';
 
 // Google's own "G", as their sign-in button guidelines ask for.
 function GoogleG() {
@@ -25,7 +25,9 @@ function GitHubMark() {
 
 /** The front door: a case folder on the desk, opened by signing in. */
 export function SignIn() {
-  const { status, error, busy, notice } = useAuth();
+  const { status, error, busy, notice, methods } = useAuth();
+  const AUTH_PROVIDERS = methods.filter((m): m is 'google' | 'github' => m !== 'email');
+  const EMAIL_SIGN_IN = methods.includes('email');
   const [mode, setMode] = useState<'in' | 'up'>('in');
   const loading = status === 'loading';
   return (

@@ -10,10 +10,7 @@ const anonKey = (import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined)?.
 /** Without a Supabase project (local use), there's no sign-in at all. */
 export const authEnabled = !!(url && anonKey);
 
-/** Ways to sign in: VITE_AUTH_PROVIDERS=google,github,email (all three by default). */
-const methods = ((import.meta.env.VITE_AUTH_PROVIDERS as string | undefined) || 'google,github,email').split(',').map((p) => p.trim().toLowerCase());
-export const AUTH_PROVIDERS = methods.filter((p): p is 'github' | 'google' => p === 'github' || p === 'google');
-export const EMAIL_SIGN_IN = methods.includes('email');
+export type Method = 'google' | 'github' | 'email';
 
 interface AuthState {
   status: 'off' | 'loading' | 'signed-out' | 'signed-in';
@@ -22,11 +19,25 @@ interface AuthState {
   photo?: string;
   error?: string;
   busy?: 'github' | 'google' | 'email';
+  /** The ways to sign in that Supabase has switched on, read from the project itself. */
+  methods: Method[];
   /** A note that isn't an error ("check your inbox"). */
   notice?: string;
 }
 
-export const useAuth = create<AuthState>(() => ({ status: authEnabled ? 'loading' : 'off' }));
+export const useAuth = create<AuthState>(() => ({ status: authEnabled ? 'loading' : 'off', methods: [] }));
+
+/** Asks Supabase which sign-in methods are on, so turning one on there is all it takes. */
+async function loadMethods() {
+  try {
+    const res = await fetch(`${url}/auth/v1/settings`, { headers: { apikey: anonKey! } });
+    const on = ((await res.json()) as { external?: Record<string, boolean> }).external ?? {};
+    const methods = (['google', 'github', 'email'] as Method[]).filter((m) => on[m]);
+    useAuth.setState({ methods });
+  } catch {
+    useAuth.setState({ methods: ['github', 'email'] });
+  }
+}
 
 let ready: Promise<SupabaseClient> | null = null;
 
@@ -59,6 +70,7 @@ function client() {
   return ready;
 }
 
+if (authEnabled) void loadMethods();
 if (authEnabled) client().catch(() => useAuth.setState({ status: 'signed-out', error: "Sign-in couldn't load. Check your connection and refresh." }));
 
 export async function signIn(provider: 'github' | 'google') {
