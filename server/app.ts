@@ -15,6 +15,10 @@ import { availableSources, searchSource } from './sources';
 import { inspiration, wikiPrimary } from './sources/knowledge';
 import { archiveMedia, periodIn, siteIn, waybackImages } from './sources/archives';
 import { youtubeTranscript } from './sources/media';
+import { logServerError, overDailyLimit } from './limits';
+
+/** The visitor's sign-in ticket, passed on so Supabase counts and logs as them. */
+const ticket = (c: Context) => c.req.header('authorization')?.match(/^Bearer\s+(.+)$/i)?.[1];
 
 // Words that say what to do, not what to look for.
 const META_WORDS = new Set(
@@ -65,7 +69,10 @@ function ndjson<E extends { type: string }>(c: Context, run: (emit: (e: E) => vo
     try {
       await run(emit, ctrl.signal);
     } catch (e) {
-      if (!ctrl.signal.aborted) emit(onError(errMsg(e)));
+      if (!ctrl.signal.aborted) {
+        emit(onError(errMsg(e)));
+        logServerError(ticket(c), c.req.path, e);
+      }
     } finally {
       clearInterval(heartbeat);
     }
@@ -101,7 +108,18 @@ app.use('/api/*', async (c, next) => {
   if (!visitor) return c.json({ error: 'Please sign in to keep digging.', signIn: true }, 401);
   if (!onGuestList(visitor)) return c.json({ error: "This account isn't on the guest list for this Rabbit Hole.", signIn: true }, 403);
   c.set('visitor', visitor);
+  // Digs and partner messages count toward a daily allowance per account.
+  const bucket = c.req.method !== 'POST' ? null : c.req.path === '/api/dig' ? 'dig' : c.req.path === '/api/chat' ? 'chat' : null;
+  const over = bucket && (await overDailyLimit(ticket(c), bucket));
+  if (over) return c.json({ error: over, limit: true }, 429);
   await next();
+});
+
+// Anything that slips through still answers in plain words, and lands in the owner's error log.
+app.onError((e, c) => {
+  logServerError(ticket(c), `${c.req.method} ${c.req.path}`, e);
+  console.error(e);
+  return c.json({ error: 'Something went wrong on our side. Try again in a moment.' }, 500);
 });
 
 app.get('/api/sources', (c) => c.json({ available: availableSources() }));

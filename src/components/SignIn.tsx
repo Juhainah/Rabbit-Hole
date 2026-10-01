@@ -99,7 +99,18 @@ export function SignIn() {
             )}
             <div className="mt-6 space-y-1.5 border-t border-dashed border-ink/20 pt-4 font-ui text-[13px] leading-relaxed text-ink-soft">
               <p>The research partner runs on free services. Signing in keeps them from being overused.</p>
-              <p>Your boards are saved in this browser.</p>
+              <p>Your boards are saved to your account, so they follow you to any device.</p>
+              <p>
+                By signing in you agree to the{' '}
+                <a href="/terms.html" target="_blank" rel="noreferrer" className="underline underline-offset-2 hover:text-ink">
+                  terms
+                </a>{' '}
+                and{' '}
+                <a href="/privacy.html" target="_blank" rel="noreferrer" className="underline underline-offset-2 hover:text-ink">
+                  privacy page
+                </a>
+                .
+              </p>
             </div>
           </div>
         </div>

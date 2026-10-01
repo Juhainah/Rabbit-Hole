@@ -1,9 +1,9 @@
 import { ConnectionMode, Controls, ReactFlow, ReactFlowProvider, useReactFlow, type NodeMouseHandler } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import clsx from 'clsx';
-import { Copy, ExternalLink, LoaderCircle, X } from 'lucide-react';
+import { Check, Copy, ExternalLink, Flag, LoaderCircle, X } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { COPY_LATER, loadShared } from '../lib/cloud';
+import { COPY_LATER, loadShared, reportBoard } from '../lib/cloud';
 import { useAuth } from '../lib/auth';
 import { domain, prettyDate } from '../lib/utils';
 import { useBoards } from '../store/boards';
@@ -20,6 +20,7 @@ export function SharedView({ sid, onLeave }: { sid: string; onLeave: () => void 
   const [board, setBoard] = useState<Board | null | undefined>(undefined);
   const [error, setError] = useState('');
   const signedIn = useAuth((s) => s.status === 'off' || s.status === 'signed-in');
+  const [reporting, setReporting] = useState(false);
 
   useEffect(() => {
     loadShared(sid)
@@ -65,7 +66,13 @@ export function SharedView({ sid, onLeave }: { sid: string; onLeave: () => void 
           </div>
         )}
         {board && (
-          <button onClick={makeCopy} className="btn-stamp ml-auto flex shrink-0 items-center gap-1.5 px-3 py-1.5 text-[12.5px] sm:px-3.5">
+          <button onClick={() => setReporting(true)} className="ml-auto flex shrink-0 items-center gap-1.5 rounded-lg p-2 font-ui text-[12.5px] text-paper/55 hover:bg-white/5 hover:text-paper" title="Report this board">
+            <Flag size={14} />
+            <span className="hidden md:inline">Report</span>
+          </button>
+        )}
+        {board && (
+          <button onClick={makeCopy} className="btn-stamp flex shrink-0 items-center gap-1.5 px-3 py-1.5 text-[12.5px] sm:px-3.5">
             <Copy size={13} />
             <span className="sm:hidden">{signedIn ? 'COPY' : 'SIGN IN TO COPY'}</span>
             <span className="hidden sm:inline">{signedIn ? 'MAKE MY OWN COPY' : 'SIGN IN TO MAKE A COPY'}</span>
@@ -103,6 +110,7 @@ export function SharedView({ sid, onLeave }: { sid: string; onLeave: () => void 
           </div>
         )}
       </main>
+      {reporting && <ReportModal sid={sid} onClose={() => setReporting(false)} />}
     </div>
   );
 }
@@ -272,5 +280,73 @@ function CardReader({ card, board, onClose, onJump }: { card: ClueNode; board: B
         ) : null}
       </div>
     </aside>
+  );
+}
+
+const REASONS = [
+  'False or misleading claims about a real person',
+  'Harassment or private information about someone',
+  'Hateful, violent or sexual content',
+  'Spam',
+  'Something else',
+];
+
+/** Lets anyone flag a shared board; it lands in the owner's report list (admin.reports). */
+function ReportModal({ sid, onClose }: { sid: string; onClose: () => void }) {
+  const [reason, setReason] = useState('');
+  const [details, setDetails] = useState('');
+  const [state, setState] = useState<'idle' | 'sending' | 'sent'>('idle');
+  const [error, setError] = useState('');
+  const send = async () => {
+    setState('sending');
+    setError('');
+    try {
+      await reportBoard(sid, reason, details);
+      setState('sent');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      setState('idle');
+    }
+  };
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4 backdrop-blur-[2px]" onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()} className="paper-panel animate-rise relative w-[min(440px,100%)] rounded-xl px-6 pb-6 pt-5 font-ui text-ink">
+        <button onClick={onClose} className="absolute right-3 top-3 rounded-lg p-1.5 hover:bg-ink/10" aria-label="Close">
+          <X size={18} />
+        </button>
+        {state === 'sent' ? (
+          <div className="py-4 text-center">
+            <Check size={28} className="mx-auto text-[#2f6b72]" />
+            <div className="mt-2 font-hand text-[28px] leading-none">Thanks for telling us</div>
+            <p className="mt-2 text-[13.5px] leading-relaxed text-ink/80">We'll look at this board and take its link down if it breaks the rules.</p>
+          </div>
+        ) : (
+          <>
+            <div className="font-hand text-[28px] leading-none">Report this board</div>
+            <p className="mt-2 pr-6 text-[13.5px] leading-relaxed text-ink/80">What's wrong with it?</p>
+            <div className="mt-3 grid gap-1.5">
+              {REASONS.map((r) => (
+                <label key={r} className={clsx('flex cursor-pointer items-center gap-2.5 rounded-lg border px-3 py-2 text-[13.5px]', reason === r ? 'border-ink/40 bg-white' : 'border-ink/10 hover:bg-white/60')}>
+                  <input type="radio" name="reason" checked={reason === r} onChange={() => setReason(r)} />
+                  {r}
+                </label>
+              ))}
+            </div>
+            <textarea
+              value={details}
+              onChange={(e) => setDetails(e.target.value)}
+              maxLength={2000}
+              rows={3}
+              placeholder="Anything we should know? (optional)"
+              className="mt-3 w-full resize-none rounded-lg border border-ink/15 bg-white px-3 py-2 text-[13.5px] outline-none focus:border-ink/40"
+            />
+            {error && <div className="mt-2 rounded-md bg-[#b3261e]/10 px-3 py-2 text-[12.5px] text-[#8c1d17]">{error}</div>}
+            <button onClick={() => void send()} disabled={!reason || state === 'sending'} className="btn-stamp mt-3 px-4 py-2 text-[13px] disabled:opacity-50">
+              {state === 'sending' ? 'SENDING…' : 'SEND REPORT'}
+            </button>
+          </>
+        )}
+      </div>
+    </div>
   );
 }

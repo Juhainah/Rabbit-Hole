@@ -1,7 +1,9 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import './index.css';
+import './lib/errors';
 import { installTextures } from './lib/textures';
 import { useBoards } from './store/boards';
 import { useSettings } from './store/settings';
@@ -24,6 +26,8 @@ window.addEventListener(
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <App />
+    <ErrorBoundary>
+      <App />
+    </ErrorBoundary>
   </StrictMode>,
 );

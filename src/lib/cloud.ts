@@ -244,8 +244,24 @@ async function connect(account: string) {
   }
   sb = await client();
   uid = account;
+  countVisit(account);
   await pull();
   await claimSharedCopy();
+}
+
+/** One visit a day per person, for the owner's usage numbers (admin.daily, admin.weekly). */
+function countVisit(account: string) {
+  const key = `${account}:${new Date().toISOString().slice(0, 10)}`;
+  try {
+    if (localStorage.getItem('rh-visit') === key) return;
+  } catch {
+    /* counted anyway */
+  }
+  void sb
+    ?.rpc('take_hit', { bucket: 'visit' })
+    .then(({ error }) => {
+      if (!error) localStorage.setItem('rh-visit', key);
+    });
 }
 
 function disconnect() {
@@ -329,6 +345,13 @@ async function claimSharedCopy() {
   if (!board) return;
   useBoards.getState().importBoard(board);
   useUi.getState().set({ toast: { text: `“${board.name}” is now on your boards`, at: Date.now() } });
+}
+
+/** Flags a shared board for the owner of the site to look at (admin.reports). */
+export async function reportBoard(sid: string, reason: string, details: string) {
+  const db = await client();
+  const { data, error } = await db.rpc('report_board', { sid, reason, details: details.trim() || null });
+  if (error || data !== true) throw new Error("Couldn't send the report. Try again in a moment.");
 }
 
 /** A shared board, for anyone with its link (signed in or not). */
