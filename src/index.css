@@ -802,6 +802,12 @@ button {
   margin-top: 2px;
   font-size: 20px;
 }
+.gallery-grid.all {
+  max-height: 520px;
+  overflow-y: auto;
+  padding-right: 4px;
+  overscroll-behavior: contain;
+}
 .gallery-foot {
   display: flex;
   align-items: center;

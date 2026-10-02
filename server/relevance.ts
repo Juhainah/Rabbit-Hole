@@ -188,7 +188,7 @@ export function checkPremise(q: string, docs: { title: string; snippet?: string 
 }
 
 /** Optimal string alignment distance: "theroies" → "theories" is 1 (a swap). */
-function editDistance(a: string, b: string): number {
+export function editDistance(a: string, b: string): number {
   const d = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]);
   for (let j = 1; j <= b.length; j++) d[0][j] = j;
   for (let i = 1; i <= a.length; i++)
@@ -259,6 +259,8 @@ export interface Topic {
   context?: string;
   /** No name-alone pass: the result must also say what the search is about. */
   strict?: boolean;
+  /** The angle wanted ("LGBTQ", "queer"): results that speak to it rank first. */
+  focus?: string[];
 }
 
 const textOf = (item: SourceItem) => (item.kind === 'post' ? item.title : [item.title, item.snippet, item.author].filter(Boolean).join(' '));
@@ -310,6 +312,7 @@ export function rankRelevant(items: SourceItem[], topic: Topic): SourceItem[] {
   if (!ps.length) return items;
   const ctx = contextOf(topic.context, ps);
   const wanted = new Set(ps.flatMap((p) => p.all));
+  const focus = (topic.focus ?? []).map((f) => tokens(f).join(' ')).filter(Boolean);
   const score = (item: SourceItem) => {
     const title = tokens(item.title);
     const body = tokens(textOf(item));
@@ -323,6 +326,9 @@ export function rankRelevant(items: SourceItem[], topic: Topic): SourceItem[] {
       if (p.whole.length > 4 && body.join(' ').includes(p.whole)) v += 3;
       s = Math.max(s, v);
     }
+    // The angle the user asked for ("queer", "Lihaaf") beats a general piece about the subject.
+    const bodyText = ` ${body.join(' ')} `;
+    s += Math.min(3, focus.filter((f) => bodyText.includes(` ${f} `)).length) * 2.5;
     // Touching the case's subject (Tunguska, meteorite…) beats a bare name match.
     const around = new Set(tokens(textOf(item)).map(stem).filter((t) => ctx.has(t))).size;
     s += Math.min(around, 3) * 0.75;

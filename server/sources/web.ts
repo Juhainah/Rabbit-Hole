@@ -125,6 +125,31 @@ export async function serper(q: string, limit: number, signal?: AbortSignal): Pr
   });
 }
 
+/** Google Images through Serper: real pictures of the thing asked about, with the page each came from. */
+export async function serperImages(q: string, limit: number, signal?: AbortSignal): Promise<SourceItem[]> {
+  const key = process.env.SERPER_API_KEY?.trim();
+  if (!key) return [];
+  const j = await getJson<any>('https://google.serper.dev/images', {
+    method: 'POST',
+    signal,
+    headers: { 'Content-Type': 'application/json', 'X-API-KEY': key },
+    body: JSON.stringify({ q, num: Math.min(limit * 2, 20) }),
+  });
+  return (j.images ?? [])
+    .filter((r: any) => r.imageUrl && /^https:/.test(r.imageUrl) && !/\.(svg|gif)(\?|$)/i.test(r.imageUrl) && (r.imageWidth ?? 400) >= 240)
+    .slice(0, limit)
+    .map((r: any) => ({
+      id: `web:img:${r.imageUrl}`,
+      source: 'web',
+      kind: 'image' as const,
+      title: String(r.title ?? '').slice(0, 160),
+      snippet: r.source ? `Picture from ${r.source}` : undefined,
+      url: r.link ?? r.imageUrl,
+      image: r.imageUrl,
+      meta: r.source ? { site: String(r.source) } : undefined,
+    }));
+}
+
 const webCache = new Map<string, { at: number; items: SourceItem[] }>();
 
 /**

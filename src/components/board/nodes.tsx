@@ -247,7 +247,7 @@ export function GalleryNode({ id, data, selected }: P) {
         <span className="label-caps">Who's who</span>
         <h3 className="clue-title">{data.title}</h3>
       </div>
-      <div className="gallery-grid">
+      <div className={clsx('gallery-grid', all && 'all nowheel nodrag')}>
         {(all ? people : people.slice(0, 10)).map((p) => (
           <button
             key={p.title}

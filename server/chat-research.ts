@@ -1,11 +1,11 @@
 import type { SourceItem } from '../shared/types';
-import { getJson } from './http';
 import { compactQuery, namesSubject, norm, rankRelevant, relevanceFilter, subjectName, terms } from './relevance';
 import { availableSources, searchSource } from './sources';
 import { archiveMedia, periodIn, siteIn, waybackImages } from './sources/archives';
 import { wikiPrimary } from './sources/knowledge';
 import { readAnything } from './reader';
-import { serper, webSearch } from './sources/web';
+import { understand } from './understand';
+import { serper, serperImages, webSearch } from './sources/web';
 
 // Words that say what to do, not what to look for.
 const META_WORDS = new Set(
@@ -44,36 +44,21 @@ export function chatPhrase(question: string, hint?: string) {
   return { phrase: phrase.trim() || lead || question, lead };
 }
 
-/** Google Images through Serper: real pictures of the thing asked about, with the page each came from. */
-async function serperImages(q: string, limit: number, signal?: AbortSignal): Promise<SourceItem[]> {
-  const key = process.env.SERPER_API_KEY?.trim();
-  if (!key) return [];
-  const j = await getJson<any>('https://google.serper.dev/images', {
-    method: 'POST',
-    signal,
-    headers: { 'Content-Type': 'application/json', 'X-API-KEY': key },
-    body: JSON.stringify({ q, num: Math.min(limit * 2, 20) }),
-  });
-  return (j.images ?? [])
-    .filter((r: any) => r.imageUrl && /^https:/.test(r.imageUrl) && !/\.(svg|gif)(\?|$)/i.test(r.imageUrl) && (r.imageWidth ?? 400) >= 240)
-    .slice(0, limit)
-    .map((r: any) => ({
-      id: `web:img:${r.imageUrl}`,
-      source: 'web',
-      kind: 'image' as const,
-      title: String(r.title ?? '').slice(0, 160),
-      snippet: r.source ? `Picture from ${r.source}` : undefined,
-      url: r.link ?? r.imageUrl,
-      image: r.imageUrl,
-      meta: r.source ? { site: String(r.source) } : undefined,
-    }));
-}
-
 /**
  * The research behind one chat answer. Never takes longer than ~16 seconds: sources that
  * aren't back by then are left out rather than leaving the user watching "Checking the archives…".
  */
-export async function chatResearch(question: string, hint: string | undefined, wanted: string[] | undefined, signal: AbortSignal, focus?: { url: string; title: string }): Promise<SourceItem[]> {
+// Asking for things to be found or added: worth planning real searches for.
+const FINDING = /\b(add|find|search|look|fetch|bring|get|pull|show|any|more|other|articles?|sources?|news|coverage|reviews?|interviews?|pictures?|photos?|images?|list|who|which)\b/i;
+
+export async function chatResearch(
+  question: string,
+  hint: string | undefined,
+  wanted: string[] | undefined,
+  signal: AbortSignal,
+  focus?: { url: string; title: string },
+  extra: { searchFor?: string[]; onStatus?: (m: string) => void } = {},
+): Promise<SourceItem[]> {
   const allowed = new Set(availableSources());
   const { phrase, lead } = chatPhrase(question, hint);
   const wantsImages = PICTURE.test(question);
@@ -108,6 +93,27 @@ export async function chatResearch(question: string, hint: string | undefined, w
   const waybackTask = archived ? within(waybackImages(site, periodIn(question), 8, slow), 16_000, [] as SourceItem[]) : Promise.resolve([] as SourceItem[]);
   // Google finds the page that answers a question; Google Images finds the pictures asked for.
   const googleTask = within(serper(phrase, 6, deadline).catch(() => webSearch(phrase, 5, deadline)), 13_000, [] as SourceItem[]);
+  // Like a researcher: read the question against the first results, plan better searches, run them.
+  // The partner's own follow-up searches ("ACTION: search …") are run as asked.
+  const own = (extra.searchFor ?? []).map((q) => q.trim()).filter(Boolean).slice(0, 3);
+  const plannedTask = (async () => {
+    let qs = own;
+    let names: string[] = [];
+    if (!qs.length && FINDING.test(question)) {
+      extra.onStatus?.('Planning the searches…');
+      const plan = await understand(question, await googleTask, signal, hint);
+      if (plan) {
+        qs = plan.searches.slice(0, 3);
+        names = [plan.subject, ...plan.aliases];
+      }
+    }
+    if (!qs.length) return { items: [] as SourceItem[], names };
+    extra.onStatus?.(`Searching the web: ${qs.map((q) => `“${q}”`).join(', ')}`);
+    const lists = await Promise.all(
+      qs.map((q, i) => within(i === 0 ? serper(q, 8, signal).then((r) => (r.length ? r : webSearch(q, 6, signal))) : webSearch(q, 6, signal), 12_000, [] as SourceItem[])),
+    );
+    return { items: lists.flat(), names };
+  })();
   const imagesTask = wantsImages ? within(serperImages(phrase, 8, deadline), 13_000, [] as SourceItem[]) : Promise.resolve([] as SourceItem[]);
   // The card being asked about: its own page, read in full, and the pictures on it.
   const focusTask: Promise<SourceItem[]> = focus?.url && /^https?:/.test(focus.url) && !/\.(png|jpe?g|gif|webp)(\?|$)/i.test(focus.url)
@@ -146,7 +152,13 @@ export async function chatResearch(question: string, hint: string | undefined, w
   // Lists and roundups are never the answer.
   const found = rankRelevant([...google, ...batches.flat()].filter((s) => !ROUNDUP_TITLE.test(s.title) && isRelevant(s)), topic);
   if (p) found.unshift({ id: `wikipedia:${p.title}`, source: 'wikipedia', kind: 'article', title: p.title, snippet: p.extract.slice(0, 600), url: p.url, image: p.image });
-  const [fromArchive, media, fromCard] = await Promise.all([waybackTask, mediaTask, focusTask]);
+  const [fromArchive, media, fromCard, planned] = await Promise.all([waybackTask, mediaTask, focusTask, plannedTask]);
+  // Searches the partner chose itself are trusted to be on point; planned ones must name the subject.
+  const plannedTopic = { phrasings: [...planned.names, lead || undefined, phrase], context: p?.extract };
+  const fromPlan = rankRelevant(
+    planned.items.filter((s) => !ROUNDUP_TITLE.test(s.title) && (own.length > 0 || relevanceFilter(plannedTopic)(s))),
+    { ...plannedTopic, phrasings: [...own, ...plannedTopic.phrasings] },
+  );
   const playable = media.length ? rankRelevant(media.filter(isRelevant), topic) : [];
   // Pictures get the low numbers when pictures were asked for; threads come first when forums were.
   const threads = found.filter((s) => s.kind === 'post');
@@ -154,10 +166,11 @@ export async function chatResearch(question: string, hint: string | undefined, w
   const ordered = [
     ...fromCard,
     ...fromArchive,
+    ...(wantsImages ? [] : fromPlan.slice(0, 8)),
     ...playable,
     ...(wantsImages ? [...pictures, ...rest.filter((s) => s.image)] : []),
     ...(wantsForums ? threads : []),
-    ...(wantsImages ? rest.filter((s) => !s.image) : rest),
+    ...(wantsImages ? [...fromPlan, ...rest.filter((s) => !s.image)] : rest),
     ...(wantsForums ? [] : threads),
   ];
   const seen = new Set<string>();

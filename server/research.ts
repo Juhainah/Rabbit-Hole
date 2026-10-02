@@ -307,10 +307,15 @@ export async function deepResearch(
   isRelevant: (it: SourceItem) => boolean,
   signal: AbortSignal,
   onStatus: (m: string) => void,
+  /** The search already understood (subject, planned searches, places): no second planning round. */
+  given?: { subject: string; queries: string[]; sites: string[]; focus: string[] },
 ): Promise<Research> {
-  const subject = subjectName(query);
+  const subject = given?.subject ?? subjectName(query);
   const clues = scout.map((s) => `- ${s.title}: ${s.snippet ?? ''}`).join('\n');
-  const [plan, wiki] = await Promise.all([planQueries(query, subject, clues, signal), timeout(findWiki(subject, signal), 9000, undefined)]);
+  const planned = given?.queries.length
+    ? Promise.resolve({ queries: [...new Set(given.queries.map((q) => (namesSubject(subject, q) ? q : `${subject} ${q}`)))].slice(0, 6), sites: given.sites })
+    : planQueries(query, subject, clues, signal);
+  const [plan, wiki] = await Promise.all([planned, timeout(findWiki(subject, signal), 9000, undefined)]);
   const queries = plan.queries;
   // The places this topic lives: searched for the subject, inside each one.
   const siteSearches = plan.sites
@@ -318,7 +323,7 @@ export async function deepResearch(
     .map((x) => (x.startsWith('r/') ? `${subject} reddit ${x}` : `${subject} site:${x}`));
   const places = [...plan.sites, ...(wiki ? [wiki.name] : [])];
   onStatus(`Researching ${queries.length} angles${places.length ? ` and ${places.slice(0, 4).join(', ')}` : ''}…`);
-  const keywords = [...new Set([...terms(subject), ...queries.flatMap(terms)])].filter((w) => w.length >= 4);
+  const keywords = [...new Set([...terms(subject), ...(given?.focus ?? []).flatMap(terms), ...queries.flatMap(terms)])].filter((w) => w.length >= 4);
 
   // Targeted searches on the web and on the wiki, in parallel.
   const [webBatches, wikiHits] = await Promise.all([
@@ -382,7 +387,7 @@ export async function deepResearch(
     }
     topWiki = pick?.pages.length ? pick.pages : [...hitTitles.filter((t) => !namesSubject(subject, mainTitle(t))).slice(0, 2), ...(mainPage ? [mainPage] : [])];
     listPage = pick?.list;
-    if (process.env.RH_DEBUG) console.log('[research] wiki pool', pool.length, JSON.stringify(pool.filter((t) => /boyfriend|chat/i.test(t))), 'hits', JSON.stringify(hitTitles), 'picked', JSON.stringify(pick));
+    if (process.env.RH_DEBUG) console.log('[research] wiki pool', pool.length, JSON.stringify(pool.slice(0, 12)), 'hits', JSON.stringify(hitTitles), 'picked', JSON.stringify(pick));
     for (const title of topWiki) {
       const snippet = wikiHits.flat().find((h) => h.title === title)?.snippet ?? '';
       items.push({ id: `fandom:${wiki.base}:${title}`, source: 'fandom', kind: 'article', title, snippet, url: wikiUrl(wiki, title), meta: { wiki: wiki.name } });
@@ -400,7 +405,7 @@ export async function deepResearch(
     const page = webTexts[i];
     const text = page ? passages(page.text, allKeywords, 1200) : '';
     // When it came out anchors the timeline: news of a 2014 sale is dated 2014.
-    const date = (page!.published ?? it.date ?? '').slice(0, 10) || undefined;
+    const date = (page?.published ?? it.date ?? '').slice(0, 10) || undefined;
     if (text.length > 120) reading.push({ title: page!.title || it.title, url: it.url!, source: it.source, text, date });
   });
 

@@ -13,7 +13,9 @@ import { useUi } from '../../store/ui';
 import type { EntityType, SourceItem } from '../../../shared/types';
 import { nameMatcher, tokenize } from '../../lib/names';
 import { MicButton } from './MicButton';
-import { makeEdge } from '../../lib/factory';
+import { centerOf, makeEdge, sizeOf } from '../../lib/factory';
+import { fillGallery } from '../../lib/gallery';
+import { freeSpot, untangle } from '../../lib/layout';
 import { play } from '../../lib/sound';
 import type { ChatEntry } from '../../types';
 import { Glyph } from '../SourceBadge';
@@ -138,15 +140,34 @@ async function pictureFor(nodeId: string, title: string, near?: string) {
     const r = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title.replace(/ /g, '_'))}?redirect=true`);
     if (!r.ok) return;
     const p = await r.json();
-    if (p.type === 'disambiguation' || !p.thumbnail?.source) return;
+    if (p.type === 'disambiguation') return;
     const about = tokenize(`${p.description ?? ''} ${p.extract ?? ''}`);
-    if (caseWords.length && !caseWords.some((w) => about.includes(w))) return;
-    const image = p.originalimage?.source && (p.originalimage.width ?? 0) <= 1600 ? p.originalimage.source : p.thumbnail.source;
+    // A one-word name ("Angela") could be anyone: then the page must mention the case.
+    if (!/\s/.test(title.trim()) && caseWords.length && !caseWords.some((w) => about.includes(w))) return;
+    const image = p.originalimage?.source && (p.originalimage.width ?? 0) <= 1600 ? p.originalimage.source : p.thumbnail?.source;
     const node = currentBoard().nodes.find((n) => n.id === nodeId);
-    if (node && !node.data.image) useBoards.getState().updateNode(nodeId, { image, url: node.data.url ?? p.content_urls?.desktop?.page });
+    if (!node) return;
+    const kind = kindFrom(String(p.description ?? ''));
+    useBoards.getState().updateNode(nodeId, {
+      ...(node.data.image ? {} : { image }),
+      url: node.data.url ?? p.content_urls?.desktop?.page,
+      ...(kind && node.data.entityType === 'concept' ? { entityType: kind } : {}),
+      ...(!node.data.text && p.description ? { text: String(p.description).slice(0, 200) } : {}),
+    });
   } catch {
     /* no picture is fine */
   }
+}
+
+/** "Indian writer" → person, "2014 film" → work: what kind of card a Wikipedia description makes. */
+function kindFrom(description: string): EntityType | undefined {
+  const d = description.toLowerCase();
+  if (/\b(actor|actress|writer|author|poet|director|singer|musician|politician|player|journalist|businessman|businesswoman|scientist|activist|filmmaker|producer|novelist|artist|rapper|hijacker|terrorist|youtuber|personality|born \d)/.test(d)) return 'person';
+  if (/\b(film|novel|short story|story|book|album|song|single|series|video game|game|play|poem|painting|documentary|magazine|newspaper|website|app)\b/.test(d)) return 'work';
+  if (/\b(city|town|village|district|country|state|province|region|river|mountain|island|building|airport|neighbourhood|neighborhood)\b/.test(d)) return 'place';
+  if (/\b(company|corporation|organi[sz]ation|band|group|party|agency|studio|publisher|network|university|team|airline)\b/.test(d)) return 'org';
+  if (/\b(attack|war|battle|incident|disaster|crash|scandal|festival|election|protest|massacre)\b/.test(d)) return 'event';
+  return undefined;
 }
 
 /** Carries out the partner's board actions. Returns a line per thing done. */
@@ -172,6 +193,7 @@ function runActions(actions: string[], sources: SourceItem[]): string[] {
     if (['person', 'place', 'org', 'object', 'event'].includes(entityType)) void pictureFor(id, title, near);
     done.push(`Added a card for “${title}”`);
   }
+  const wrote = new Map<string, number>();
   const removals = new Set<string>();
   const removedTitles: string[] = [];
   for (const a of actions.slice(0, 40)) {
@@ -179,7 +201,9 @@ function runActions(actions: string[], sources: SourceItem[]): string[] {
     const fact = a.match(/^add\s+to\s+\[\[(.+?)\]\]\s*:\s*(.+)/i);
     if (fact) {
       const target = findCard(fact[1]);
-      if (target) {
+      // Two facts per card per answer at most: a card is a clue, not a wall of text.
+      if (target && (wrote.get(target.id) ?? 0) < 2) {
+        wrote.set(target.id, (wrote.get(target.id) ?? 0) + 1);
         const text = target.data.text?.trim();
         useBoards.getState().updateNode(target.id, { text: `${text ? `${text}\n\n` : ''}• ${fact[2].trim().slice(0, 500)}` });
         done.push(`Wrote on “${target.data.title}”`);
@@ -199,8 +223,19 @@ function runActions(actions: string[], sources: SourceItem[]): string[] {
     }
     const tie = a.match(/^connect\s+\[\[(.+?)\]\]\s*(?:->|→|to|and)\s*\[\[(.+?)\]\](?:\s*:\s*(.+))?/i);
     if (tie) {
-      const from = findCard(tie[1]);
-      const to = findCard(tie[2]);
+      const make = (title: string) => {
+        const clean = title.replace(/^["“]|["”]$/g, '').trim().slice(0, 80);
+        if (!clean) return undefined;
+        const id = addClue('entity', { title: clean, entityType: 'concept' }, { near });
+        void pictureFor(id, clean, near);
+        done.push(`Added a card for “${clean}”`);
+        return currentBoard().nodes.find((n) => n.id === id);
+      };
+      let from = findCard(tie[1]);
+      let to = findCard(tie[2]);
+      // Only when one end is already on the board: never invent a whole pair.
+      if (from && !to) to = make(tie[2]);
+      else if (to && !from) from = make(tie[1]);
       if (from && to && from.id !== to.id) {
         useBoards.getState().addEdges([makeEdge(from.id, to.id, { kind: 'user', label: tie[3]?.trim().slice(0, 40) })]);
         done.push(`Tied “${from.data.title}” to “${to.data.title}”`);
@@ -227,6 +262,83 @@ function runActions(actions: string[], sources: SourceItem[]): string[] {
       }
       continue;
     }
+    const fill = a.match(/^fill\s+\[\[(.+?)\]\]/i);
+    if (fill) {
+      const card = findCard(fill[1]);
+      if (card?.type === 'gallery') {
+        const title = card.data.title;
+        void fillGallery(card.id)
+          .then((n) => useUi.getState().log(`🗂 “${title}” now shows all ${n}`, 'ok'))
+          .catch((e) => useUi.getState().log(`Couldn't read the list for “${title}”: ${e instanceof Error ? e.message : e}`, 'warn'));
+        done.push(`Adding everyone on the “${title}” list from its wiki page`);
+      }
+      continue;
+    }
+    const photo = a.match(/^photo\s+\[\[(.+?)\]\](?:\s*:\s*#?(\d+))?/i);
+    if (photo) {
+      const card = findCard(photo[1]);
+      if (!card) continue;
+      const src = photo[2] ? sources[Number(photo[2]) - 1] : undefined;
+      if (src?.image) {
+        useBoards.getState().snapshot(`Photo on “${card.data.title}”`);
+        useBoards.getState().updateNode(card.id, { image: src.image });
+        done.push(`Put a photo on “${card.data.title}”`);
+      } else if (!photo[2]) {
+        void pictureFor(card.id, card.data.title, near);
+        done.push(`Looking up a picture for “${card.data.title}”`);
+      }
+      continue;
+    }
+    const rewrite = a.match(/^set\s+\[\[(.+?)\]\]\s*:\s*(.+)/i);
+    if (rewrite) {
+      const card = findCard(rewrite[1]);
+      if (card) {
+        useBoards.getState().snapshot(`Rewrote “${card.data.title}”`);
+        useBoards.getState().updateNode(card.id, { text: rewrite[2].trim().slice(0, 600) });
+        done.push(`Rewrote “${card.data.title}”`);
+      }
+      continue;
+    }
+    const cut = a.match(/^cut\s+\[\[(.+?)\]\]\s*(?:->|→|to|and|from)\s*\[\[(.+?)\]\]/i);
+    if (cut) {
+      const x = findCard(cut[1]);
+      const y = findCard(cut[2]);
+      if (x && y) {
+        const strings = currentBoard().edges.filter((e) => (e.source === x.id && e.target === y.id) || (e.source === y.id && e.target === x.id));
+        if (strings.length) {
+          useBoards.getState().snapshot(`Cut a string`);
+          strings.forEach((e) => useBoards.getState().removeEdge(e.id));
+          done.push(`Cut the string between “${x.data.title}” and “${y.data.title}”`);
+        }
+      }
+      continue;
+    }
+    const move = a.match(/^move\s+\[\[(.+?)\]\]\s+(?:near|next to|by|beside|to)\s+\[\[(.+?)\]\]/i);
+    if (move) {
+      const x = findCard(move[1]);
+      const y = findCard(move[2]);
+      if (x && y && x.id !== y.id) {
+        const s = sizeOf(x);
+        const c = freeSpot(currentBoard().nodes.filter((n) => n.id !== x.id), centerOf(y), s);
+        useBoards.getState().snapshot(`Moved “${x.data.title}”`);
+        useBoards.getState().updateNodes((n) => (n.id === x.id ? { ...n, position: { x: Math.round(c.x - s.w / 2), y: Math.round(c.y - s.h / 2) } } : n));
+        done.push(`Moved “${x.data.title}” next to “${y.data.title}”`);
+      }
+      continue;
+    }
+    if (/^tidy\b/i.test(a)) {
+      const board = currentBoard();
+      const cluster = topicOf(board, board.nodes.find((n) => n.id === near))?.data.clusterId;
+      const movable = new Set(board.nodes.filter((n) => n.type !== 'topic' && (!cluster || n.data.clusterId === cluster)).map((n) => n.id));
+      const spots = untangle(board.nodes, movable);
+      if (spots.size) {
+        useBoards.getState().snapshot('Tidied the board');
+        useBoards.getState().updateNodes((n) => (spots.has(n.id) ? { ...n, position: spots.get(n.id)! } : n));
+        done.push('Spread out the cards so none overlap');
+      }
+      continue;
+    }
+    if (/^search\s/i.test(a)) continue; // run after the answer, as a follow-up
     const note = a.match(/^note\s+(.+)/i);
     if (note) {
       // Some models copy the instruction wording ("the text of a sticky note: …"); keep only the note.
@@ -366,9 +478,9 @@ export function ChatPanel() {
     if (el && stuck) el.scrollTop = el.scrollHeight;
   }, [chat, stuck]);
 
-  const send = async (text: string) => {
+  const send = async (text: string, opts: { searchFor?: string[]; depth?: number } = {}) => {
     const q = text.trim();
-    if (!q || busy) return;
+    if (!q || (busy && !opts.searchFor)) return;
     const s = useBoards.getState();
     const history = [...currentBoard().chat.filter((c) => !c.error && !c.pending), { role: 'user' as const, content: q }].map((c) => ({
       role: c.role,
@@ -376,7 +488,7 @@ export function ChatPanel() {
     }));
     s.addChat({ id: nanoid(8), role: 'user', content: q });
     const id = nanoid(8);
-    s.addChat({ id, role: 'assistant', content: '', pending: true, status: research ? 'Checking the archives' : 'Thinking' });
+    s.addChat({ id, role: 'assistant', content: '', pending: true, status: research || opts.searchFor ? 'Checking the archives' : 'Thinking' });
     setInput('');
     setBusy(true);
     setStuck(true);
@@ -404,7 +516,8 @@ export function ChatPanel() {
           })(),
           messages: history,
           context: prefs.chatUsesBoard ? boardContext() : undefined,
-          research,
+          research: research || !!opts.searchFor?.length,
+          searchFor: opts.searchFor,
           sources: prefs.searchSources.filter((x) => ['wikipedia', 'web', 'reddit', 'archive', 'hackernews', 'openalex', 'googlenews', 'youtube'].includes(x)).slice(0, 5),
         },
         (ev) => {
@@ -424,8 +537,14 @@ export function ChatPanel() {
       // Now that the answer is complete, do what it asked of the board.
       const entry = currentBoard().chat.find((c) => c.id === id);
       if (entry && !entry.error) {
-        const done = runActions(splitAnswer(entry.content).actions, entry.sources ?? []);
+        const { actions } = splitAnswer(entry.content);
+        const done = runActions(actions, entry.sources ?? []);
         if (done.length) useBoards.getState().updateChat(id, { done });
+        // It asked to search again: run those searches and let it finish the job (twice at most).
+        const more = actions.map((a) => a.match(/^search\s+(.+)/i)?.[1]?.replace(/^["“]|["”]$/g, '').trim()).filter((x): x is string => !!x).slice(0, 3);
+        if (more.length && (opts.depth ?? 0) < 2 && !abort.current?.signal.aborted) {
+          void send(`🔎 Searching the web for ${more.map((m) => `“${m}”`).join(', ')}. Use what turns up to finish what I asked.`, { searchFor: more, depth: (opts.depth ?? 0) + 1 });
+        }
       }
     }
   };

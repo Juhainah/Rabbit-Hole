@@ -6,6 +6,7 @@ import { authProject, onGuestList, verifyVisitor, type Visitor } from './auth';
 import type { ChatEvent, ChatRequest, DigEvent, DigRequest, SourceItem } from '../shared/types';
 import { chatResearch } from './chat-research';
 import { galleryFromUrl } from './research';
+import { imageProxy } from './imageproxy';
 import { runDig } from './dig';
 import { errMsg } from './http';
 import { resolveProviders, streamWithFallback } from './llm';
@@ -157,9 +158,12 @@ app.post('/api/chat', async (c) => {
       const carried = (body.carrySources ?? []).slice(0, 10);
       let sources: SourceItem[] = carried;
       const aboutBoard = ABOUT_THE_BOARD.test(question) && !/\b(find|search|fetch|bring|pin|get|look up|add|locate|show me|pictures?|photos?)\b/i.test(question);
-      if (body.research && question && !aboutBoard) {
+      if ((body.research || body.searchFor?.length) && question && (!aboutBoard || body.searchFor?.length)) {
         emit({ type: 'status', message: 'Checking the archives…' });
-        const found = await chatResearch(question, body.hint?.trim().slice(0, 120), body.sources, signal, body.focus);
+        const found = await chatResearch(question, body.hint?.trim().slice(0, 120), body.sources, signal, body.focus, {
+          searchFor: body.searchFor?.map((q) => String(q).slice(0, 120)),
+          onStatus: (message) => emit({ type: 'status', message }),
+        });
         const seen = new Set<string>();
         sources = [...carried, ...found].filter((s) => !seen.has(s.image ?? s.url ?? s.id) && seen.add(s.image ?? s.url ?? s.id)).slice(0, 20);
       }
@@ -199,6 +203,12 @@ app.get('/api/wiki-list', async (c) => {
   } catch (e) {
     return c.json({ error: errMsg(e) }, 502);
   }
+});
+
+// Card photos for a saved board picture, fetched here so the browser may draw them.
+app.get('/api/image', async (c) => {
+  if (limited(c, 'image', 400, 10 * 60_000)) return c.json({ error: 'Slow down a little.' }, 429);
+  return imageProxy(c);
 });
 
 app.get('/api/transcript', async (c) => {

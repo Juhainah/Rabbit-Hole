@@ -92,9 +92,12 @@ export function TimelineView() {
       const proof = t.nodeId ? byId.get(t.nodeId) : undefined;
       out.push({ key: t.id, year: y, sort: t.date, date: t.date, title: t.event, sub: topic?.data.title, color: '#c8322f', nodeId: proof?.id ?? topic?.id, proof, clusterId: t.clusterId });
     }
+    const told = board.timeline.map((t) => ({ y: yearOf(t.date), text: t.event.toLowerCase(), clusterId: t.clusterId }));
     for (const n of board.nodes) {
       const y = yearOf(n.data.date);
       if (y == null) continue;
+      const title = n.data.title?.toLowerCase() ?? '';
+      if (n.type === 'entity' && title.length >= 3 && told.some((t) => t.y === y && t.clusterId === n.data.clusterId && t.text.includes(title))) continue;
       out.push({
         key: n.id,
         year: y,

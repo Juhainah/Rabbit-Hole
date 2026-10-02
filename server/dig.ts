@@ -3,9 +3,10 @@ import { errMsg, sleep } from './http';
 import { parseJsonLoose } from './json';
 import { completeWithFallback, resolveProviders } from './llm';
 import { digMessages, normalizeAnalysis, normalizeTangents, tangentMessages } from './prompts';
-import { checkPremise, compactQuery, namesSubject, norm, rankRelevant, relevanceFilter, subjectName, subjectWords, terms, touches } from './relevance';
-import { webSearch } from './sources/web';
+import { checkPremise, compactQuery, editDistance, namesSubject, norm, rankRelevant, relevanceFilter, subjectName, subjectWords, terms, touches } from './relevance';
+import { serper, serperImages, webSearch } from './sources/web';
 import { deepResearch, type Research } from './research';
+import { understand, type Understanding } from './understand';
 import { ogImage, primaryFromUrl } from './scrape';
 import { availableSources, searchSource } from './sources';
 import { archiveMedia, siteIn, waybackImages } from './sources/archives';
@@ -82,6 +83,29 @@ function groundEntities(analysis: Analysis, primary: Primary | null, evidence: S
   const read = [primary?.title, primary?.extract, alsoRead, ...evidence.map((e) => `${e.title} ${e.snippet ?? ''} ${e.author ?? ''}`)].filter(Boolean).join(' \n ');
   const corpus = tokenize(read);
   if (corpus.length < 80) return []; // too little was read to judge
+  const words = [...new Set(corpus.filter((w) => w.length >= 5))];
+  // Respell a name to the way the sources write it, one slip per word ("Chugtai" → "Chughtai").
+  const respell = (name: string) =>
+    name
+      .split(/\s+/)
+      .map((w) => {
+        const k = nameKey(w).replace(/[^\p{L}\p{N}]/gu, '');
+        if (k.length < 5 || corpus.includes(k)) return w;
+        const near = words.find((c) => Math.abs(c.length - k.length) <= 1 && editDistance(c, k) <= 1);
+        return near ? near[0].toUpperCase() + near.slice(1) : w;
+      })
+      .join(' ');
+  for (const e of analysis.entities) {
+    if (!CHECKED_KINDS.has(e.type) || nameMatcher(e.name, e.type === 'person')(corpus)) continue;
+    const fixed = respell(e.name);
+    if (fixed !== e.name && nameMatcher(fixed, e.type === 'person')(corpus)) {
+      for (const r of analysis.relations) {
+        if (r.from === e.name) r.from = fixed;
+        if (r.to === e.name) r.to = fixed;
+      }
+      e.name = fixed;
+    }
+  }
   const dropped = analysis.entities.filter((e) => CHECKED_KINDS.has(e.type) && !nameMatcher(e.name, e.type === 'person')(corpus));
   // Never strip a case bare.
   if (!dropped.length || analysis.entities.length - dropped.length < 3) return [];
@@ -133,8 +157,26 @@ export async function runDig(req: DigRequest, emit: Emit, signal: AbortSignal) {
   const notes: string[] = [];
   let query = asked;
   let scout: SourceItem[] = [];
-  if (topic && !caseQuery && !req.trail?.length) {
-    scout = await Promise.race([webSearch(asked, 6, signal).catch(() => [] as SourceItem[]), sleep(6000).then(() => [] as SourceItem[])]);
+  let u: Understanding | null = null;
+  const toVenue = !!caseQuery && VENUES.some((v) => v.re.test(asked.trim()));
+  if (topic && !toVenue) {
+    emit({ type: 'status', message: 'Reading your search…' });
+    // Google knows how things are spelled and what exists; the first results show the AI both.
+    const scoutQ = caseQuery && !norm(asked).includes(norm(caseQuery)) ? `${asked} ${caseQuery}` : asked;
+    scout = await Promise.race([
+      serper(scoutQ, 8, signal).then((r) => (r.length ? r : webSearch(scoutQ, 6, signal))).catch(() => webSearch(scoutQ, 6, signal).catch(() => [] as SourceItem[])),
+      sleep(7000).then(() => [] as SourceItem[]),
+    ]);
+    u = await understand(asked, scout, signal, caseQuery);
+    if (process.env.RH_DEBUG) console.log('[understand]', JSON.stringify(u));
+  }
+  if (u) {
+    for (const [typo, word] of Object.entries(u.fixes)) notes.push(`Read “${typo}” as “${word}”.`);
+    if (u.doubt) notes.push(u.doubt);
+    query = u.query;
+    if (notes.length) emit({ type: 'status', message: `⚠ ${notes.join(' ')} This case follows “${query}”.`, level: 'warn' });
+  } else if (topic && !caseQuery && !req.trail?.length) {
+    if (!scout.length) scout = await Promise.race([webSearch(asked, 6, signal).catch(() => [] as SourceItem[]), sleep(6000).then(() => [] as SourceItem[])]);
     const check = checkPremise(asked, scout);
     for (const [typo, word] of Object.entries(check.typos)) notes.push(`Read “${typo}” as “${word}”.`);
     if (check.unknown.length) notes.push(`No source found mentions ${listWords(check.unknown)}.`);
@@ -148,8 +190,10 @@ export async function runDig(req: DigRequest, emit: Emit, signal: AbortSignal) {
 
   if (!primary && !venue) {
     // The main article comes first (about a second) because it sharpens every other search.
-    primary = await Promise.race([wikiPrimary(query, signal).catch(() => null), sleep(4500).then(() => null)]);
-    if (primary && !primaryMatches(query, primary)) primary = null;
+    // The subject's own article ("Dedh Ishqiya"), not one about the angle ("LGBTQ rights in India").
+    const lookup = u?.subject ?? query;
+    primary = await Promise.race([wikiPrimary(lookup, signal).catch(() => null), sleep(4500).then(() => null)]);
+    if (primary && !primaryMatches(lookup, primary)) primary = null;
     // "Talking Angela conspiracy theories" can land on a broader article; look the name up on its own.
     const name = subjectWords(query).join(' ');
     if (name && name !== norm(query) && (!primary || !namesSubject(name, primary.title))) {
@@ -161,7 +205,7 @@ export async function runDig(req: DigRequest, emit: Emit, signal: AbortSignal) {
   if (primary && framed && !req.url && !namesSubject(framed, `${primary.title} ${primary.extract}`)) primary = null;
   if (primary) emit({ type: 'primary', primary });
 
-  const phrase = searchPhrase(query, primary);
+  const phrase = u ? u.query : searchPhrase(query, primary);
   // A link's page title can be incidental ("Rotten.com Source Code/Mirror"); only a typed topic's article title helps judge results.
   // A narrower dig ("Voynich manuscript carbon dating") can land on the case's own article; that title would let
   // anything about the whole case through, so it only helps when it names something more specific.
@@ -172,13 +216,18 @@ export async function runDig(req: DigRequest, emit: Emit, signal: AbortSignal) {
   // A venue dig judges results by the case alone: Reddit threads about Star Girl rarely say "Reddit".
   // What the case is about, in its own words: the main article, else the first results that name it.
   const scoutText = primary ? '' : scout.filter((s) => namesSubject(subjectName(query), `${s.title} ${s.snippet ?? ''}`)).map((s) => `${s.title}. ${s.snippet ?? ''}`).join(' ');
-  const topicOf = { phrasings: venue ? [framed] : [query, titleHelps], context: [framed, primary?.extract ?? scoutText].filter(Boolean).join('. ') };
+  // Understood: a result must name the subject (or another name for it); the angle ranks it higher.
+  // "Stargirl" is not another name for "Star Girl": it is how its namesakes (a novel, a DC hero) are spelled.
+  const squash = (x: string) => norm(x).replace(/[^\p{L}\p{N}]/gu, '');
+  const aliases = u ? u.aliases.filter((a) => squash(a) !== squash(u!.subject)) : [];
+  const names = u ? [u.subject, ...aliases] : [query];
+  const topicOf = { phrasings: venue ? [framed] : [...names, titleHelps], context: [framed, primary?.extract ?? scoutText].filter(Boolean).join('. '), focus: u?.focus };
   /** Searches that understand "subject + case" get both; reference works get the subject alone. */
   const phraseFor = (id: string) => (framed && STORY_SOURCES.has(id) ? `${phrase} ${framed}` : phrase);
   /** The case's own name, for sources that match titles ("star girl" as one phrase). */
-  const subject = subjectName(framed ?? query);
+  const subject = u?.subject ?? subjectName(framed ?? query);
   /** Names the search mentioned that sources never tie in: still searched where people talk, in case a link exists. */
-  const storyExtra = query !== asked && !framed ? asked : undefined;
+  const storyExtra = !u && query !== asked && !framed ? asked : undefined;
   /** In a framed dig, results that tie back to the case come first; generic background gets one slot. */
   const framedPick = (items: SourceItem[], n: number, general = 1) =>
     framed ? [...items.filter(mentionsCase), ...items.filter((it) => !mentionsCase(it)).slice(0, general)].slice(0, n) : items.slice(0, n);
@@ -190,7 +239,7 @@ export async function runDig(req: DigRequest, emit: Emit, signal: AbortSignal) {
     ? Promise.resolve(null)
     : (async () => {
         const sc = scout.length ? scout : await Promise.race([webSearch(researchTopic, 6, signal).catch(() => [] as SourceItem[]), sleep(6000).then(() => [] as SourceItem[])]);
-        return deepResearch(researchTopic, sc, isRelevant, signal, (message) => emit({ type: 'status', message }));
+        return deepResearch(researchTopic, sc, isRelevant, signal, (message) => emit({ type: 'status', message }), u ? { subject: u.subject, queries: u.searches, sites: u.sites, focus: u.focus } : undefined);
       })().catch((e) => {
         console.warn(`[research] ${errMsg(e)}`);
         return null;
@@ -247,6 +296,8 @@ export async function runDig(req: DigRequest, emit: Emit, signal: AbortSignal) {
     const batches = await Promise.allSettled([
       ...ids.map((id) => searchSource(id, phrase, { limit: id === 'commons' ? 8 : 5, signal })),
       ...(site ? [waybackImages(site, undefined, 6, signal)] : []),
+      // Google Images: the posters, stills, screenshots and faces the archives rarely hold.
+      serperImages(u?.subject ?? phrase, 8, signal).then((r) => r.filter((it) => namesSubject(subject, `${it.title} ${it.meta?.site ?? ''}`)).slice(0, 4)),
     ]);
     const items = rankRelevant(keep(batches.flatMap((b) => (b.status === 'fulfilled' ? b.value : [])).filter((it) => it.image)), { ...topicOf, phrasings: [phrase, titleHelps] });
     return venue ? [] : framedPick(items, 8, 1);
@@ -291,7 +342,7 @@ export async function runDig(req: DigRequest, emit: Emit, signal: AbortSignal) {
     const vocabulary = new Set(research.vocabulary);
     if (vocabulary.size >= 5 && !venue) {
       const strict = relevanceFilter({ ...topicOf, strict: true });
-      const own = new Set([...vocabulary, ...terms(query).filter((w) => !terms(subject).includes(w))]);
+      const own = new Set([...vocabulary, ...aliases.flatMap(terms), ...terms(query).filter((w) => !terms(subject).includes(w))]);
       const home = subject.replace(/\s+/g, '').toLowerCase();
       const namesakes = evidence.filter((it) =>
         it.source === 'fandom' ? false

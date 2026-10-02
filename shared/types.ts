@@ -184,6 +184,8 @@ export interface ChatRequest {
   hint?: string;
   /** The card being asked about and its link: its own page is read first ("go to where that list came from"). */
   focus?: { url: string; title: string };
+  /** Web searches the partner asked for itself ("ACTION: search …"), run before it answers again. */
+  searchFor?: string[];
 }
 
 export interface ScrapeResult {
