@@ -246,6 +246,7 @@ export function GalleryNode({ id, data, selected }: P) {
       <div className="gallery-head">
         <span className="label-caps">Who's who</span>
         <h3 className="clue-title">{data.title}</h3>
+        {data.text && <div className="gallery-note">{data.text}</div>}
       </div>
       <div className={clsx('gallery-grid', all && 'all nowheel nodrag')}>
         {(all ? people : people.slice(0, 10)).map((p) => (
@@ -258,8 +259,9 @@ export function GalleryNode({ id, data, selected }: P) {
               if (p.url) read(id, p.url);
             }}
           >
-            {p.image && <img src={p.image} alt="" draggable={false} loading="lazy" />}
+            {p.image ? <img src={p.image} alt="" draggable={false} loading="lazy" /> : <div className="gallery-noface">{p.title.slice(0, 1)}</div>}
             <span>{p.title}</span>
+            {p.role && <em className="gallery-role">{p.role}</em>}
           </button>
         ))}
       </div>

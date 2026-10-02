@@ -7,6 +7,7 @@ import type { ChatEvent, ChatRequest, DigEvent, DigRequest, SourceItem } from '.
 import { chatResearch } from './chat-research';
 import { galleryFromUrl } from './research';
 import { imageProxy } from './imageproxy';
+import { castOf } from './sources/cast';
 import { runDig } from './dig';
 import { errMsg } from './http';
 import { resolveProviders, streamWithFallback } from './llm';
@@ -190,6 +191,16 @@ app.get('/api/scrape', async (c) => {
   if (limited(c, 'scrape', 120, 10 * 60_000)) return c.json({ error: 'Slow down a little.' }, 429);
   try {
     return c.json(await readAnything(url));
+  } catch (e) {
+    return c.json({ error: errMsg(e) }, 502);
+  }
+});
+
+app.get('/api/cast', async (c) => {
+  if (limited(c, 'scrape', 120, 10 * 60_000)) return c.json({ error: 'Slow down a little.' }, 429);
+  try {
+    const cast = await castOf(c.req.query('title') ?? '', AbortSignal.timeout(20_000));
+    return cast ? c.json({ title: cast.title, url: cast.url, director: cast.director, items: cast.items.map((p) => ({ title: p.title, image: p.image, url: p.url, role: p.meta?.role })) }) : c.json({ error: 'No cast list on that page' }, 404);
   } catch (e) {
     return c.json({ error: errMsg(e) }, 502);
   }

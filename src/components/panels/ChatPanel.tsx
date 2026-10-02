@@ -262,6 +262,21 @@ function runActions(actions: string[], sources: SourceItem[]): string[] {
       }
       continue;
     }
+    const castFor = a.match(/^cast\s+\[\[(.+?)\]\]/i);
+    if (castFor) {
+      const film = findCard(castFor[1]);
+      const name = film ? (film.data.query ?? film.data.title) : castFor[1];
+      void api
+        .cast(name)
+        .then((c) => {
+          const id = addClue('gallery', { title: `Who's who in ${c.title}`, url: c.url, source: 'wikipedia', items: c.items, text: c.director.length ? `Directed by ${c.director.join(', ')}` : undefined }, { near: film?.id ?? near, tie: true });
+          useUi.getState().log(`🎬 Who's who in ${c.title}: ${c.items.length} people and their parts`, 'ok');
+          return id;
+        })
+        .catch((e) => useUi.getState().log(`Couldn't find a cast list for “${name}”: ${e instanceof Error ? e.message : e}`, 'warn'));
+      done.push(`Pulling the cast of “${name}”`);
+      continue;
+    }
     const fill = a.match(/^fill\s+\[\[(.+?)\]\]/i);
     if (fill) {
       const card = findCard(fill[1]);
@@ -541,7 +556,14 @@ export function ChatPanel() {
         const done = runActions(actions, entry.sources ?? []);
         if (done.length) useBoards.getState().updateChat(id, { done });
         // It asked to search again: run those searches and let it finish the job (twice at most).
-        const more = actions.map((a) => a.match(/^search\s+(.+)/i)?.[1]?.replace(/^["“]|["”]$/g, '').trim()).filter((x): x is string => !!x).slice(0, 3);
+        const more: string[] = actions.map((a) => a.match(/^search\s+(.+)/i)?.[1]?.replace(/^["“]|["”]$/g, '').trim()).filter((x): x is string => !!x).slice(0, 3);
+        // An answer that admits the sources came up short gets a real web search, not an offer of one.
+        const short = /(do(es)?n['’]?t|do(es)? not|did not|didn['’]t) (contain|mention|include|cover|say|show|have)|can['’]?t (confirm|find|tell|verify|add)|cannot (confirm|find|tell|verify|add)|no (source|evidence|article)s? (on|that|about|here|so far)|not (in|on) the (board|sources)|if you['’]?d like,? (i|we) can|(i|we) can (run|do) a (targeted |web )?search/i.test(splitAnswer(entry.content).text);
+        if (!more.length && short && !opts.depth && !abort.current?.signal.aborted) {
+          const inCase = caseName(currentBoard().nodes.find((n) => n.id === useUi.getState().selectedNodeId)) ?? currentBoard().nodes.filter((n) => n.type === 'topic').at(-1)?.data.query;
+          const asked = q.replace(/\s*\(in the case of [^)]*\)\s*$/i, '').slice(0, 160);
+          more.push(inCase && !asked.toLowerCase().includes(inCase.toLowerCase()) ? `${asked} ${inCase}` : asked);
+        }
         if (more.length && (opts.depth ?? 0) < 2 && !abort.current?.signal.aborted) {
           void send(`🔎 Searching the web for ${more.map((m) => `“${m}”`).join(', ')}. Use what turns up to finish what I asked.`, { searchFor: more, depth: (opts.depth ?? 0) + 1 });
         }

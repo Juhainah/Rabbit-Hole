@@ -95,7 +95,7 @@ export async function startDig(opts: { query: string; parentId?: string; url?: s
   let mediaLeft = 3;
   const entityIds = new Map<string, string>();
   /** The who's-who gallery and the card it belongs to ("Boyfriends" → "Star Chat"). */
-  let gallery: { id: string; about?: string; title: string } | undefined;
+  const galleries: { id: string; about?: string; title: string }[] = [];
   const geo: MapPoint[] = [];
   let evIndex = 0;
   let primaryTitle: string | undefined;
@@ -169,9 +169,10 @@ export async function startDig(opts: { query: string; parentId?: string; url?: s
     }
     for (const n of nodes) if (!linked.has(n.id)) edges.push(makeEdge(topicId, n.id, { kind: 'relation' }, 'pin', true));
     // The who's-who gallery hangs off the card it belongs to, not just the case.
-    if (gallery?.about) {
+    for (const gallery of galleries) {
+      if (!gallery.about) continue;
       const about = tokenize(gallery.about);
-      const owner = nodes.find((n) => nameMatcher(n.data.title)(about) || nameMatcher(gallery!.about!)(tokenize(n.data.title)));
+      const owner = nodes.find((n) => nameMatcher(n.data.title)(about) || nameMatcher(gallery.about!)(tokenize(n.data.title)));
       if (owner) edges.push(makeEdge(owner.id, gallery.id, { kind: 'evidence', label: `the ${gallery.title.replace(/\s*\(.*\)\s*$/, '').toLowerCase()}` }));
     }
 
@@ -299,12 +300,13 @@ export async function startDig(opts: { query: string; parentId?: string; url?: s
               url: g.url,
               source: g.source,
               clusterId,
-              items: g.items.map((p) => ({ title: p.title, image: p.image, url: p.url })),
+              items: g.items.map((p) => ({ title: p.title, image: p.image, url: p.url, role: p.meta?.role ? String(p.meta.role) : undefined })),
+              text: g.note,
             });
             useBoards.getState().addNodes([card]);
             useBoards.getState().addEdges([makeEdge(topicId, card.id, { kind: 'evidence' }, 'pin', true)]);
             newIds.push(card.id);
-            gallery = { id: card.id, about: g.about, title: g.title };
+            galleries.push({ id: card.id, about: g.about, title: g.title });
             log(`🗂 Who's who: ${g.items.length} from ${g.title}`, 'ok', g.source);
             break;
           }

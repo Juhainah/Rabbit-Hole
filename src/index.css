@@ -808,6 +808,26 @@ button {
   padding-right: 4px;
   overscroll-behavior: contain;
 }
+.gallery-role {
+  display: block;
+  margin-top: -2px;
+  font: italic 500 10.5px/1.25 var(--font-ui);
+  color: #6b5d4f;
+  overflow-wrap: anywhere;
+}
+.gallery-note {
+  margin-top: 2px;
+  font: 500 12px/1.4 var(--font-ui);
+  color: #5a4c3e;
+}
+.gallery-noface {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 1;
+  background: #e8dcc4;
+  font: 700 26px/1 var(--f-type);
+  color: #8a7a66;
+}
 .gallery-foot {
   display: flex;
   align-items: center;
@@ -820,7 +840,7 @@ button {
   padding: 3px 10px;
   border-radius: 999px;
   background: rgba(31, 27, 22, 0.08);
-  font: 600 11.5px/1.4 var(--f-ui, Inter, sans-serif);
+  font: 600 11.5px/1.4 var(--font-ui);
   color: #3a3128;
 }
 .gallery-more:hover {

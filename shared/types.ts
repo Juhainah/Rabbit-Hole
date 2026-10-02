@@ -143,7 +143,7 @@ export type DigEvent =
   /** Item ids that are good but not the best: moved off the board into the case's "More finds". */
   | { type: 'extras'; ids: string[] }
   /** A who's-who list from the subject's wiki (characters, members), pinned as one card of portraits. */
-  | { type: 'gallery'; gallery: { title: string; url: string; source: string; items: SourceItem[]; about?: string } }
+  | { type: 'gallery'; gallery: { title: string; url: string; source: string; items: SourceItem[]; about?: string; note?: string } }
   | { type: 'error'; message: string }
   /** Heartbeat so the client can tell a slow answer from a dead connection. */
   | { type: 'ping' }

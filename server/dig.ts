@@ -12,6 +12,7 @@ import { availableSources, searchSource } from './sources';
 import { archiveMedia, siteIn, waybackImages } from './sources/archives';
 import { nameMatcher, norm as nameKey, tokenize } from '../shared/names';
 import { enrichEntities, wikiPrimary } from './sources/knowledge';
+import { castOf, isScreenWork } from './sources/cast';
 
 export type Emit = (ev: DigEvent) => void;
 
@@ -244,6 +245,7 @@ export async function runDig(req: DigRequest, emit: Emit, signal: AbortSignal) {
         console.warn(`[research] ${errMsg(e)}`);
         return null;
       });
+  const castTask = primary && isScreenWork(primary.extract) && !venue ? castOf(primary.title, signal).catch(() => null) : Promise.resolve(null);
   const seen = new Set<string>();
   const keep = (items: SourceItem[]) =>
     items.filter((it) => {
@@ -321,6 +323,15 @@ export async function runDig(req: DigRequest, emit: Emit, signal: AbortSignal) {
   if (signal.aborted) return;
   if (!signal.aborted) emit({ type: 'status', message: 'Finishing the deep research…' });
   const research = await Promise.race([researchTask, sleep(30000).then(() => null)]);
+  // A film or series: who is in it, who they play, and who directed it, as a who's-who card.
+  const cast = await Promise.race([castTask, sleep(3000).then(() => null)]);
+  const castReading = cast
+    ? [{ title: `Cast of ${cast.title} (Wikipedia)`, url: cast.url, source: 'wikipedia', text: [cast.director.length ? `Directed by ${cast.director.join(', ')}.` : '', ...cast.items.map((it) => (it.meta?.role ? `${it.title} as ${it.meta.role}` : it.title))].filter(Boolean).join('\n') }]
+    : [];
+  if (cast && !signal.aborted) {
+    sideItems.push(...cast.items);
+    emit({ type: 'gallery', gallery: { title: `Who's who in ${cast.title}`, url: cast.url, source: 'wikipedia', items: cast.items, note: cast.director.length ? `Directed by ${cast.director.join(', ')}` : undefined } });
+  }
   if (signal.aborted) return;
   {
     const fromArchives = await Promise.race([photoTask, sleep(4000).then(() => [] as SourceItem[])]);
@@ -403,7 +414,7 @@ export async function runDig(req: DigRequest, emit: Emit, signal: AbortSignal) {
     completeWithFallback(
       providers,
       {
-        messages: digMessages(venue ? `${framed} on ${venue.name}` : query, trail, primary, listed(compact), compact, framed, notes.length ? `The user typed “${asked}”. ${notes.join(' ')}` : undefined, venue?.name, research?.reading ?? [], research?.gallery),
+        messages: digMessages(venue ? `${framed} on ${venue.name}` : query, trail, primary, listed(compact), compact, framed, notes.length ? `The user typed “${asked}”. ${notes.join(' ')}` : undefined, venue?.name, [...castReading, ...(research?.reading ?? [])], research?.gallery),
         temperature: 0.6,
         maxTokens: compact ? 4000 : 8000,
         signal,

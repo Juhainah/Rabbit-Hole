@@ -5,6 +5,7 @@ import { archiveMedia, periodIn, siteIn, waybackImages } from './sources/archive
 import { wikiPrimary } from './sources/knowledge';
 import { readAnything } from './reader';
 import { understand } from './understand';
+import { castOf, isScreenWork } from './sources/cast';
 import { serper, serperImages, webSearch } from './sources/web';
 
 // Words that say what to do, not what to look for.
@@ -49,6 +50,7 @@ export function chatPhrase(question: string, hint?: string) {
  * aren't back by then are left out rather than leaving the user watching "Checking the archives…".
  */
 // Asking for things to be found or added: worth planning real searches for.
+const ASKING = /\?|^(is|are|was|were|does|did|do|why|how|what|who|whom|when|where|which|could|would|should|has|have|had)\b/i;
 const FINDING = /\b(add|find|search|look|fetch|bring|get|pull|show|any|more|other|articles?|sources?|news|coverage|reviews?|interviews?|pictures?|photos?|images?|list|who|which)\b/i;
 
 export async function chatResearch(
@@ -70,9 +72,8 @@ export async function chatResearch(
     ...new Set([
       ...(wanted?.length ? wanted : ['wikipedia', 'web', 'reddit']),
       'web',
-      'commons',
       ...(wantsForums ? ['reddit', 'forums'] : []),
-      ...(wantsImages ? ['openverse', 'nasa'] : []),
+      ...(wantsImages ? ['commons', 'openverse', 'nasa'] : []),
     ]),
   ]
     .filter((id) => allowed.has(id))
@@ -99,7 +100,8 @@ export async function chatResearch(
   const plannedTask = (async () => {
     let qs = own;
     let names: string[] = [];
-    if (!qs.length && FINDING.test(question)) {
+    // Questions ("Is the Begum's marriage portrayed as a sham…?") are researched, not answered from memory.
+    if (!qs.length && (FINDING.test(question) || ASKING.test(question.trim()) || question.split(/\s+/).length >= 6)) {
       extra.onStatus?.('Planning the searches…');
       const plan = await understand(question, await googleTask, signal, hint);
       if (plan) {
@@ -152,7 +154,12 @@ export async function chatResearch(
   // Lists and roundups are never the answer.
   const found = rankRelevant([...google, ...batches.flat()].filter((s) => !ROUNDUP_TITLE.test(s.title) && isRelevant(s)), topic);
   if (p) found.unshift({ id: `wikipedia:${p.title}`, source: 'wikipedia', kind: 'article', title: p.title, snippet: p.extract.slice(0, 600), url: p.url, image: p.image });
-  const [fromArchive, media, fromCard, planned] = await Promise.all([waybackTask, mediaTask, focusTask, plannedTask]);
+  // A film or series on the board: who plays whom, so "list the leads and their characters" can be answered.
+  const castTask = p && isScreenWork(p.extract) ? within(castOf(p.title, signal), 9000, null) : Promise.resolve(null);
+  const [fromArchive, media, fromCard, planned, cast] = await Promise.all([waybackTask, mediaTask, focusTask, plannedTask, castTask]);
+  const castSource: SourceItem[] = cast
+    ? [{ id: `cast-list:${cast.title}`, source: 'wikipedia', kind: 'article', title: `Cast of ${cast.title}`, url: cast.url, snippet: [cast.director.length ? `Directed by ${cast.director.join(', ')}.` : '', ...cast.items.map((it) => (it.meta?.role ? `${it.title} as ${it.meta.role}` : it.title))].filter(Boolean).join('; ') }]
+    : [];
   // Searches the partner chose itself are trusted to be on point; planned ones must name the subject.
   const plannedTopic = { phrasings: [...planned.names, lead || undefined, phrase], context: p?.extract };
   const fromPlan = rankRelevant(
@@ -165,6 +172,7 @@ export async function chatResearch(
   const rest = found.filter((s) => s.kind !== 'post');
   const ordered = [
     ...fromCard,
+    ...castSource,
     ...fromArchive,
     ...(wantsImages ? [] : fromPlan.slice(0, 8)),
     ...playable,

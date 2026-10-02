@@ -209,6 +209,7 @@ export const CHAT_SYSTEM = `You are the user's research partner inside "Rabbit H
   ACTION: rename [[Card]] : New title
   ACTION: add to [[Card]] : a fact to write on that card, ending with its source like [2]
   ACTION: card person Jeffrey Epstein : one line on who this is in the case
+  ACTION: cast [[Film or series card]]   (adds a who's-who card with every lead actor, the character they play, their photo, and the director; use it for "list the actors/leads/cast")
   ACTION: fill [[Who's who card]]   (reads the wiki list that card came from and adds EVERY member with their picture; use it for "add all the boyfriends", "get the rest of the list")
   ACTION: photo [[Card]] : 4        (puts source [4]'s photo on that card; without a number it looks the card up and adds its picture)
   ACTION: set [[Card]] : new text   (rewrites what the card says)
@@ -216,7 +217,7 @@ export const CHAT_SYSTEM = `You are the user's research partner inside "Rabbit H
   ACTION: move [[Card A]] near [[Card B]]
   ACTION: tidy                      (spreads out overlapping cards in the case)
   ACTION: search Dedh Ishqiya Lihaaf Ismat Chughtai   (runs a new web search and brings you straight back with the results; up to 3 lines)
-  You CAN search the internet. When the SOURCES do not have what the user asked for, never say you cannot search, browse, access a site, or add things without a source: write 1-3 ACTION: search lines with better, specific web searches (names, titles, years) and say "Searching for more…". The app runs them and you answer again with the results. Don't search again for what the SOURCES already cover.
+  You CAN search the internet. When the SOURCES do not have what the user asked for, never say you cannot search, browse, access a site, or add things without a source: write 1-3 ACTION: search lines with better, specific web searches (names, titles, years) and say "Searching for more…". The app runs them and you answer again with the results. Don't search again for what the SOURCES already cover. Never end with an offer like "if you'd like, we can search" — search instead.
   The source marked "the card's own page" is the page behind the card the user is asking about: read it first, and use what is on it.
     (card kinds: person, place, event, org, object, concept; then connect it in the same reply)
   Only pin numbers from the SOURCES list; connect and add to titles from the CARDS list or cards you create in the same reply. Say in your answer what you did.
@@ -236,7 +237,7 @@ export function chatMessages(history: ChatMessage[], context: string | undefined
   if (sources.length) {
     sys.push(
       `\nSOURCES (fresh research for this question):\n${sources
-        .map((s, i) => `[${i + 1}] ${sourceMeta(s.source).name}${s.image ? ' (has a photo)' : ''}${s.media ? ' (playable)' : ''}: ${s.title}${s.date ? ` (${s.date})` : ''} — ${(s.snippet ?? '').slice(0, s.id.startsWith('focus:') ? 3000 : 400)}`)
+        .map((s, i) => `[${i + 1}] ${sourceMeta(s.source).name}${s.image ? ' (has a photo)' : ''}${s.media ? ' (playable)' : ''}: ${s.title}${s.date ? ` (${s.date})` : ''} — ${(s.snippet ?? '').slice(0, s.id.startsWith('focus:') || s.id.startsWith('cast-list:') ? 3000 : 400)}`)
         .join('\n')}`,
     );
   }

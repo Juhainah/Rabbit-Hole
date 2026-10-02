@@ -56,7 +56,7 @@ export type ClueData = {
   width?: number;
   height?: number;
   /** A gallery card's portraits (a wiki's list of characters, members…). */
-  items?: { title: string; image?: string; url?: string }[];
+  items?: { title: string; image?: string; url?: string; role?: string }[];
   /** Good finds that didn't make the case's hand-picked board, one click from being pinned. */
   extras?: SourceItem[];
   /** A who's-who card that already holds its list's every member. */
