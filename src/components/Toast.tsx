@@ -15,18 +15,18 @@ export function Toast() {
   }, [toast]);
   if (!toast) return null;
   return (
-    <div key={toast.at} className="animate-rise fixed bottom-24 left-1/2 z-[60] -translate-x-1/2">
+    <div key={toast.at} className="toast animate-rise fixed bottom-24 left-1/2 z-[60] w-max max-w-[calc(100vw-24px)] -translate-x-1/2">
       <div className="flex items-center gap-3 rounded-full bg-ink py-2 pr-2 pl-4 text-[13px] text-paper shadow-[0_12px_30px_-8px_rgba(0,0,0,.7)]">
-        <span>{toast.text}</span>
+        <span className="min-w-0 truncate">{toast.text}</span>
         {toast.undo && (
           <button
             onClick={() => {
               const label = useBoards.getState().undo();
               useUi.getState().set({ toast: label ? { text: `Undone: ${label}`, at: Date.now() } : undefined });
             }}
-            className="flex items-center gap-1 rounded-full bg-paper/15 px-3 py-1 font-semibold hover:bg-paper/25"
+            className="flex shrink-0 items-center gap-1 rounded-full bg-paper/15 px-3 py-1 font-semibold hover:bg-paper/25"
           >
-            <RotateCcw size={13} /> Undo <kbd className="ml-1 text-[10.5px] opacity-60">Ctrl+Z</kbd>
+            <RotateCcw size={13} /> Undo <kbd className="ml-1 hidden text-[10.5px] opacity-60 md:inline">Ctrl+Z</kbd>
           </button>
         )}
       </div>

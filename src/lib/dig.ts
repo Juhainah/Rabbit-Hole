@@ -1,7 +1,7 @@
 import { nanoid } from 'nanoid';
 import { sourceMeta } from '../../shared/sources';
 import type { Analysis, EntityEnrichment, SourceItem } from '../../shared/types';
-import { currentBoard, useBoards } from '../store/boards';
+import { currentBoard, onBoard, useBoards } from '../store/boards';
 import { useSettings } from '../store/settings';
 import { useUi } from '../store/ui';
 import type { Board, ClueData, ClueNode, ClueType, MapPoint, StringEdge } from '../types';
@@ -53,6 +53,9 @@ export async function startDig(opts: { query: string; parentId?: string; url?: s
   if (!query && !opts.url) return undefined;
   const store = useBoards.getState();
   const board = currentBoard();
+  // Everything this dig adds goes to this board, even if you switch to another one meanwhile.
+  const boardId = board.id;
+  const here = () => useBoards.getState().currentId === boardId;
   const prefs = useSettings.getState();
   const ui = useUi.getState();
 
@@ -105,7 +108,7 @@ export async function startDig(opts: { query: string; parentId?: string; url?: s
   // Pull the camera back as clues land so you watch the board fill up.
   let lastFrame = 0;
   const reframe = () => {
-    if (Date.now() - lastFrame < 2200) return;
+    if (!here() || Date.now() - lastFrame < 2200) return;
     lastFrame = Date.now();
     useUi.getState().focusNodes([...newIds]);
   };
@@ -237,7 +240,7 @@ export async function startDig(opts: { query: string; parentId?: string; url?: s
   try {
     await api.dig(
       { topic: query, url: opts.url, trail, caseQuery, sources: prefs.digSources, perSource: prefs.perSource },
-      (ev) => {
+      (ev) => onBoard(boardId, () => {
         const log = useUi.getState().log;
         switch (ev.type) {
           case 'status':
@@ -339,31 +342,35 @@ export async function startDig(opts: { query: string; parentId?: string; url?: s
             if (!entityIds.size) addMap();
             break;
         }
-      },
+      }),
       ctrl.signal,
     );
-    useBoards.getState().updateNode(topicId, { status: 'done', statusText: undefined });
-    // Weave the evidence in: string clues to the cards they mention and seat them alongside.
-    const woven = weaveCase(clusterId, topicId);
-    if (woven) useUi.getState().log(`🧶 Wove ${woven} clue${woven === 1 ? '' : 's'} to the people and places they mention`, 'ok');
-    // After enrichment, cards carry Wikipedia links, so twins in other cases match reliably.
-    const shared = linkAcrossCases(clusterId);
-    if (shared) useUi.getState().log(`🔗 ${shared} card${shared === 1 ? '' : 's'} also appear in earlier cases`, 'ok');
-    play('found');
+    onBoard(boardId, () => {
+      useBoards.getState().updateNode(topicId, { status: 'done', statusText: undefined });
+      // Weave the evidence in: string clues to the cards they mention and seat them alongside.
+      const woven = weaveCase(clusterId, topicId);
+      if (woven) useUi.getState().log(`🧶 Wove ${woven} clue${woven === 1 ? '' : 's'} to the people and places they mention`, 'ok');
+      // After enrichment, cards carry Wikipedia links, so twins in other cases match reliably.
+      const shared = linkAcrossCases(clusterId);
+      if (shared) useUi.getState().log(`🔗 ${shared} card${shared === 1 ? '' : 's'} also appear in earlier cases`, 'ok');
+    });
+    if (here()) play('found');
   } catch (e) {
     const aborted = ctrl.signal.aborted;
     const message = aborted ? 'Stopped' : e instanceof Error ? e.message : String(e);
-    useBoards.getState().updateNode(topicId, { status: aborted ? 'done' : 'error', statusText: message });
+    onBoard(boardId, () => useBoards.getState().updateNode(topicId, { status: aborted ? 'done' : 'error', statusText: message }));
     if (!aborted) useUi.getState().log(message, 'err');
   } finally {
     controllers.delete(topicId);
     // What's left has been vetted (or the dig stopped): no card stays marked "checking".
-    useBoards.getState().updateNodes((n) => (n.data.vetting && n.data.clusterId === clusterId ? { ...n, data: { ...n.data, vetting: undefined } } : n));
+    onBoard(boardId, () => useBoards.getState().updateNodes((n) => (n.data.vetting && n.data.clusterId === clusterId ? { ...n, data: { ...n.data, vetting: undefined } } : n)));
     const u = useUi.getState();
     u.set({ digging: Math.max(0, u.digging - 1) });
-    // End on the heart of the case (file, people, leads) at a readable zoom.
-    const alive = new Set(currentBoard().nodes.map((n) => n.id));
-    u.focusNodes(innerIds.filter((id) => alive.has(id)));
+    // End on the heart of the case (file, people, leads) at a readable zoom, if you are still looking at it.
+    if (here()) {
+      const alive = new Set(currentBoard().nodes.map((n) => n.id));
+      u.focusNodes(innerIds.filter((id) => alive.has(id)));
+    }
   }
   return topicId;
 }

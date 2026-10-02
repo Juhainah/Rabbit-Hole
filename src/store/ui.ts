@@ -30,6 +30,10 @@ interface UiState {
   focusRequest?: { ids: string[]; at: number; soft?: boolean };
   menu?: { x: number; y: number; nodeId?: string; edgeId?: string };
   arranging?: boolean;
+  /** Dragging on empty board draws a box that selects many cards. */
+  selecting?: boolean;
+  /** Set to open the toolbar's Add menu (from the empty board, the phone bar…). */
+  addMenuAt?: number;
   toast?: { text: string; at: number; undo?: boolean };
   /** Card types picked in "On this board": those stay lit, the rest fade back. */
   spotlight: string[];

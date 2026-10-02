@@ -1,7 +1,8 @@
-import { Dices } from 'lucide-react';
+import { Dices, Hammer } from 'lucide-react';
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { api } from '../../lib/api';
 import { startDig } from '../../lib/dig';
+import { TEMPLATES, startFromTemplate } from '../../lib/templates';
 import { hash01 } from '../../lib/utils';
 
 const CLASSICS = [
@@ -141,6 +142,21 @@ export function EmptyState() {
                 </div>
               </div>
             )}
+            <div className="mt-4 border-t border-dashed border-ink/20 pt-3">
+              <div className="flex items-center gap-1.5 text-[11.5px] font-medium text-ink-soft">
+                <Hammer size={13} /> Or build your own board
+              </div>
+              <div className="mt-1.5 flex flex-wrap gap-1.5">
+                <button className="chip" onClick={() => startFromTemplate('blank')} title="Start empty and add your own cards, photos and files">
+                  Blank board
+                </button>
+                {TEMPLATES.map((t) => (
+                  <button key={t.id} className="chip" onClick={() => startFromTemplate(t.id)} title={t.blurb}>
+                    {t.name}
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
           {inspo?.onThisDay.length ? (
             <div className="mt-3 bg-[#f3eee2] px-5 py-3 shadow-sm rotate-[0.6deg]">

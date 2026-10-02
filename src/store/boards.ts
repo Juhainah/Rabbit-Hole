@@ -134,6 +134,23 @@ export function settleBoard(b: Board): Board {
   };
 }
 
+/**
+ * The board that store changes go to. Normally the open one; a dig or a chat answer that started
+ * on another board runs its updates inside onBoard(id, …) so they land on its own board even
+ * after you switch away.
+ */
+let target: string | undefined;
+const targetId = (s: { currentId: string; boards: Record<string, Board> }) => (target && s.boards[target] ? target : s.currentId);
+export function onBoard<T>(id: string | undefined, fn: () => T): T {
+  const prev = target;
+  target = id;
+  try {
+    return fn();
+  } finally {
+    target = prev;
+  }
+}
+
 const first = newBoard('My first rabbit hole');
 
 export const useBoards = create<BoardsState>()(
@@ -141,7 +158,7 @@ export const useBoards = create<BoardsState>()(
     (set, get) => {
       let lastSnap = 0;
       const snap = (label: string) => {
-        const b = get().boards[get().currentId];
+        const b = get().boards[targetId(get())];
         if (!b) return;
         // One user action can fire several changes (a card and then its strings): keep one snapshot.
         if (Date.now() - lastSnap < 80) return;
@@ -157,7 +174,7 @@ export const useBoards = create<BoardsState>()(
       /** Apply an update to the current board. */
       const patch = (fn: (b: Board) => Partial<Board>) =>
         set((s) => {
-          const b = s.boards[s.currentId];
+          const b = s.boards[targetId(s)];
           if (!b) return s;
           return { boards: { ...s.boards, [b.id]: { ...b, ...fn(b), updatedAt: Date.now() } } };
         });
@@ -261,7 +278,7 @@ export const useBoards = create<BoardsState>()(
         },
         snapshot: (label) => snap(label),
         undo: () => {
-          const b = get().boards[get().currentId];
+          const b = get().boards[targetId(get())];
           const s = b && past.get(b.id)?.pop();
           if (!s) return undefined;
           patch(() => ({ nodes: s.nodes, edges: s.edges, trail: s.trail, timeline: s.timeline }));
@@ -277,7 +294,7 @@ export const useBoards = create<BoardsState>()(
         },
         addTrail: (step) => patch((b) => ({ trail: [...b.trail, step] })),
         nextCaseNo: () => {
-          const b = get().boards[get().currentId];
+          const b = get().boards[targetId(get())];
           const n = (b?.caseCounter ?? 0) + 1;
           patch(() => ({ caseCounter: n }));
           return n;
@@ -312,5 +329,5 @@ export const useBoards = create<BoardsState>()(
 export const useCurrentBoard = () => useBoards((s) => s.boards[s.currentId]);
 export const currentBoard = () => {
   const s = useBoards.getState();
-  return s.boards[s.currentId];
+  return s.boards[targetId(s)];
 };

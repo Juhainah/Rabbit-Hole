@@ -2,10 +2,10 @@ import { Handle, NodeResizer, Position, useUpdateNodeInternals, type NodeProps }
 import { fillGallery } from '../../lib/gallery';
 import clsx from 'clsx';
 import { ArrowDown, MessageCircle, Play, Square, BookOpen } from 'lucide-react';
-import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { sourceMeta } from '../../../shared/sources';
 import { askAbout, autoFall, caseFromTangent, startDig, stopDig } from '../../lib/dig';
-import { compact, domain, ENTITY_COLORS, ENTITY_LABEL, hash01, prettyDate } from '../../lib/utils';
+import { compact, domain, ENTITY_COLORS, ENTITY_LABEL, hash01, prettyDate, STAMPS } from '../../lib/utils';
 import { useBoards } from '../../store/boards';
 import { useSettings } from '../../store/settings';
 import { useUi } from '../../store/ui';
@@ -40,18 +40,50 @@ function Card(props: {
   const fresh = useFresh(props.id);
   // React Flow measures the pin mid-fall; once the card lands, measure again so strings meet the pin.
   const updateInternals = useUpdateNodeInternals();
+  const hold = useTouchHold(props.id);
+  const stamp = props.data.stamp ? STAMPS.find((s) => s.id === props.data.stamp) : undefined;
+  const pinStyle = props.data.pinStyle ?? 'pin';
   return (
     <div
+      {...hold}
       onAnimationEnd={(e) => e.animationName === 'drop-in' && updateInternals(props.id)}
-      className={clsx('clue', fresh && 'fresh', props.className, props.selected && 'is-selected', props.data.vetting && 'vetting')}
-      style={{ '--rot': `${rot}deg`, ...props.style } as CSSProperties}
+      className={clsx('clue', fresh && 'fresh', props.className, props.selected && 'is-selected', props.data.vetting && 'vetting', props.data.tint && 'tinted')}
+      style={{ '--rot': `${rot}deg`, ...(props.data.tint ? { '--tint': props.data.tint } : {}), ...props.style } as CSSProperties}
     >
-      {props.tape && <span className="tape washi" style={{ '--w': props.tape } as CSSProperties} />}
+      {props.tape && pinStyle !== 'tape' && <span className="tape washi" style={{ '--w': props.tape } as CSSProperties} />}
+      {pinStyle === 'tape' && <span className="tape washi pin-tape-strip" style={{ '--w': props.data.pin ?? '#c9b48a' } as CSSProperties} />}
+      {pinStyle === 'clip' && <span className="paper-clip" />}
       {props.data.vetting && <span className="vetting-stamp">checking</span>}
-      <Handle type="source" position={Position.Top} id="pin" className="pin" style={{ '--pin': props.data.pin ?? props.pin ?? '#c8322f' } as CSSProperties} />
+      {stamp && <span className="rubber-stamp" style={{ '--stamp': stamp.color } as CSSProperties}>{stamp.label}</span>}
+      <Handle type="source" position={Position.Top} id="pin" className={clsx('pin', pinStyle !== 'pin' && `pin-${pinStyle}`)} style={{ '--pin': props.data.pin ?? props.pin ?? '#c8322f' } as CSSProperties} />
       {props.children}
     </div>
   );
+}
+
+/** Phones have no right-click: hold a card for half a second to open its menu. */
+function useTouchHold(id: string) {
+  const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const start = useRef({ x: 0, y: 0 });
+  const cancel = () => clearTimeout(timer.current);
+  return {
+    onPointerDown: (e: React.PointerEvent) => {
+      if (e.pointerType !== 'touch') return;
+      start.current = { x: e.clientX, y: e.clientY };
+      cancel();
+      timer.current = setTimeout(() => {
+        const ui = useUi.getState();
+        ui.select(id);
+        ui.set({ menu: { x: start.current.x, y: start.current.y, nodeId: id } });
+        navigator.vibrate?.(12);
+      }, 520);
+    },
+    onPointerMove: (e: React.PointerEvent) => {
+      if (Math.hypot(e.clientX - start.current.x, e.clientY - start.current.y) > 9) cancel();
+    },
+    onPointerUp: cancel,
+    onPointerCancel: cancel,
+  };
 }
 
 const read = (id: string, url: string) => {
@@ -566,6 +598,40 @@ export function MapNode({ id, data, selected, width, height }: P) {
   );
 }
 
+// ─── Theory frame: a labelled area; moving it moves the cards inside ─────────
+export function FrameNode({ id, data, selected, width, height }: P) {
+  const [editing, setEditing] = useState(!data.title);
+  const update = useBoards((s) => s.updateNode);
+  const color = data.color ?? '#c8322f';
+  const hold = useTouchHold(id);
+  return (
+    <>
+      <NodeResizer isVisible={!!selected} minWidth={240} minHeight={160} lineStyle={{ borderColor: 'transparent' }} handleStyle={{ width: 12, height: 12, borderRadius: 3 }} />
+      <div {...hold} className={clsx('clue-frame', selected && 'is-selected')} style={{ '--frame': color, width: width ?? 640, height: height ?? 420 } as CSSProperties}>
+        <Handle type="source" position={Position.Top} id="pin" className="pin frame-pin" style={{ '--pin': color } as CSSProperties} />
+        <div className="frame-tab">
+          {editing ? (
+            <input
+              className="nodrag"
+              autoFocus
+              defaultValue={data.title}
+              placeholder="Name this frame…"
+              onBlur={(e) => {
+                update(id, { title: e.target.value.trim() || 'Untitled frame' });
+                setEditing(false);
+              }}
+              onKeyDown={(e) => (e.key === 'Enter' || e.key === 'Escape') && (e.target as HTMLInputElement).blur()}
+            />
+          ) : (
+            <span onDoubleClick={() => setEditing(true)} title="Double-click to rename">{data.title || 'Untitled frame'}</span>
+          )}
+        </div>
+        {data.text && <div className="frame-note">{data.text}</div>}
+      </div>
+    </>
+  );
+}
+
 export const nodeTypes = {
   topic: TopicNode,
   entity: EntityNode,
@@ -580,4 +646,5 @@ export const nodeTypes = {
   label: LabelNode,
   map: MapNode,
   gallery: GalleryNode,
+  frame: FrameNode,
 };

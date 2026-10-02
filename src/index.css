@@ -825,7 +825,7 @@ button {
   place-items: center;
   aspect-ratio: 1;
   background: #e8dcc4;
-  font: 700 26px/1 var(--f-type);
+  font: 700 26px/1 var(--font-type);
   color: #8a7a66;
 }
 .gallery-foot {
@@ -1319,6 +1319,236 @@ button {
   background: var(--color-paper);
 }
 
+/* Your own colour-coding: a band across the top of the card. */
+.clue.tinted::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 7px;
+  background: var(--tint);
+  opacity: 0.9;
+  pointer-events: none;
+  border-radius: 2px 2px 0 0;
+}
+/* A rubber stamp: what you have decided about this evidence. */
+.rubber-stamp {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  translate: -50% -50%;
+  z-index: 6;
+  padding: 3px 10px 2px;
+  border: 3px double var(--stamp);
+  border-radius: 6px;
+  font: 800 15px/1.1 var(--font-type);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--stamp);
+  background: rgba(255, 255, 255, 0.35);
+  transform: rotate(-11deg);
+  opacity: 0.88;
+  mix-blend-mode: multiply;
+  pointer-events: none;
+  white-space: nowrap;
+}
+/* Pin styles. The handle stays where strings meet; only its look changes. */
+.react-flow__handle.pin.pin-tack {
+  width: 13px;
+  height: 13px;
+  background: radial-gradient(circle, transparent 0 3px, rgba(255, 255, 255, 0.35) 3.5px 4.5px, transparent 5px), var(--pin, #c8322f);
+  box-shadow: 1px 2px 3px rgba(0, 0, 0, 0.45);
+}
+.react-flow__handle.pin.pin-tack::after {
+  display: none;
+}
+.react-flow__handle.pin.pin-tape,
+.react-flow__handle.pin.pin-clip {
+  opacity: 0;
+}
+.pin-tape-strip {
+  z-index: 5;
+}
+.paper-clip {
+  position: absolute;
+  top: -16px;
+  left: 50%;
+  z-index: 5;
+  width: 16px;
+  height: 40px;
+  margin-left: -8px;
+  border: 3px solid #9aa3ab;
+  border-radius: 10px;
+  box-shadow: 1px 1px 2px rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+}
+.paper-clip::after {
+  content: '';
+  position: absolute;
+  left: 2px;
+  right: 2px;
+  top: 5px;
+  bottom: 10px;
+  border: 3px solid #b8c0c7;
+  border-radius: 8px;
+}
+/* Theory frame: an area on the cork with a name tab, behind everything. */
+.react-flow__node-frame {
+  z-index: -10 !important;
+  pointer-events: none !important;
+}
+.react-flow__node-frame .frame-tab,
+.react-flow__node-frame .react-flow__resize-control {
+  pointer-events: auto;
+}
+.frame-tab {
+  cursor: grab;
+}
+.clue-frame {
+  position: relative;
+  border: 3px dashed var(--frame);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--frame) 7%, transparent);
+}
+.clue-frame.is-selected {
+  border-style: solid;
+  background: color-mix(in srgb, var(--frame) 11%, transparent);
+}
+.frame-tab {
+  position: absolute;
+  top: -17px;
+  left: 22px;
+  max-width: calc(100% - 44px);
+  padding: 4px 14px 3px;
+  background: var(--frame);
+  color: #fff;
+  font: 700 17px/1.2 var(--font-type);
+  letter-spacing: 0.06em;
+  border-radius: 6px 6px 6px 0;
+  box-shadow: 0 3px 8px -3px rgba(0, 0, 0, 0.5);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.frame-tab input {
+  width: 220px;
+  background: transparent;
+  color: #fff;
+  outline: none;
+  font: inherit;
+}
+.frame-tab input::placeholder {
+  color: rgba(255, 255, 255, 0.7);
+}
+.frame-note {
+  position: absolute;
+  left: 16px;
+  bottom: 10px;
+  right: 16px;
+  font: 600 13px/1.4 var(--font-ui);
+  color: color-mix(in srgb, var(--frame) 80%, #000);
+  opacity: 0.75;
+}
+.react-flow__handle.pin.frame-pin {
+  opacity: 0;
+}
+
+.stamp-chip {
+  padding: 1px 7px;
+  border: 2px solid var(--stamp);
+  border-radius: 4px;
+  font: 700 10.5px/1.5 var(--font-type);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--stamp);
+  transition: transform 0.12s;
+}
+.stamp-chip:hover {
+  transform: rotate(-4deg) scale(1.06);
+}
+/* The Add menu. */
+.add-panel {
+  width: min(380px, calc(100vw - 32px));
+}
+.add-head {
+  margin-bottom: 6px;
+  font: 400 20px/1 var(--font-hand, cursive);
+}
+.add-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+.add-tile {
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  padding: 8px 4px 7px;
+  border-radius: 10px;
+  background: rgba(255, 253, 247, 0.85);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+  font: 500 11.5px/1.2 var(--font-ui);
+  color: var(--color-ink);
+  transition: transform 0.12s, background 0.12s;
+}
+.add-tile:hover {
+  transform: translateY(-2px);
+  background: #fff;
+}
+.add-input {
+  margin-top: 8px;
+  width: 100%;
+  border-radius: 8px;
+  border: 1px solid rgba(31, 27, 22, 0.2);
+  background: #fff;
+  padding: 8px 12px;
+  font: 400 14px/1.3 var(--font-ui);
+  outline: none;
+}
+.add-input:focus {
+  border-color: rgba(31, 27, 22, 0.5);
+}
+.add-go {
+  margin-top: 10px;
+  width: 100%;
+  border-radius: 8px;
+  background: #c8322f;
+  padding: 8px;
+  font: 600 13.5px/1.2 var(--font-ui);
+  color: #fff;
+}
+.add-go:disabled {
+  opacity: 0.5;
+}
+.board.selecting .react-flow__pane {
+  cursor: crosshair;
+}
+@media (max-width: 767px) {
+  .add-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .add-panel {
+    width: 100%;
+  }
+  /* Panels open as a sheet above the toolbar, never off-screen. */
+  .toolbar-panel {
+    position: fixed !important;
+    left: 12px !important;
+    right: 12px;
+    bottom: calc(130px + env(safe-area-inset-bottom, 0px)) !important;
+    transform: none !important;
+    translate: none !important;
+    width: auto;
+    min-width: 0 !important;
+    max-height: 60dvh;
+    overflow-y: auto;
+  }
+  .tool-tip {
+    display: none;
+  }
+}
+
 /* Pinned mid-dig, not yet vetted: faded until the AI keeps it. */
 .clue.vetting {
   opacity: 0.55;
@@ -1333,7 +1563,7 @@ button {
   padding: 1px 7px;
   border: 1.5px solid #8a6d3b;
   border-radius: 3px;
-  font: 700 10px/1.4 var(--f-type);
+  font: 700 10px/1.4 var(--font-type);
   letter-spacing: 0.18em;
   text-transform: uppercase;
   color: #8a6d3b;
@@ -1400,7 +1630,18 @@ button {
   /* The board toolbar fits the screen and scrolls sideways if it must. */
   .board-toolbar {
     bottom: 12px !important;
-    max-width: calc(100vw - 24px);
+    left: 12px !important;
+    right: 12px;
+    max-width: none;
+    /* No centring transform: it would trap the fixed menus inside the toolbar. */
+    translate: none !important;
+    transform: none !important;
+  }
+  .board-toolbar > .toolbar-row {
+    width: 100%;
+  }
+  .toast {
+    bottom: 84px;
   }
   .board-toolbar > .paper-panel {
     overflow-x: auto;
@@ -1827,4 +2068,25 @@ button {
   color: #b3261e;
   background: #fff6c9;
   font-size: 10.5px;
+}
+
+/* Fingers, not cursors: bigger targets on touch screens. */
+@media (pointer: coarse) {
+  .clue-btn {
+    padding: 6px 10px;
+    font-size: 12.5px;
+  }
+  .react-flow__handle.pin {
+    width: 22px;
+    height: 22px;
+  }
+  .react-flow__controls-button {
+    width: 34px;
+    height: 34px;
+  }
+  .gallery-more,
+  .stamp-chip,
+  .chip {
+    min-height: 30px;
+  }
 }

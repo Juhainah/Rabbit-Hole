@@ -23,6 +23,8 @@ interface Prefs {
   showLabels: boolean;
   minimap: boolean;
   frame: boolean;
+  /** Cards snap to a 20px grid when dragged. */
+  snap: boolean;
   sounds: boolean;
   researchChat: boolean;
   /** Send the board (or selected card) to the partner with each question. */
@@ -50,6 +52,7 @@ export const useSettings = create<SettingsState>()(
       showLabels: true,
       minimap: true,
       frame: true,
+      snap: false,
       sounds: true,
       researchChat: true,
       chatUsesBoard: true,

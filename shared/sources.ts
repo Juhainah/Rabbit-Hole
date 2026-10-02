@@ -141,8 +141,11 @@ export const SOURCE_GROUPS: SourceGroup[] = [
   'Records',
 ];
 
+/** Evidence the user added themselves (their photos, PDFs, notes). Not a searchable archive. */
+const MINE: SourceMeta = { id: 'mine', name: 'Your evidence', group: 'Web', glyph: 'ME', color: '#6b5d4f', description: 'Added by you', dig: false };
+
 export const sourceMeta = (id: string): SourceMeta =>
-  SOURCES.find((s) => s.id === id) ?? {
+  (id === 'mine' ? MINE : SOURCES.find((s) => s.id === id)) ?? {
     id,
     name: id,
     group: 'Web',

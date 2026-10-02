@@ -39,7 +39,7 @@ export function StringEdge({ id, source, target, sourceX, sourceY, targetX, targ
   const kind = data?.kind ?? 'user';
   const { d, lx, ly } = sagPath(sourceX, sourceY, targetX, targetY);
   const color = data?.color ?? (stringMode === 'red' && kind !== 'tangent' && kind !== 'evidence' ? 'var(--string)' : KIND_VAR[kind]);
-  const width = kind === 'evidence' ? 1.5 : kind === 'tangent' ? 2.2 : 2.6;
+  const width = data?.width ?? (kind === 'evidence' ? 1.5 : kind === 'tangent' ? 2.2 : 2.6);
   const rot = useMemo(() => (hash01(id) * 2 - 1) * 5, [id]);
   const dashed = data?.dashed;
   return (

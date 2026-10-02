@@ -14,7 +14,9 @@ export type ClueType =
   | 'quote'
   | 'map'
   | 'label'
-  | 'gallery';
+  | 'gallery'
+  /** A labelled area that groups cards ("Suspects", "Theory A"); moving it moves what's inside. */
+  | 'frame';
 
 export interface MapPoint {
   lat: number;
@@ -61,9 +63,18 @@ export type ClueData = {
   extras?: SourceItem[];
   /** A who's-who card that already holds its list's every member. */
   listComplete?: boolean;
+  /** A rubber stamp on the card: what you have decided about this piece of evidence. */
+  stamp?: Stamp;
+  /** A coloured band across the top of the card, for your own colour-coding. */
+  tint?: string;
+  /** How the card is fixed to the board. */
+  pinStyle?: PinStyle;
   /** Pinned while a dig is still running and not yet vetted by the AI: drawn faded, marked "checking". */
   vetting?: boolean;
 };
+
+export type Stamp = 'confirmed' | 'disputed' | 'debunked' | 'theory' | 'key' | 'lead';
+export type PinStyle = 'pin' | 'tack' | 'tape' | 'clip';
 
 export type ClueNode = Node<ClueData, ClueType>;
 
@@ -74,6 +85,8 @@ export type StringData = {
   color?: string;
   dashed?: boolean;
   kind?: StringKind;
+  /** Thread thickness in pixels (default by kind). */
+  width?: number;
 };
 
 export type StringEdge = Edge<StringData, 'string'>;

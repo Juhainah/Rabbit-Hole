@@ -7,7 +7,7 @@ import remarkGfm from 'remark-gfm';
 import { api } from '../../lib/api';
 import { boardContext } from '../../lib/context';
 import { addClue, caseName, pinItem, startDig, topicOf } from '../../lib/dig';
-import { currentBoard, useBoards } from '../../store/boards';
+import { currentBoard, onBoard, useBoards } from '../../store/boards';
 import { useSettings } from '../../store/settings';
 import { useUi } from '../../store/ui';
 import type { EntityType, SourceItem } from '../../../shared/types';
@@ -493,17 +493,21 @@ export function ChatPanel() {
     if (el && stuck) el.scrollTop = el.scrollHeight;
   }, [chat, stuck]);
 
-  const send = async (text: string, opts: { searchFor?: string[]; depth?: number } = {}) => {
+  const send = async (text: string, opts: { searchFor?: string[]; depth?: number; boardId?: string } = {}) => {
     const q = text.trim();
     if (!q || (busy && !opts.searchFor)) return;
     const s = useBoards.getState();
-    const history = [...currentBoard().chat.filter((c) => !c.error && !c.pending), { role: 'user' as const, content: q }].map((c) => ({
+    // The answer, its follow-ups and its board actions stay with this board, even if you switch away.
+    const boardId = opts.boardId ?? s.currentId;
+    const history = [...(s.boards[boardId]?.chat ?? []).filter((c) => !c.error && !c.pending), { role: 'user' as const, content: q }].map((c) => ({
       role: c.role,
       content: c.role === 'assistant' ? splitAnswer(c.content).text : c.content,
     }));
-    s.addChat({ id: nanoid(8), role: 'user', content: q });
     const id = nanoid(8);
-    s.addChat({ id, role: 'assistant', content: '', pending: true, status: research || opts.searchFor ? 'Checking the archives' : 'Thinking' });
+    onBoard(boardId, () => {
+      s.addChat({ id: nanoid(8), role: 'user', content: q });
+      s.addChat({ id, role: 'assistant', content: '', pending: true, status: research || opts.searchFor ? 'Checking the archives' : 'Thinking' });
+    });
     setInput('');
     setBusy(true);
     setStuck(true);
@@ -513,7 +517,7 @@ export function ChatPanel() {
     const carrySources = [...currentBoard().chat].reverse().find((c) => c.role === 'assistant' && c.sources?.length)?.sources?.slice(0, 10);
     try {
       await api.chat(
-        {
+        onBoard(boardId, () => ({
           carrySources,
           hint: (() => {
             const b = currentBoard();
@@ -534,9 +538,9 @@ export function ChatPanel() {
           research: research || !!opts.searchFor?.length,
           searchFor: opts.searchFor,
           sources: prefs.searchSources.filter((x) => ['wikipedia', 'web', 'reddit', 'archive', 'hackernews', 'openalex', 'googlenews', 'youtube'].includes(x)).slice(0, 5),
-        },
+        })),
         (ev) => {
-          const u = useBoards.getState().updateChat;
+          const u = (cid: string, p: Partial<ChatEntry> | ((e: ChatEntry) => Partial<ChatEntry>)) => onBoard(boardId, () => useBoards.getState().updateChat(cid, p));
           if (ev.type === 'status') u(id, { status: ev.message });
           else if (ev.type === 'sources') u(id, { sources: ev.items });
           else if (ev.type === 'delta') u(id, (c) => ({ content: c.content + ev.text }));
@@ -545,16 +549,16 @@ export function ChatPanel() {
         abort.current.signal,
       );
     } catch (e) {
-      if (!abort.current?.signal.aborted) useBoards.getState().updateChat(id, { content: e instanceof Error ? e.message : String(e), error: true });
+      if (!abort.current?.signal.aborted) onBoard(boardId, () => useBoards.getState().updateChat(id, { content: e instanceof Error ? e.message : String(e), error: true }));
     } finally {
-      useBoards.getState().updateChat(id, { pending: false });
+      onBoard(boardId, () => useBoards.getState().updateChat(id, { pending: false }));
       setBusy(false);
       // Now that the answer is complete, do what it asked of the board.
-      const entry = currentBoard().chat.find((c) => c.id === id);
+      const entry = useBoards.getState().boards[boardId]?.chat.find((c) => c.id === id);
       if (entry && !entry.error) {
         const { actions } = splitAnswer(entry.content);
-        const done = runActions(actions, entry.sources ?? []);
-        if (done.length) useBoards.getState().updateChat(id, { done });
+        const done = onBoard(boardId, () => runActions(actions, entry.sources ?? []));
+        if (done.length) onBoard(boardId, () => useBoards.getState().updateChat(id, { done }));
         // It asked to search again: run those searches and let it finish the job (twice at most).
         const more: string[] = actions.map((a) => a.match(/^search\s+(.+)/i)?.[1]?.replace(/^["“]|["”]$/g, '').trim()).filter((x): x is string => !!x).slice(0, 3);
         // An answer that admits the sources came up short gets a real web search, not an offer of one.
@@ -565,7 +569,7 @@ export function ChatPanel() {
           more.push(inCase && !asked.toLowerCase().includes(inCase.toLowerCase()) ? `${asked} ${inCase}` : asked);
         }
         if (more.length && (opts.depth ?? 0) < 2 && !abort.current?.signal.aborted) {
-          void send(`🔎 Searching the web for ${more.map((m) => `“${m}”`).join(', ')}. Use what turns up to finish what I asked.`, { searchFor: more, depth: (opts.depth ?? 0) + 1 });
+          void send(`🔎 Searching the web for ${more.map((m) => `“${m}”`).join(', ')}. Use what turns up to finish what I asked.`, { searchFor: more, depth: (opts.depth ?? 0) + 1, boardId });
         }
       }
     }

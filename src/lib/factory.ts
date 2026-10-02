@@ -18,6 +18,7 @@ export const SIZE: Record<ClueType, { w: number; h: number }> = {
   map: { w: 540, h: 400 },
   label: { w: 150, h: 56 },
   gallery: { w: 520, h: 330 },
+  frame: { w: 640, h: 420 },
 };
 
 export type Point = { x: number; y: number };
@@ -52,9 +53,14 @@ export function makeNode(type: ClueType, center: Point, data: ClueData, id = `${
     data: { rotation: jitterRot(id), ...data },
   };
   if (type === 'topic') node.zIndex = TOPIC_Z;
-  if (type === 'map') {
+  if (type === 'map' || type === 'frame') {
     node.width = s.w;
     node.height = s.h;
+  }
+  // A frame moves by its name tab; the empty cork inside it still pans the board.
+  if (type === 'frame') {
+    node.dragHandle = '.frame-tab';
+    node.zIndex = -10;
   }
   return node;
 }

@@ -9,18 +9,21 @@ import {
   type EdgeMouseHandler,
   type NodeMouseHandler,
   type OnConnect,
+  type OnNodeDrag,
+  SelectionMode,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import clsx from 'clsx';
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type RefObject } from 'react';
 import type { SourceItem } from '../../../shared/types';
 import { addClue, pinItem, pinUrl } from '../../lib/dig';
+import { addFiles, addPasted } from '../../lib/evidence';
 import { registerFlow, screenToFlow } from '../../lib/flow';
 import { play } from '../../lib/sound';
 import { tie } from '../../lib/tie';
 import { nodeColor } from '../../lib/utils';
-import { RAISED_Z, STRING_Z } from '../../lib/factory';
-import { useBoards, useCurrentBoard } from '../../store/boards';
+import { RAISED_Z, sizeOf, STRING_Z, type Point } from '../../lib/factory';
+import { currentBoard, useBoards, useCurrentBoard } from '../../store/boards';
 import { useSettings } from '../../store/settings';
 import { useUi } from '../../store/ui';
 import type { ClueNode, StringEdge } from '../../types';
@@ -75,7 +78,36 @@ const onEdgeContext: EdgeMouseHandler<StringEdge> = (e, edge) => {
   useUi.getState().set({ menu: { x: e.clientX, y: e.clientY, edgeId: edge.id }, selectedEdgeId: edge.id });
 };
 const onPaneClick = () => useUi.getState().set({ selectedNodeId: undefined, selectedEdgeId: undefined, menu: undefined });
-const onNodeDragStop = () => play('pin');
+// A theory frame carries the cards inside it when you move it.
+let carrying: { id: string; from: Point; cards: Map<string, Point> } | null = null;
+const inside = (n: ClueNode, f: ClueNode) => {
+  const s = sizeOf(n);
+  const fs = sizeOf(f);
+  const cx = n.position.x + s.w / 2;
+  const cy = n.position.y + s.h / 2;
+  return cx > f.position.x && cx < f.position.x + fs.w && cy > f.position.y && cy < f.position.y + fs.h;
+};
+const onNodeDragStart: OnNodeDrag<ClueNode> = (_, node) => {
+  if (node.type !== 'frame') return;
+  const cards = currentBoard().nodes.filter((n) => n.id !== node.id && n.type !== 'frame' && !n.selected && inside(n, node));
+  carrying = { id: node.id, from: { ...node.position }, cards: new Map(cards.map((n) => [n.id, { ...n.position }])) };
+};
+const onNodeDrag: OnNodeDrag<ClueNode> = (_, node) => {
+  const c = carrying;
+  if (!c || c.id !== node.id || !c.cards.size) return;
+  const dx = node.position.x - c.from.x;
+  const dy = node.position.y - c.from.y;
+  useBoards.getState().updateNodes((n) => {
+    const p = c.cards.get(n.id);
+    return p ? { ...n, position: { x: p.x + dx, y: p.y + dy } } : n;
+  });
+};
+const onNodeDragStop = () => {
+  carrying = null;
+  play('pin');
+};
+const SNAP_GRID: [number, number] = [20, 20];
+const PAN_MOUSE: number[] = [1, 2];
 
 /** Trackpads send small or fractional wheel deltas (and sideways ones); mouse wheels send big notches. */
 const looksLikeTrackpad = (e: WheelEvent) => e.deltaMode === 0 && (e.deltaX !== 0 || !Number.isInteger(e.deltaY) || Math.abs(e.deltaY) < 40);
@@ -88,6 +120,8 @@ function Board() {
   const theme = useSettings((s) => s.theme);
   const font = useSettings((s) => s.font);
   const minimap = useSettings((s) => s.minimap);
+  const snap = useSettings((s) => s.snap);
+  const selecting = useUi((s) => s.selecting);
   const frame = useSettings((s) => s.frame);
   const focusRequest = useUi((s) => s.focusRequest);
   const arranging = useUi((s) => s.arranging);
@@ -182,15 +216,35 @@ function Board() {
       pinItem(JSON.parse(item) as SourceItem, { at });
       return;
     }
+    // Photos, PDFs and text files from your computer.
+    const files = [...e.dataTransfer.files];
+    if (files.length) {
+      void addFiles(files, { at });
+      return;
+    }
     const url = e.dataTransfer.getData('text/uri-list') || e.dataTransfer.getData('text/plain');
     if (/^https?:\/\//.test(url.trim())) pinUrl(url.trim().split('\n')[0], { at });
     else if (url.trim()) addClue('note', { text: url.trim(), title: url.trim().slice(0, 60) }, { at });
   };
 
+  // Paste anywhere on the board (not into a text box): pictures, links or text become cards.
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent) => {
+      const t = e.target instanceof Element ? e.target : document.activeElement;
+      if (!e.clipboardData || t?.closest('input, textarea, select, [contenteditable="true"]')) return;
+      if (!wrap.current?.isConnected || useUi.getState().view !== 'board') return;
+      const near = useUi.getState().selectedNodeId;
+      e.preventDefault();
+      void addPasted(e.clipboardData, near ? { near } : {});
+    };
+    window.addEventListener('paste', onPaste);
+    return () => window.removeEventListener('paste', onPaste);
+  }, []);
+
   return (
     <div
       ref={wrap}
-      className={clsx('board', `theme-${theme}`, `bfont-${font}`, arranging && 'arranging', spotlight.length > 0 && 'spotlighting', selectedNodeId && 'has-selection')}
+      className={clsx('board', `theme-${theme}`, `bfont-${font}`, arranging && 'arranging', spotlight.length > 0 && 'spotlighting', selectedNodeId && 'has-selection', selecting && 'selecting')}
       onDragOver={(e) => {
         e.preventDefault();
         e.dataTransfer.dropEffect = 'copy';
@@ -227,7 +281,17 @@ function Board() {
         onEdgeClick={onEdgeClick}
         onEdgeContextMenu={onEdgeContext}
         onPaneClick={onPaneClick}
+        onNodeDragStart={onNodeDragStart}
+        onNodeDrag={onNodeDrag}
         onNodeDragStop={onNodeDragStop}
+        snapToGrid={snap}
+        snapGrid={SNAP_GRID}
+        // "Select many": dragging on the empty board draws a selection box; the board pans with the middle or right button.
+        selectionOnDrag={!!selecting}
+        panOnDrag={selecting ? PAN_MOUSE : true}
+        selectionMode={SelectionMode.Partial}
+        // Big boards only draw what is on screen.
+        onlyRenderVisibleElements={board.nodes.length > 70}
         zoomOnDoubleClick={false}
         panOnScroll={scrollMode === 'pan'}
         zoomOnScroll={scrollMode === 'zoom'}

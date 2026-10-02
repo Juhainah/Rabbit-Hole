@@ -37,6 +37,7 @@ export const TYPE_COLORS: Record<ClueType, string> = {
   map: '#6fa8a0',
   label: '#f5efe2',
   gallery: '#e7d8b8',
+  frame: '#d8cbb0',
 };
 
 export const TYPE_LABEL: Record<ClueType, string> = {
@@ -53,8 +54,19 @@ export const TYPE_LABEL: Record<ClueType, string> = {
   map: 'Map',
   label: 'Scrap label',
   gallery: 'Who\'s who',
+  frame: 'Theory frame',
 };
 
+export const STAMPS: { id: import('../types').Stamp; label: string; color: string }[] = [
+  { id: 'confirmed', label: 'Confirmed', color: '#2f7a3d' },
+  { id: 'disputed', label: 'Disputed', color: '#c47a12' },
+  { id: 'debunked', label: 'Debunked', color: '#b3261e' },
+  { id: 'theory', label: 'Theory', color: '#6a3fa0' },
+  { id: 'key', label: 'Key evidence', color: '#1f4fa0' },
+  { id: 'lead', label: 'Lead', color: '#0f7a7a' },
+];
+export const TINTS = ['#e25b4f', '#e0a526', '#3f8f55', '#2f7fb3', '#9b4dca', '#e57fb0', '#6b5d4f'];
+export const FRAME_COLORS = ['#c8322f', '#2f5fb3', '#3f8f55', '#9b4dca', '#e0a526', '#1f1f1f'];
 export const PIN_COLORS = ['#c8322f', '#1f1f1f', '#2f5fb3', '#e0a526', '#3f8f55', '#f2f2f2', '#9b4dca'];
 export const NOTE_COLORS = ['#f7de6b', '#f6b8a8', '#b9dcb0', '#a9d3e8', '#e3c7f0', '#fdf6e3'];
 export const STRING_COLORS = ['#c8322f', '#1f1f1f', '#2f5fb3', '#e0a526', '#3f8f55', '#9b4dca', '#f4f1e6'];
