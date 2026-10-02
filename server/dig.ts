@@ -3,7 +3,7 @@ import { errMsg, sleep } from './http';
 import { parseJsonLoose } from './json';
 import { completeWithFallback, resolveProviders } from './llm';
 import { digMessages, normalizeAnalysis, normalizeTangents, tangentMessages } from './prompts';
-import { checkPremise, namesSubject, norm, rankRelevant, relevanceFilter, subjectName, subjectWords, terms } from './relevance';
+import { checkPremise, compactQuery, namesSubject, norm, rankRelevant, relevanceFilter, subjectName, subjectWords, terms, touches } from './relevance';
 import { webSearch } from './sources/web';
 import { deepResearch, type Research } from './research';
 import { ogImage, primaryFromUrl } from './scrape';
@@ -27,9 +27,11 @@ function primaryMatches(query: string, p: Primary) {
 }
 
 /** Long questions search badly. "why did the hikers die in 1959" searches better as "Dyatlov Pass incident". */
+/** What the archives are searched with: a short phrase they can match, not a sentence. */
 function searchPhrase(query: string, primary: Primary | null) {
-  const long = query.split(/\s+/).length > 5 || /\?|^(why|how|what|who|when|where|was|did|is|are)\b/i.test(query);
-  return long && primary ? primary.title : query;
+  const question = /\?|^(why|how|what|who|when|where|was|did|is|are)\b/i.test(query);
+  if (question && primary) return primary.title;
+  return query.split(/\s+/).length > 4 ? compactQuery(query, 4) : query;
 }
 
 /**
@@ -65,6 +67,8 @@ export function topicFromUrl(url: string, title?: string): string {
 }
 
 // Sources whose search understands "subject + case" as one question (news, forums, video, the web).
+// Store, download and profile pages: background, never the evidence that tells a story.
+const LOW_VALUE = /(uptodown|apkpure|apkmirror|apkcombo|softonic|bluestacks|soft112|filehippo|malavida|ldplayer|appbrain|apps\.apple\.com|play\.google\.com|instagram\.com|facebook\.com|vk\.(com|ru)|pinterest\.|tiktok\.com|linkedin\.com)/i;
 const STORY_SOURCES = new Set(['web', 'reddit', 'forums', 'lemmy', 'hackernews', 'youtube', 'googlenews', 'gdelt', 'podcasts', 'dailymotion', 'archive', 'declassified', 'courtlistener', 'lostmedia', 'atlasobscura', 'fandom']);
 
 const CHECKED_KINDS = new Set(['person', 'place', 'org']);
@@ -166,9 +170,13 @@ export async function runDig(req: DigRequest, emit: Emit, signal: AbortSignal) {
   const titleHelps = topic && !primaryIsCase ? primary?.title : undefined;
   const mentionsCase = framed ? relevanceFilter({ phrasings: [framed] }) : () => true;
   // A venue dig judges results by the case alone: Reddit threads about Star Girl rarely say "Reddit".
-  const topicOf = { phrasings: venue ? [framed] : [query, titleHelps], context: [framed, primary?.extract].filter(Boolean).join('. ') };
+  // What the case is about, in its own words: the main article, else the first results that name it.
+  const scoutText = primary ? '' : scout.filter((s) => namesSubject(subjectName(query), `${s.title} ${s.snippet ?? ''}`)).map((s) => `${s.title}. ${s.snippet ?? ''}`).join(' ');
+  const topicOf = { phrasings: venue ? [framed] : [query, titleHelps], context: [framed, primary?.extract ?? scoutText].filter(Boolean).join('. ') };
   /** Searches that understand "subject + case" get both; reference works get the subject alone. */
   const phraseFor = (id: string) => (framed && STORY_SOURCES.has(id) ? `${phrase} ${framed}` : phrase);
+  /** The case's own name, for sources that match titles ("star girl" as one phrase). */
+  const subject = subjectName(framed ?? query);
   /** Names the search mentioned that sources never tie in: still searched where people talk, in case a link exists. */
   const storyExtra = query !== asked && !framed ? asked : undefined;
   /** In a framed dig, results that tie back to the case come first; generic background gets one slot. */
@@ -190,7 +198,8 @@ export async function runDig(req: DigRequest, emit: Emit, signal: AbortSignal) {
   const seen = new Set<string>();
   const keep = (items: SourceItem[]) =>
     items.filter((it) => {
-      const key = it.url ?? it.id;
+      const yt = it.media?.type === 'youtube' ? it.media.src : it.url?.match(/(?:v=|youtu\.be\/|shorts\/)([\w-]{11})/)?.[1];
+      const key = yt ? `yt:${yt}` : (it.url ?? it.id).replace(/[?#].*$/, '').replace(/\/$/, '');
       if (seen.has(key) || !isRelevant(it)) return false;
       seen.add(key);
       return true;
@@ -212,7 +221,7 @@ export async function runDig(req: DigRequest, emit: Emit, signal: AbortSignal) {
               .map((it) => ({ ...it, kind: 'post' as const, source: venue.source ?? 'forums', meta: { sub: venue.name } })),
         },
       ]
-    : sources.map((id) => ({ id, run: () => searchSource(id, STORY_SOURCES.has(id) && storyExtra ? storyExtra : phraseFor(id), { limit: per + 3, signal }) }));
+    : sources.map((id) => ({ id, run: () => searchSource(id, STORY_SOURCES.has(id) && storyExtra ? storyExtra : phraseFor(id), { limit: per + 3, signal, subject }) }));
   const tasks = plan.map(async ({ id, run }) => {
     emit({ type: 'source-start', source: id });
     try {
@@ -222,6 +231,7 @@ export async function runDig(req: DigRequest, emit: Emit, signal: AbortSignal) {
       const relevant = rankRelevant(keep(raw), { ...topicOf, phrasings: [phrase, titleHelps] });
       const items = framedPick(relevant, venue ? 8 : per, id === 'wikipedia' ? 1 : 0);
       dropped += raw.length - relevant.length;
+      if (process.env.RH_DEBUG && ['reddit', 'forums', 'youtube'].includes(id)) console.log('[source]', id, JSON.stringify(phraseFor(id)), raw.map((r) => r.title.slice(0, 50)), '→', items.map((r) => r.title.slice(0, 50)));
       evidence.push(...items);
       emit({ type: 'source', source: id, items });
     } catch (e) {
@@ -258,7 +268,8 @@ export async function runDig(req: DigRequest, emit: Emit, signal: AbortSignal) {
   // Slow sources keep streaming in, but the AI doesn't wait on them forever.
   await Promise.race([Promise.allSettled(tasks), sleep(18000)]);
   if (signal.aborted) return;
-  const research = await Promise.race([researchTask, sleep(14000).then(() => null)]);
+  if (!signal.aborted) emit({ type: 'status', message: 'Finishing the deep research…' });
+  const research = await Promise.race([researchTask, sleep(30000).then(() => null)]);
   if (signal.aborted) return;
   {
     const fromArchives = await Promise.race([photoTask, sleep(4000).then(() => [] as SourceItem[])]);
@@ -275,10 +286,30 @@ export async function runDig(req: DigRequest, emit: Emit, signal: AbortSignal) {
     for (const it of fresh) bySource.set(it.source, [...(bySource.get(it.source) ?? []), it]);
     for (const [source, items] of bySource) emit({ type: 'source', source, items, limit: items.length });
     if (research.gallery) emit({ type: 'gallery', gallery: { ...research.gallery, source: 'fandom' } });
+    // Results let in only for naming the subject ("Star Girl: Cosmic Conversations", another app) must also
+    // touch what this case's own sources talk about (Animoca, Boyfriends, SimSimi); namesakes don't.
+    const vocabulary = new Set(research.vocabulary);
+    if (vocabulary.size >= 5 && !venue) {
+      const strict = relevanceFilter({ ...topicOf, strict: true });
+      const own = new Set([...vocabulary, ...terms(query).filter((w) => !terms(subject).includes(w))]);
+      const home = subject.replace(/\s+/g, '').toLowerCase();
+      const namesakes = evidence.filter((it) =>
+        it.source === 'fandom' ? false
+        : it.kind === 'post' ? !touches(it, own) && !String(it.meta?.sub ?? '').toLowerCase().includes(home)
+        : !strict(it) && !touches(it, vocabulary),
+      );
+      if (namesakes.length && namesakes.length < evidence.length / 2) {
+        const out = new Set(namesakes.map((it) => it.id));
+        for (let i = evidence.length - 1; i >= 0; i--) if (out.has(evidence[i].id)) evidence.splice(i, 1);
+        emit({ type: 'prune', ids: [...out] });
+        dropped += out.size;
+        if (process.env.RH_DEBUG) console.log('[namesakes]', [...research.vocabulary].slice(0, 24).join(' '), '→', namesakes.map((n) => n.title.slice(0, 50)));
+      }
+    }
   }
 
   // Too little to go on: say so, rather than let the AI write the case from memory.
-  if (evidence.length + (primary ? 2 : 0) < 3) {
+  if (evidence.length + (primary ? 2 : 0) + (research?.reading.length ?? 0) < 3) {
     const what = venue ? `on ${venue.name} about “${framed}”` : framed ? `tying “${query}” to “${framed}”` : `about “${query}”`;
     const found = evidence.length;
     const premise = [...notes, found ? `Only ${found} source${found === 1 ? '' : 's'} turned up ${what}; it's pinned here.` : `Nothing turned up ${what}.`].join(' ');
@@ -321,7 +352,7 @@ export async function runDig(req: DigRequest, emit: Emit, signal: AbortSignal) {
     completeWithFallback(
       providers,
       {
-        messages: digMessages(venue ? `${framed} on ${venue.name}` : query, trail, primary, listed(compact), compact, framed, notes.length ? `The user typed “${asked}”. ${notes.join(' ')}` : undefined, venue?.name, research?.reading ?? []),
+        messages: digMessages(venue ? `${framed} on ${venue.name}` : query, trail, primary, listed(compact), compact, framed, notes.length ? `The user typed “${asked}”. ${notes.join(' ')}` : undefined, venue?.name, research?.reading ?? [], research?.gallery),
         temperature: 0.6,
         maxTokens: compact ? 4000 : 8000,
         signal,
@@ -360,11 +391,30 @@ export async function runDig(req: DigRequest, emit: Emit, signal: AbortSignal) {
     const picked: string[] = [];
     const flagged = new Set(offtopic);
     const add = (id?: string) => id && !flagged.has(id) && !picked.includes(id) && picked.push(id);
+    const byId = new Map(shown.map((x) => [x.id, x]));
+    // Store and download pages, profiles and listings are background: only on the board if the AI cites them.
+    const worthy = (id?: string) => !!id && !LOW_VALUE.test(byId.get(id)?.url ?? '');
+    const ranked = rankRelevant(shown, { ...topicOf, phrasings: [phrase, titleHelps] });
+    // 1. What the case file cites as evidence for its people and events.
     for (const c of analysis.citations ?? []) add(shown[c.evidence - 1]?.id);
-    for (const n of keepNums) add(shown[n - 1]?.id);
-    // No usable picks from the AI: the strongest matches stand in.
-    if (picked.length < 5) for (const it of rankRelevant(evidence, { ...topicOf, phrasings: [phrase, titleHelps] })) add(it.id);
+    // 2. The wiki pages research chose (the feature, the list at the centre of it).
+    for (const it of shown.filter((x) => x.source === 'fandom' && x.kind === 'article').slice(0, 3)) add(it.id);
+    // 3. First-hand accounts: the top threads, and the top videos about it.
+    for (const it of ranked.filter((x) => x.kind === 'post').slice(0, 2)) add(it.id);
+    for (const it of ranked.filter((x) => x.kind === 'video' && worthy(x.id)).slice(0, 2)) add(it.id);
+    // 4. Pages read in full: what the case was built from.
+    const readUrls = new Set((research?.reading ?? []).map((r) => r.url));
+    for (const it of shown.filter((x) => x.url && readUrls.has(x.url) && worthy(x.id) && namesSubject(subjectName(query), x.title)).slice(0, 4)) add(it.id);
+    // 5. The AI's own picks, then the strongest matches if the board is still thin.
+    for (const n of keepNums) if (worthy(shown[n - 1]?.id)) add(shown[n - 1]?.id);
+    if (picked.length < 8) for (const it of ranked) if (worthy(it.id)) add(it.id);
     const board = new Set(picked.slice(0, BUDGET));
+    if (process.env.RH_DEBUG) {
+      const t = (id: string) => shown.find((x) => x.id === id)?.title.slice(0, 70) ?? id;
+      console.log('[curate] shown', shown.length, 'of', evidence.length, compact ? '(compact)' : '');
+      console.log('[curate] offtopic:', offtopic.map(t));
+      console.log('[curate] board:', [...board].map(t));
+    }
     const extras = evidence.filter((it) => !board.has(it.id) && !tossed.has(it.id)).map((it) => it.id);
     if (extras.length) emit({ type: 'extras', ids: extras });
     // Evidence numbers → the items they name, for strings between key sources and the cards they prove.
@@ -373,6 +423,8 @@ export async function runDig(req: DigRequest, emit: Emit, signal: AbortSignal) {
       .map((c) => ({ item: shown[c.evidence - 1]?.id, entity: c.entity, label: c.label }))
       .filter((c): c is { item: string; entity: string; label: string | undefined } => !!c.item && (named.has(c.entity.toLowerCase()) || c.entity === 'TOPIC'));
     delete analysis.citations;
+    // Each moment points at the evidence it came from, so the timeline can open the proof.
+    analysis.timeline = analysis.timeline.map(({ evidence, ...t }) => ({ ...t, item: evidence ? shown[evidence - 1]?.id : undefined }));
     // The premise check stands even if the AI didn't mention it.
     if (notes.length) analysis.premise = `${notes.join(' ')} This case follows “${query}”.`;
 

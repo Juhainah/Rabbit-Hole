@@ -71,7 +71,7 @@ function DigBar() {
     >
       <span className="washi absolute -left-2 -top-1.5 h-4 w-10 rotate-[-12deg]" />
       {selected && (
-        <span className="flex max-w-[180px] shrink-0 items-center gap-1 rounded bg-ink/10 py-0.5 pl-2 pr-1 text-[11px] text-ink">
+        <span className="hidden max-w-[180px] shrink-0 sm:flex items-center gap-1 rounded bg-ink/10 py-0.5 pl-2 pr-1 text-[11px] text-ink">
           <span className="truncate">↳ from {selected.data.title || 'selection'}</span>
           <button type="button" onClick={() => useUi.getState().select()} className="rounded p-0.5 hover:bg-ink/10" title="Start a fresh case instead">
             <X size={11} />
@@ -115,7 +115,7 @@ function BoardSwitcher() {
     <div className="relative shrink-0">
       <button onClick={() => setOpen((o) => !o)} className="flex max-w-[150px] items-center gap-2 rounded-lg px-2.5 py-1.5 text-paper/85 transition hover:bg-white/5 hover:text-paper min-[1500px]:max-w-[220px]" title="Switch board">
         <span className="text-[17px]">{current[1]}</span>
-        <span className="truncate text-[13.5px] font-medium">{current[2]}</span>
+        <span className="hidden truncate text-[13.5px] font-medium sm:inline">{current[2]}</span>
         <ChevronDown size={14} className="shrink-0 opacity-60" />
       </button>
       {open && (
@@ -182,19 +182,23 @@ export function TopBar() {
   const view = useUi((s) => s.view);
   const set = useUi((s) => s.set);
   return (
-    <header className="desk relative z-30 flex h-[62px] shrink-0 items-center gap-2.5 border-b min-[1500px]:gap-4 border-black/50 px-3 shadow-[0_8px_20px_-12px_rgba(0,0,0,.9)]">
-      <Logo />
-      <span className="h-6 w-px bg-white/10" />
+    <header className="top-bar desk relative z-30 flex h-[62px] shrink-0 items-center gap-1.5 border-b md:gap-2.5 min-[1500px]:gap-4 border-black/50 px-3 shadow-[0_8px_20px_-12px_rgba(0,0,0,.9)]">
+      <div className="hidden md:block">
+        <Logo />
+      </div>
+      <span className="hidden h-6 w-px bg-white/10 md:block" />
       <BoardSwitcher />
-      <CaseFilesButton />
+      <div className="hidden md:block">
+        <CaseFilesButton />
+      </div>
       <button onClick={newBoard} className="hidden shrink-0 items-center gap-1 rounded-lg border border-white/15 px-2.5 py-1.5 text-[12.5px] text-paper/80 transition hover:border-white/35 hover:text-paper lg:flex" title="Start a new board">
         <Plus size={14} />
         <span className="hidden whitespace-nowrap min-[1700px]:inline">New board</span>
       </button>
-      <div className="flex min-w-[320px] flex-1 justify-center px-1">
+      <div className="flex min-w-0 flex-1 justify-center px-1 md:min-w-[320px]">
         <DigBar />
       </div>
-      <nav className="flex shrink-0 items-end gap-1 self-end">
+      <nav className="hidden shrink-0 items-end gap-1 self-end md:flex">
         {VIEWS.map((v) => (
           <button key={v.id} onClick={() => set({ view: v.id, caseFilesOpen: false })} title={v.label} aria-label={v.label} className={clsx('index-tab flex items-center gap-1.5', view === v.id && 'on')}>
             <v.icon size={14} />
@@ -206,7 +210,7 @@ export function TopBar() {
       <div className="flex shrink-0 items-center whitespace-nowrap">
         <CloudStatus />
       </div>
-      <button onClick={() => set({ helpOpen: true })} className="rounded-lg p-2 text-paper/60 hover:bg-white/5 hover:text-paper" title="How it works">
+      <button onClick={() => set({ helpOpen: true })} className="hidden rounded-lg p-2 text-paper/60 hover:bg-white/5 hover:text-paper md:block" title="How it works">
         <CircleHelp size={18} />
       </button>
       <button onClick={() => set({ settingsOpen: true })} className="rounded-lg p-2 text-paper/60 hover:bg-white/5 hover:text-paper" title="Customize">

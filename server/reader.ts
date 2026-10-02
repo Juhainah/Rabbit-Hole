@@ -284,7 +284,8 @@ export async function readAnything(raw: string): Promise<ScrapeResult> {
   const snap = await getJson(`https://archive.org/wayback/available?url=${enc(url.toString())}`, { timeout: 12000 }).catch(() => null);
   const s = snap?.archived_snapshots?.closest;
   if (s?.available) {
-    const archived = await scrape(s.url).catch(() => null);
+    const raw = String(s.url).replace(/\/web\/(\d{14})\//, '/web/$1id_/').replace(/^http:/, 'https:');
+    const archived = (await scrape(raw).catch(() => null)) ?? (await scrape(s.url).catch(() => null));
     if (archived && !looksBlocked(archived) && archived.text.trim().length > 200) {
       return { ...archived, url: url.toString(), via: 'wayback', archivedAt: s.timestamp };
     }

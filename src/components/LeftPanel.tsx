@@ -183,7 +183,7 @@ export function LeftPanel() {
   const width = useSettings((s) => s.leftWidth);
   const set = useSettings((s) => s.set);
   return (
-    <aside className="paper-panel ruled relative z-20 flex shrink-0 flex-col" style={{ width }}>
+    <aside className="side-left paper-panel ruled relative z-20 flex shrink-0 flex-col" style={{ width }}>
       <ResizeHandle edge="right" width={width} min={210} max={420} initial={260} onResize={(leftWidth) => set({ leftWidth })} onCollapse={() => useUi.getState().set({ leftOpen: false })} />
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-4 pt-3 pb-4">
       <div className="mb-3 flex items-center justify-between">
@@ -207,7 +207,7 @@ export function LeftPanel() {
 export function LeftRail() {
   const open = () => useUi.getState().set({ leftOpen: true });
   return (
-    <aside className="relative z-20 flex w-11 shrink-0 flex-col items-center gap-1 border-r border-black/40 bg-desk-2 py-3">
+    <aside className="side-rail relative z-20 flex w-11 shrink-0 flex-col items-center gap-1 border-r border-black/40 bg-desk-2 py-3">
       <button onClick={open} className="rounded-lg p-2 text-paper/70 hover:bg-white/5 hover:text-paper" title="Show boards">
         <ChevronsRight size={17} />
       </button>

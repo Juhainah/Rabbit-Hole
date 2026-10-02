@@ -64,7 +64,7 @@ export function Toolbar() {
   const toggle = (k: typeof open) => setOpen((o) => (o === k ? null : k));
 
   return (
-    <div className="absolute bottom-7 left-1/2 z-20 -translate-x-1/2">
+    <div className="board-toolbar absolute bottom-7 left-1/2 z-20 -translate-x-1/2">
       {open && (
         <div className="paper-panel animate-rise absolute bottom-[62px] left-1/2 -translate-x-1/2 rounded-xl p-3 min-w-[260px]">
           {open === 'link' && (

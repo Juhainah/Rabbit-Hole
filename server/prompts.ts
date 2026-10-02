@@ -10,6 +10,8 @@ Rules:
 - Relations should form a WEB: connect entities to each other, not only to the topic.
 - Tangents are the rabbit holes: adjacent, genuinely intriguing topics a curious person would click next. Each hook must create an itch to know more. Never just rephrase the topic.
 - Questions are open mysteries, contradictions, or live debates.
+- Never write about the evidence list itself (no "an unrelated item appeared", "one source is off-topic", "the sources don't say"): put anything unrelated in "offtopic" silently and write only about the case.
+- Dates: use the date a source gives for an event. An article dated {YYYY-MM-DD} reports something that happened then or before, never years later.
 - The timeline is what happened in the story (releases, removals, incidents, rulings, when a rumour began), never when an article or video about it was published.
 - Output ONLY a JSON object. No markdown, no commentary.`;
 
@@ -19,13 +21,13 @@ const SCHEMA = `{
   "hook": "one gripping sentence",
   "entities": [{"name": "", "type": "person|place|org|event|concept|object|work", "description": "1-2 specific sentences", "date": "YYYY or YYYY-MM-DD (omit if none)", "place": "for places/events: geocodable location, e.g. 'Kholat Syakhl, Russia' (omit otherwise)"}],
   "relations": [{"from": "entity name or TOPIC", "to": "entity name", "label": "2-4 word verb phrase"}],
-  "timeline": [{"date": "YYYY[-MM[-DD]] (negative year for BC)", "event": "short line"}],
+  "timeline": [{"date": "YYYY[-MM[-DD]] (negative year for BC)", "event": "short line", "evidence": number of the evidence it comes from (omit if it comes from a page read in full)}],
   "tangents": [{"title": "", "hook": "one sentence on why it's a rabbit hole", "query": "best search query for it"}],
   (tangents must connect through substance: the same people, events, places, phenomena or mechanisms; never through a shared word or name, like another person who happens to be called the same. Each tangent and each question must name someone or something in this case.)
   "questions": ["open question"],
   "cites": [{"evidence": 3, "entity": "exact entity name from entities", "label": "2-5 words: what this source shows about it"}],
   "keep": [the 10-14 evidence numbers that best tell this case, best first: what actually happened (reporting from the time AND later look-backs or explainers), first-hand accounts and forum threads, official statements or documents; one of any near-duplicates; minor or generic items left out],
-  "offtopic": [evidence numbers that are NOT really about this topic, e.g. lists or posts that only mention it in passing],
+  "offtopic": [evidence numbers that are NOT really about this topic: lists or posts that only mention it in passing, and NAMESAKES (a different app, game, film, band or person that only shares the name, e.g. another app also called the same)],
   "premise": "one sentence if the topic as typed contains a name, link or claim the evidence does not support (a wrong company, a connection no source documents), saying what the sources do show; otherwise an empty string"
 }
 Counts: 7-10 entities, 8-14 relations, 4-8 timeline items, 5-7 tangents, 2-4 questions, 4-12 cites (every important piece of evidence, especially first-hand accounts, threads and documents, tied to the entity it is evidence about). offtopic may be empty.`;
@@ -40,7 +42,8 @@ export function digMessages(
   fromCase?: string,
   premiseNote?: string,
   venue?: string,
-  reading: { title: string; url: string; text: string }[] = [],
+  reading: { title: string; url: string; text: string; date?: string }[] = [],
+  gallery?: { title: string; about?: string },
 ): ChatMessage[] {
   const lines: string[] = [`TOPIC: ${topic}`];
   if (premiseNote) lines.push(`PREMISE CHECK: ${premiseNote} Build the case only from what the evidence shows, and say this plainly in "premise".`);
@@ -67,6 +70,11 @@ export function digMessages(
     return bits.join(' ');
   });
   if (ev.length) lines.push(`\nEVIDENCE FROM THE ARCHIVES:\n${ev.join('\n')}`);
+  if (gallery) {
+    lines.push(
+      `\nWHO'S WHO ON THE BOARD: a picture gallery of the wiki list "${gallery.title}"${gallery.about ? `, which belongs to "${gallery.about}". Make "${gallery.about}" an entity (exactly that name) and say in its description how the ${gallery.title.replace(/\s*\(.*\)\s*$/, '')} fit in.` : '.'}`,
+    );
+  }
   if (reading.length) {
     // Full pages read for this case: the most reliable facts, dates and names.
     let room = compact ? 2600 : 7500;
@@ -75,7 +83,7 @@ export function digMessages(
       if (room < 200) break;
       const text = r.text.slice(0, Math.min(room, compact ? 650 : 1500));
       room -= text.length;
-      pages.push(`• ${r.title} (${r.url.replace(/^https?:\/\/(www\.)?/, '').split('/')[0]})\n${text}`);
+      pages.push(`• ${r.title} (${r.url.replace(/^https?:\/\/(www\.)?/, '').split('/')[0]}${r.date ? `, published ${r.date}` : ''})\n${text}`);
     }
     lines.push(`\nPAGES READ IN FULL (trust these most for what happened, dates and names; build the timeline from them):\n${pages.join('\n\n')}`);
   }
@@ -152,8 +160,8 @@ export function normalizeAnalysis(raw: any, topic: string): Analysis {
     entities,
     relations,
     timeline: list(raw.timeline)
-      .map((t) => ({ date: str(String(t?.date ?? ''), 24), event: str(t?.event, 200) }))
-      .filter((t) => t.date && t.event)
+      .map((t) => ({ date: str(String(t?.date ?? ''), 24), event: str(t?.event, 200), evidence: Number.isInteger(Number(t?.evidence)) && Number(t?.evidence) > 0 ? Number(t.evidence) : undefined }))
+      .filter((t) => t.date && t.event && !/^(a |an |the )?([\w'"-]+ ){0,2}(video|article|post|thread|podcast|blog|report|documentary|episode)s?\b.*\b(released|published|uploaded|posted|premiered|discuss\w*|explain\w*|cover\w*|explor\w*|examin\w*|revisit\w*|analy[sz]\w*)\b/i.test(t.event))
       .slice(0, 10),
     tangents: list(raw.tangents)
       .map((t) => ({ title: str(t?.title, 90), hook: str(t?.hook, 240), query: str(t?.query, 120) || str(t?.title, 90) }))
@@ -178,6 +186,7 @@ export function normalizeAnalysis(raw: any, topic: string): Analysis {
 
 export const CHAT_SYSTEM = `You are the user's research partner inside "Rabbit Hole", a visual evidence board for falling down rabbit holes. You are curious, precise and a little bit obsessive, with the tone of a great documentary narrator, but rigorous about evidence.
 
+- You are Rabbit Hole's research partner. Never name the AI model, lab or company behind you (no GPT, OpenAI, Gemini, Google, Llama, Meta, Groq, Claude or any other); if asked, say you're Rabbit Hole's research partner, built on several AI services.
 - Everything is about the user's investigation. When they ask about a card (a city, a person, an object), answer about its role in THEIR case, never a generic encyclopedia entry.
 - Answer directly first, then add the fascinating details.
 - Only state facts found in the SOURCES or the BOARD CONTEXT. If neither covers something, say you don't know rather than guessing; never invent companies, dates, places, quotes or links.
@@ -200,10 +209,20 @@ export const CHAT_SYSTEM = `You are the user's research partner inside "Rabbit H
   ACTION: rename [[Card]] : New title
   ACTION: add to [[Card]] : a fact to write on that card, ending with its source like [2]
   ACTION: card person Jeffrey Epstein : one line on who this is in the case
+  ACTION: fill [[Who's who card]]   (reads the wiki list that card came from and adds EVERY member with their picture; use it for "add all the boyfriends", "get the rest of the list")
+  ACTION: photo [[Card]] : 4        (puts source [4]'s photo on that card; without a number it looks the card up and adds its picture)
+  ACTION: set [[Card]] : new text   (rewrites what the card says)
+  ACTION: cut [[Card A]] -> [[Card B]]   (removes the string between them)
+  ACTION: move [[Card A]] near [[Card B]]
+  ACTION: tidy                      (spreads out overlapping cards in the case)
+  The source marked "the card's own page" is the page behind the card the user is asking about: read it first, and use what is on it.
     (card kinds: person, place, event, org, object, concept; then connect it in the same reply)
   Only pin numbers from the SOURCES list; connect and add to titles from the CARDS list or cards you create in the same reply. Say in your answer what you did.
   Only write facts on cards that a SOURCE or the board supports. If the sources do not support a link the user asks for, say so plainly and suggest what to search; never invent one.
-  When the user wants a picture, pin sources marked (has a photo): those become real photos on the board. A web page about photos is not a photo.
+  You CAN put pictures, documents, threads and new cards on the board; never say you can't. When the user wants pictures, pin the sources marked (has a photo) that show what they asked for: those become real photos on the board. A web page about photos is not a photo. If no source shows it, say which search would find it.
+  Asked for people ("the people on the plane", "the developers"), make one ACTION: card person line per person the SOURCES or the board name (at most 8), connect each to the case or event card, and pin any photo that shows them.
+  Asked for forums or Reddit, pin the threads (Reddit, Forums) that discuss it.
+  Pin and create only what the user asked for and what is about this case: a source that is about something else is never pinned, even if it is in the list.
 - End EVERY reply with one final line exactly like:
 TANGENTS: first rabbit hole | second rabbit hole | third rabbit hole
 (three short, specific, irresistible topics to explore next)`;
@@ -214,7 +233,7 @@ export function chatMessages(history: ChatMessage[], context: string | undefined
   if (sources.length) {
     sys.push(
       `\nSOURCES (fresh research for this question):\n${sources
-        .map((s, i) => `[${i + 1}] ${sourceMeta(s.source).name}${s.image ? ' (has a photo)' : ''}${s.media ? ' (playable)' : ''}: ${s.title}${s.date ? ` (${s.date})` : ''} — ${(s.snippet ?? '').slice(0, 400)}`)
+        .map((s, i) => `[${i + 1}] ${sourceMeta(s.source).name}${s.image ? ' (has a photo)' : ''}${s.media ? ' (playable)' : ''}: ${s.title}${s.date ? ` (${s.date})` : ''} — ${(s.snippet ?? '').slice(0, s.id.startsWith('focus:') ? 3000 : 400)}`)
         .join('\n')}`,
     );
   }

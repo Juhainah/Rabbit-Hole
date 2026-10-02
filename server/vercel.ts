@@ -1,5 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { getRequestListener } from '@hono/node-server';
+import './guard';
 import { app } from './app';
 
 // The API as one Vercel Function. scripts/build-vercel.mjs bundles this file.

@@ -48,7 +48,7 @@ export function ResizeHandle({ edge, width, min, max, initial, onResize, onColla
       }}
       onDoubleClick={() => onResize(initial)}
       className={clsx(
-        'group absolute top-0 bottom-0 z-30 w-2.5 cursor-col-resize touch-none',
+        'resize-handle group absolute top-0 bottom-0 z-30 w-2.5 cursor-col-resize touch-none',
         edge === 'right' ? '-right-1.5' : '-left-1.5',
       )}
     >

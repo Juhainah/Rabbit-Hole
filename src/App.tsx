@@ -11,6 +11,7 @@ import { SignIn } from './components/SignIn';
 import { SharedView } from './components/SharedView';
 import { CaseFiles } from './components/CaseFiles';
 import { EmojiPicker } from './components/EmojiPicker';
+import { MobileNav, useIsPhone } from './components/MobileNav';
 import { Toast } from './components/Toast';
 import { onUndoable } from './store/boards';
 
@@ -45,6 +46,7 @@ function Desk() {
   const leftOpen = useUi((s) => s.leftOpen);
   const rightOpen = useUi((s) => s.rightOpen);
   const caseFilesOpen = useUi((s) => s.caseFilesOpen);
+  const phone = useIsPhone();
   const [available, setAvailable] = useState<string[]>([]);
 
   useEffect(() => {
@@ -107,8 +109,10 @@ function Desk() {
           </Suspense>
         </main>
         {rightOpen ? <RightPanel available={available} /> : <RightRail />}
+        {phone && (leftOpen || rightOpen) && <div className="phone-backdrop" onClick={() => useUi.getState().set({ leftOpen: false, rightOpen: false })} />}
       </div>
       )}
+      {phone && <MobileNav />}
       <SettingsModal />
       <HelpModal />
       <Toast />

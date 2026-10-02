@@ -42,7 +42,7 @@ function redditItem(d: any): SourceItem {
   };
 }
 
-export const reddit: SearchFn = async (q, { limit, signal }) => {
+export const reddit: SearchFn = async (q, { limit, signal, subject }) => {
   if (Date.now() > redditBlockedUntil) {
     try {
       const token = await redditAuth();
@@ -62,8 +62,12 @@ export const reddit: SearchFn = async (q, { limit, signal }) => {
       console.warn(`[reddit] official API unavailable (${errMsg(e)}), using PullPush`);
     }
   }
-  // The archive, matching post titles (its full-text search returns anything that mentions a word once).
-  const archived = await getJson(`https://api.pullpush.io/reddit/search/submission/?title=${enc(q)}&size=${Math.min(100, limit * 4)}`, { signal, timeout: 9000 })
+  // Google reads whole threads, so it finds the discussion that matters even when its title says little
+  // ("My Dark History With Star Girl" for a search about Star Chat).
+  const googled = webSearch(`${q} site:reddit.com`, limit + 3, signal).catch(() => [] as SourceItem[]);
+  // The archive matches titles: the case's name as one phrase ("star girl", not star … girl), else the search.
+  const titleQ = subject && /\s/.test(subject.trim()) ? `"${subject.trim()}"` : q;
+  const archived = await getJson(`https://api.pullpush.io/reddit/search/submission/?title=${enc(titleQ)}&size=${Math.min(100, limit * 4)}`, { signal, timeout: 9000 })
     .then((j) =>
       (j.data ?? []).filter((d: any) => !d.over_18 && d.title && d.selftext !== '[removed]' && d.selftext !== '[deleted]'),
     )
@@ -72,15 +76,13 @@ export const reddit: SearchFn = async (q, { limit, signal }) => {
       return [] as any[];
     });
   archived.sort((a: any, b: any) => (b.score ?? 0) + (b.num_comments ?? 0) - ((a.score ?? 0) + (a.num_comments ?? 0)));
-  const items: SourceItem[] = archived.slice(0, limit).map(redditItem);
-  if (items.length >= limit) return items;
-  // Not enough: add the threads a search engine ranks best for this topic.
-  const found = await webSearch(`${q} site:reddit.com`, limit + 3, signal).catch(() => []);
-  const seen = new Set(items.map((i) => i.url));
-  for (const it of found) {
+  // The threads Google ranks best for this search come first, then the archive's most discussed.
+  const items: SourceItem[] = [];
+  const seen = new Set<string>();
+  for (const it of await googled) {
     const m = it.url?.match(/reddit\.com\/r\/([^/]+)\/comments\/([a-z0-9]+)/i);
-    if (!m || seen.has(it.url)) continue;
-    seen.add(it.url);
+    if (!m || seen.has(it.url!)) continue;
+    seen.add(it.url!);
     items.push({
       ...it,
       id: `reddit:${m[2]}`,
@@ -89,6 +91,11 @@ export const reddit: SearchFn = async (q, { limit, signal }) => {
       title: it.title.replace(/\s*:\s*r\/\w+\s*$/i, '').replace(/\s*[-|]\s*Reddit\s*$/i, '').trim(),
       meta: { sub: `r/${m[1]}` },
     });
+  }
+  for (const it of archived.map(redditItem)) {
+    if (it.url && seen.has(it.url)) continue;
+    if (it.url) seen.add(it.url);
+    items.push(it);
   }
   return items.slice(0, limit);
 };

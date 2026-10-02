@@ -6,10 +6,11 @@ import { useSettings } from '../store/settings';
 import { useUi } from '../store/ui';
 import type { Board, ClueData, ClueNode, ClueType, MapPoint, StringEdge } from '../types';
 import { api } from './api';
-import { centerOf, itemToNode, makeEdge, makeNode, type Point } from './factory';
+import { centerOf, itemToNode, makeEdge, makeNode, sizeOf, type Point } from './factory';
 import { viewportCenter } from './flow';
-import { clusterCenter, evidencePos, LEADS_OFFSET, RING, ringPos } from './layout';
+import { clusterCenter, evidencePos, freeSpot, LEADS_OFFSET, RING, ringPos } from './layout';
 import { play } from './sound';
+import { nameMatcher, tokenize } from './names';
 import { linkAcrossCases, weaveCase } from './weave';
 
 const controllers = new Map<string, AbortController>();
@@ -93,6 +94,8 @@ export async function startDig(opts: { query: string; parentId?: string; url?: s
   let photosLeft = 6;
   let mediaLeft = 3;
   const entityIds = new Map<string, string>();
+  /** The who's-who gallery and the card it belongs to ("Boyfriends" → "Star Chat"). */
+  let gallery: { id: string; about?: string; title: string } | undefined;
   const geo: MapPoint[] = [];
   let evIndex = 0;
   let primaryTitle: string | undefined;
@@ -114,7 +117,7 @@ export async function startDig(opts: { query: string; parentId?: string; url?: s
       if (it.url && seenUrls.has(it.url)) continue;
       if (it.source === 'wikipedia' && it.title === primaryTitle) continue;
       if (it.url) seenUrls.add(it.url);
-      const node = itemToNode(it, evidencePos(center, evIndex++), { clusterId });
+      const node = itemToNode(it, evidencePos(center, evIndex++), { clusterId, vetting: true });
       itemNodes.set(it.id, node.id);
       itemsById.set(it.id, it);
       nodes.push(node);
@@ -165,6 +168,12 @@ export async function startDig(opts: { query: string; parentId?: string; url?: s
       linked.add(from).add(to);
     }
     for (const n of nodes) if (!linked.has(n.id)) edges.push(makeEdge(topicId, n.id, { kind: 'relation' }, 'pin', true));
+    // The who's-who gallery hangs off the card it belongs to, not just the case.
+    if (gallery?.about) {
+      const about = tokenize(gallery.about);
+      const owner = nodes.find((n) => nameMatcher(n.data.title)(about) || nameMatcher(gallery!.about!)(tokenize(n.data.title)));
+      if (owner) edges.push(makeEdge(owner.id, gallery.id, { kind: 'evidence', label: `the ${gallery.title.replace(/\s*\(.*\)\s*$/, '').toLowerCase()}` }));
+    }
 
     // Rabbit holes and open questions share the ring just outside the index cards.
     const leads = a.tangents.length + a.questions.length;
@@ -186,7 +195,7 @@ export async function startDig(opts: { query: string; parentId?: string; url?: s
 
     s.addNodes(nodes);
     s.addEdges(edges);
-    s.addTimeline(a.timeline.map((t) => ({ id: nanoid(6), date: t.date, event: t.event, clusterId })));
+    s.addTimeline(a.timeline.map((t) => ({ id: nanoid(6), date: t.date, event: t.event, clusterId, nodeId: t.item ? itemNodes.get(t.item) : undefined })));
     newIds.push(...nodes.map((n) => n.id));
     innerIds.push(...nodes.map((n) => n.id));
     ui.log(`🧵 Strung together ${a.entities.length} clues and ${a.tangents.length} new rabbit holes`, 'ok');
@@ -295,6 +304,7 @@ export async function startDig(opts: { query: string; parentId?: string; url?: s
             useBoards.getState().addNodes([card]);
             useBoards.getState().addEdges([makeEdge(topicId, card.id, { kind: 'evidence' }, 'pin', true)]);
             newIds.push(card.id);
+            gallery = { id: card.id, about: g.about, title: g.title };
             log(`🗂 Who's who: ${g.items.length} from ${g.title}`, 'ok', g.source);
             break;
           }
@@ -306,7 +316,9 @@ export async function startDig(opts: { query: string; parentId?: string; url?: s
               const s = useBoards.getState();
               const topic = currentBoard().nodes.find((n) => n.id === topicId);
               s.updateNode(topicId, { extras: [...(topic?.data.extras ?? []), ...moved] });
-              s.onNodesChange(nodeIds.map((id) => ({ id, type: 'remove' as const })));
+              s.dropNodes(nodeIds);
+              // The AI has picked the board: what stays is vetted.
+              s.updateNodes((n) => (n.data.vetting && n.data.clusterId === clusterId ? { ...n, data: { ...n.data, vetting: undefined } } : n));
               log(`🗂 Kept the board to the key evidence; ${nodeIds.length} more finds are in the case file`, 'ok');
             }
             break;
@@ -314,7 +326,7 @@ export async function startDig(opts: { query: string; parentId?: string; url?: s
           case 'prune': {
             const ids = ev.ids.map((i) => itemNodes.get(i)).filter((id): id is string => !!id);
             if (ids.length) {
-              useBoards.getState().removeNodes(ids, `AI tossed ${ids.length} off-topic clipping${ids.length === 1 ? '' : 's'}`);
+              useBoards.getState().dropNodes(ids);
               log(`🗑 Tossed ${ids.length} off-topic clipping${ids.length === 1 ? '' : 's'}`, 'info');
             }
             break;
@@ -343,6 +355,8 @@ export async function startDig(opts: { query: string; parentId?: string; url?: s
     if (!aborted) useUi.getState().log(message, 'err');
   } finally {
     controllers.delete(topicId);
+    // What's left has been vetted (or the dig stopped): no card stays marked "checking".
+    useBoards.getState().updateNodes((n) => (n.data.vetting && n.data.clusterId === clusterId ? { ...n, data: { ...n.data, vetting: undefined } } : n));
     const u = useUi.getState();
     u.set({ digging: Math.max(0, u.digging - 1) });
     // End on the heart of the case (file, people, leads) at a readable zoom.
@@ -380,13 +394,13 @@ export async function autoFall(fromTopicId: string, steps = 3) {
 }
 
 /** Where a manually added clue should land. */
-function landingSpot(nearId?: string): Point {
+/** Moves a new card to the nearest open space by the card it belongs with (or the middle of the view). */
+function settle(node: ClueNode, nearId?: string) {
   const board = currentBoard();
   const near = nearId ? board.nodes.find((n) => n.id === nearId) : undefined;
-  const base = near ? centerOf(near) : viewportCenter();
-  const a = Math.random() * Math.PI * 2;
-  const r = near ? 380 + Math.random() * 120 : Math.random() * 60;
-  return { x: base.x + Math.cos(a) * r, y: base.y + Math.sin(a) * r };
+  const s = sizeOf(node);
+  const c = freeSpot(board.nodes, near ? centerOf(near) : viewportCenter(), s);
+  node.position = { x: Math.round(c.x - s.w / 2), y: Math.round(c.y - s.h / 2) };
 }
 
 export function pinItem(item: SourceItem, opts: { near?: string; at?: Point } = {}) {
@@ -399,7 +413,8 @@ export function pinItem(item: SourceItem, opts: { near?: string; at?: Point } = 
     return existing.id;
   }
   const near = opts.near ? board.nodes.find((n) => n.id === opts.near) : undefined;
-  const node = itemToNode(item, opts.at ?? landingSpot(opts.near), { clusterId: near?.data.clusterId });
+  const node = itemToNode(item, opts.at ?? { x: 0, y: 0 }, { clusterId: near?.data.clusterId });
+  if (!opts.at) settle(node, opts.near);
   const s = useBoards.getState();
   s.addNodes([node]);
   if (near) s.addEdges([makeEdge(near.id, node.id, { kind: 'evidence' })]);
@@ -447,7 +462,8 @@ function domainTitle(url: string) {
 export function addClue(type: ClueType, data: Partial<ClueData> = {}, opts: { near?: string; at?: Point; tie?: boolean } = {}) {
   const board = currentBoard();
   const near = opts.near ? board.nodes.find((n) => n.id === opts.near) : undefined;
-  const node = makeNode(type, opts.at ?? landingSpot(opts.near), { title: '', ...data, clusterId: data.clusterId ?? near?.data.clusterId });
+  const node = makeNode(type, opts.at ?? { x: 0, y: 0 }, { title: '', ...data, clusterId: data.clusterId ?? near?.data.clusterId });
+  if (!opts.at) settle(node, opts.near);
   const s = useBoards.getState();
   s.addNodes([node]);
   if (near && opts.tie) s.addEdges([makeEdge(near.id, node.id, { kind: 'user' })]);

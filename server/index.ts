@@ -1,6 +1,7 @@
 import { serve } from '@hono/node-server';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { existsSync, readFileSync } from 'node:fs';
+import './guard';
 import { app } from './app';
 import { authProject } from './auth';
 import { resolveProviders } from './llm';

@@ -59,6 +59,10 @@ export type ClueData = {
   items?: { title: string; image?: string; url?: string }[];
   /** Good finds that didn't make the case's hand-picked board, one click from being pinned. */
   extras?: SourceItem[];
+  /** A who's-who card that already holds its list's every member. */
+  listComplete?: boolean;
+  /** Pinned while a dig is still running and not yet vetted by the AI: drawn faded, marked "checking". */
+  vetting?: boolean;
 };
 
 export type ClueNode = Node<ClueData, ClueType>;
@@ -86,6 +90,8 @@ export interface TimelineEntry {
   date: string;
   event: string;
   clusterId: string;
+  /** The card that shows this moment happened (an article, a thread, a wiki page). */
+  nodeId?: string;
 }
 
 export interface ChatEntry {

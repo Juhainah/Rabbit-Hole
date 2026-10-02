@@ -99,6 +99,13 @@ export const api = {
     return res.json();
   },
 
+  /** Every member of a wiki list (a who's-who card's source page), with pictures. */
+  async wikiList(url: string, subject: string): Promise<{ title: string; url: string; items: { title: string; image?: string; url?: string }[] }> {
+    const res = await call(`/api/wiki-list?url=${encodeURIComponent(url)}&subject=${encodeURIComponent(subject)}`);
+    if (!res.ok) throw new Error(await readError(res));
+    return res.json();
+  },
+
   async transcript(id: string): Promise<{ title: string; text: string; lang: string }> {
     const res = await call(`/api/transcript?id=${encodeURIComponent(id)}`);
     if (!res.ok) throw new Error(await readError(res));

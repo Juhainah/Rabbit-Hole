@@ -24,6 +24,19 @@ function toItem(url: string, title: string, snippet: string, source = 'web'): So
       meta: { sub: `r/${thread[1]}` },
     };
   }
+  const yt = url.match(/(?:youtube\.com\/(?:watch\?(?:.*&)?v=|shorts\/)|youtu\.be\/)([\w-]{11})/)?.[1];
+  if (yt) {
+    return {
+      id: `youtube:${yt}`,
+      source: 'youtube',
+      kind: 'video',
+      title: title.replace(/\s*-\s*YouTube\s*$/i, '').trim() || 'YouTube video',
+      snippet: snippet.replace(/\s+/g, ' ').trim(),
+      url: `https://www.youtube.com/watch?v=${yt}`,
+      image: `https://i.ytimg.com/vi/${yt}/hqdefault.jpg`,
+      media: { type: 'youtube', src: yt },
+    };
+  }
   const forum = h && Object.entries(FORUM_SITES).find(([site]) => h === site || h.endsWith(`.${site}`));
   if (forum) {
     return { id: `forums:${url}`, source: 'forums', kind: 'post', title: title.replace(/\s*[-|]\s*Quora\s*$/i, '').trim() || h!, snippet: snippet.replace(/\s+/g, ' ').trim(), url, meta: { sub: forum[1] } };
@@ -94,7 +107,7 @@ async function tavily(q: string, limit: number, signal?: AbortSignal): Promise<S
 }
 
 /** Serper (Google results): 2,500 free searches, no card. */
-async function serper(q: string, limit: number, signal?: AbortSignal): Promise<SourceItem[]> {
+export async function serper(q: string, limit: number, signal?: AbortSignal): Promise<SourceItem[]> {
   const key = process.env.SERPER_API_KEY?.trim();
   if (!key) return [];
   const j = await getJson('https://google.serper.dev/search', {
@@ -103,7 +116,13 @@ async function serper(q: string, limit: number, signal?: AbortSignal): Promise<S
     headers: { 'Content-Type': 'application/json', 'X-API-KEY': key },
     body: JSON.stringify({ q, num: limit }),
   });
-  return (j.organic ?? []).map((r: any) => toItem(r.link, r.title ?? '', r.snippet ?? ''));
+  return (j.organic ?? []).map((r: any) => {
+    const it = toItem(r.link, r.title ?? '', r.snippet ?? '');
+    const d = r.date ? new Date(r.date) : null;
+    // "Jun 27, 2014" is a date; "3 days ago" is not worth guessing.
+    if (d && !Number.isNaN(d.getTime()) && /\d{4}/.test(r.date)) it.date = d.toISOString().slice(0, 10);
+    return it;
+  });
 }
 
 const webCache = new Map<string, { at: number; items: SourceItem[] }>();

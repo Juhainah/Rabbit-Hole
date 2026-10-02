@@ -6,7 +6,7 @@ import { namesSubject, relevanceFilter, subjectName, terms } from './relevance';
 import { readAnything } from './reader';
 import { youtubeId } from './scrape';
 import { youtubeTranscript } from './sources/media';
-import { webSearch } from './sources/web';
+import { serper, webSearch } from './sources/web';
 
 // Deep research: what a good researcher does after the first search. Plan a few
 // targeted searches, find the subject's fan wiki, read the best pages in full
@@ -17,6 +17,7 @@ export interface Reading {
   url: string;
   source: string;
   text: string;
+  date?: string;
 }
 
 export interface Research {
@@ -25,14 +26,19 @@ export interface Research {
   /** Pictures from the wiki pages that matter (screenshots, portraits). */
   photos: SourceItem[];
   /** A list the wiki keeps with a picture for each entry ("Boyfriends"), when one fits the case. */
-  gallery?: { title: string; url: string; items: SourceItem[] };
+  /** `about`: the page the list belongs to ("Star Chat" for "Boyfriends"), so the board can tie them. */
+  gallery?: { title: string; url: string; items: SourceItem[]; about?: string };
   /** The relevant passages of pages read in full, for the AI. */
   reading: Reading[];
   queries: string[];
   wiki?: string;
+  /** Words this case's own sources keep using ("animoca", "boyfriends", "simsimi"): what a namesake lacks. */
+  vocabulary: string[];
 }
 
 const WIKI_HEADERS = { 'User-Agent': BROWSER_UA };
+// Listing pages (topics, tags, search results) mention everything and explain nothing.
+const LISTING = /\/(topics?|tags?|categor(y|ies)|search|explore|hashtag)(\/|$)/i;
 const NOT_READABLE = /(^|\.)(tiktok\.com|instagram\.com|facebook\.com|x\.com|twitter\.com|play\.google\.com|apps\.apple\.com|pinterest\.)/;
 const timeout = <T>(p: Promise<T>, ms: number, fallback: T) => Promise.race([p.catch(() => fallback), sleep(ms).then(() => fallback)]);
 
@@ -53,7 +59,7 @@ async function planQueries(query: string, subject: string, clues: string, signal
           role: 'system',
           content:
             `You plan research like an expert librarian. Output only JSON: {"queries": ["…"], "sites": ["…"]}.
-- queries: 5 short, specific web searches (3-8 words) that find the facts behind the topic: who made or runs it, when it started and ended, ownership or deals, the strange or disputed part, first-hand accounts. Each must contain the subject name exactly as given. Use names from the clues.
+- queries: 5 short, specific web searches (3-8 words) that find the facts behind the topic: who made or runs it, when it started and ended, ownership or deals, the strange or disputed part, first-hand accounts. The FIRST search must find news coverage from when it happened (add the year, e.g. "<subject> acquired 2014"); the SECOND must name who made or owns it. Each must contain the subject name exactly as given. Use names from the clues.
 - sites: up to 4 places where THIS kind of topic is really documented or discussed, as domains or subreddits: e.g. a game → its fandom wiki, r/<the game or genre>, a gaming news site; a crime → court records, local news, websleuths.com; music → discogs.com, genius.com; film or TV → imdb.com, the fandom wiki; science → a journal or agency; internet lore → knowyourmeme.com, lostmediawiki.com. Pick only places likely to have this subject.`,
         },
         { role: 'user', content: `TOPIC: ${query}\nSUBJECT NAME: ${subject}\nWHAT A FIRST SEARCH TURNED UP:\n${clues.slice(0, 1800)}` },
@@ -141,14 +147,25 @@ async function wikiImages(wiki: Wiki, title: string, caption: string, limit: num
 }
 
 /** A list page ("Boyfriends") whose entries mostly have pictures: shown as a gallery of who's who. */
-async function wikiGallery(wiki: Wiki, title: string, subject: string, signal: AbortSignal, hop = 0): Promise<Research['gallery']> {
-  const j = await wikiApi(wiki, { action: 'query', generator: 'links', titles: title, gpllimit: 80, gplnamespace: 0, prop: 'pageimages', piprop: 'thumbnail', pithumbsize: 320, redirects: 1 }, signal).catch(() => null);
-  const linked = (j?.query?.pages ?? []) as any[];
+async function wikiGallery(wiki: Wiki, title: string, subject: string, signal: AbortSignal, hop = 0, max = 60): Promise<Research['gallery']> {
+  // Every page the list links to, with its picture (the wiki hands pictures out 50 at a time).
+  const linked: any[] = [];
+  let cont: Record<string, string> = {};
+  for (let round = 0; round < 4; round++) {
+    const j = await wikiApi(wiki, { action: 'query', generator: 'links', titles: title, gpllimit: 'max', gplnamespace: 0, prop: 'pageimages', piprop: 'thumbnail', pithumbsize: 320, pilimit: 'max', redirects: 1, ...cont }, signal).catch(() => null);
+    for (const p of (j?.query?.pages ?? []) as any[]) {
+      const had = linked.find((x) => x.pageid === p.pageid);
+      if (had) had.thumbnail ??= p.thumbnail;
+      else linked.push(p);
+    }
+    if (!j?.continue) break;
+    cont = Object.fromEntries(Object.entries(j.continue).map(([k, v]) => [k, String(v)]));
+  }
   // "Boyfriends" can be an index of per-game lists: follow it to "Boyfriends (Star Girl)".
   if (!hop) {
     const own = linked.find((p) => String(p.title).startsWith(`${title} (`) && namesSubject(subject, String(p.title)));
     if (own) {
-      const deeper = await wikiGallery(wiki, String(own.title), subject, signal, 1);
+      const deeper = await wikiGallery(wiki, String(own.title), subject, signal, 1, max);
       if (deeper) return deeper;
     }
   }
@@ -158,7 +175,7 @@ async function wikiGallery(wiki: Wiki, title: string, subject: string, signal: A
   return {
     title,
     url: wikiUrl(wiki, title),
-    items: members.slice(0, 10).map((p) => ({
+    items: members.slice(0, max).map((p) => ({
       id: `fandom:${wiki.base}:${p.pageid}`,
       source: 'fandom',
       kind: 'image' as const,
@@ -169,6 +186,18 @@ async function wikiGallery(wiki: Wiki, title: string, subject: string, signal: A
       meta: { wiki: wiki.name, list: label },
     })),
   };
+}
+
+/**
+ * The whole list behind a who's-who card, read from its wiki link ("https://x.fandom.com/wiki/Boyfriends").
+ * `subject` is the case it belongs to, so the subject's own pages are not counted as members.
+ */
+export async function galleryFromUrl(url: string, subject: string, signal: AbortSignal): Promise<Research['gallery']> {
+  const u = new URL(url);
+  if (!/\.fandom\.com$/.test(u.hostname)) throw new Error('Not a Fandom wiki page');
+  const title = decodeURIComponent(u.pathname.replace(/^\/wiki\//, '')).replace(/_/g, ' ');
+  const wiki: Wiki = { name: u.hostname.split('.')[0], base: `${u.protocol}//${u.hostname}` };
+  return wikiGallery(wiki, title, subject, signal, 0, 120);
 }
 
 /** Every article a wiki page links to: where the parts of a case live. */
@@ -256,7 +285,7 @@ function passages(text: string, keywords: string[], max: number): string {
     .join('\n');
 }
 
-async function readPage(url: string, signal: AbortSignal): Promise<{ title: string; text: string } | null> {
+async function readPage(url: string, signal: AbortSignal): Promise<{ title: string; text: string; published?: string } | null> {
   const yt = youtubeId(url);
   if (yt) {
     const t = await youtubeTranscript(yt).catch(() => null);
@@ -265,7 +294,7 @@ async function readPage(url: string, signal: AbortSignal): Promise<{ title: stri
   if (signal.aborted) return null;
   const page = await readAnything(url).catch(() => null);
   if (!page || page.blocked) return null;
-  return { title: page.title, text: [page.text, ...(page.comments ?? []).slice(0, 15).map((c) => c.text)].join('\n\n') };
+  return { title: page.title, published: page.published, text: [page.text, ...(page.comments ?? []).slice(0, 15).map((c) => c.text)].join('\n\n') };
 }
 
 /**
@@ -293,7 +322,12 @@ export async function deepResearch(
 
   // Targeted searches on the web and on the wiki, in parallel.
   const [webBatches, wikiHits] = await Promise.all([
-    Promise.all([...queries, ...siteSearches].map((q) => timeout(webSearch(q, 5, signal), 12000, [] as SourceItem[]))),
+    Promise.all(
+      [...queries, ...siteSearches].map((q, i) =>
+        // Google (Serper) for the two key searches: it finds coverage from the time that other engines miss.
+        timeout(i < 2 ? serper(q, 6, signal).then((r) => (r.length ? r : webSearch(q, 5, signal))).catch(() => webSearch(q, 5, signal)) : webSearch(q, 5, signal), 12000, [] as SourceItem[]),
+      ),
+    ),
     wiki ? Promise.all([query, subject, ...queries].map((q) => timeout(wikiSearch(wiki, q, 3, signal), 8000, []))) : Promise.resolve([]),
   ]);
   const seen = new Set(scout.map((s) => s.url));
@@ -310,7 +344,9 @@ export async function deepResearch(
   onStatus('Reading the best pages in full…');
   const byDomain = new Map<string, number>();
   const toRead = [...scout, ...items]
-    .filter((it) => it.url && it.source !== 'fandom' && !NOT_READABLE.test(new URL(it.url).hostname))
+    .filter((it) => it.url && it.source !== 'fandom' && !NOT_READABLE.test(new URL(it.url).hostname) && !LISTING.test(new URL(it.url).pathname))
+    // Only pages about the subject itself: a topic page that lists it among a hundred petitions is not.
+    .filter((it) => namesSubject(subject, it.title) || namesSubject(subject, `${it.title} ${it.snippet ?? ''}`.slice(0, 220)))
     .filter((it) => {
       const d = new URL(it.url!).hostname.replace(/^www\./, '');
       byDomain.set(d, (byDomain.get(d) ?? 0) + 1);
@@ -363,7 +399,9 @@ export async function deepResearch(
   toRead.forEach((it, i) => {
     const page = webTexts[i];
     const text = page ? passages(page.text, allKeywords, 1200) : '';
-    if (text.length > 120) reading.push({ title: page!.title || it.title, url: it.url!, source: it.source, text });
+    // When it came out anchors the timeline: news of a 2014 sale is dated 2014.
+    const date = (page!.published ?? it.date ?? '').slice(0, 10) || undefined;
+    if (text.length > 120) reading.push({ title: page!.title || it.title, url: it.url!, source: it.source, text, date });
   });
 
   // Pictures: the picked wiki pages' images, and the who's-who list the AI chose.
@@ -387,12 +425,22 @@ export async function deepResearch(
           .slice(0, 3)
           .map((t) => timeout(wikiImages(wiki, t, `On the ${t} page`, namesSubject(subject, mainTitle(t)) ? 1 : 4, signal), 8000, [])),
       ),
-      listPage ? timeout(wikiGallery(wiki, listPage, subject, signal), 9000, undefined) : Promise.resolve(undefined),
+      listPage ? timeout(wikiGallery(wiki, listPage, subject, signal), 14000, undefined) : Promise.resolve(undefined),
     ]);
     photos = pics.flat();
     gallery = list;
+    if (gallery) {
+      const bare = (t: string) => t.replace(/\s*\(.*\)\s*$/, '');
+      const stemOf = bare(gallery.title).toLowerCase().replace(/s$/, '');
+      const owner = topWiki
+        .map((t, i) => ({ t, m: (wikiTexts[i] ?? '').toLowerCase().split(stemOf).length - 1 }))
+        .filter((x) => x.m > 0 && !namesSubject(subject, bare(x.t)) && bare(x.t) !== bare(gallery!.title))
+        .sort((a, b) => b.m - a.m)[0];
+      if (owner) gallery.about = bare(owner.t);
+    }
   }
-  return { items, photos, gallery, reading, queries: [...queries, ...siteSearches], wiki: wiki?.name };
+  const vocabulary = [...new Set([...salientTerms([...wikiTexts, ...reading.map((r) => r.text), ...scout.filter((s) => namesSubject(subject, s.title)).map((s) => `${s.title} ${s.snippet ?? ''}`)], subject, 24), ...(wiki ? terms(wiki.name).filter((w) => w.length >= 5 && !terms(subject).includes(w) && w !== 'wiki') : [])])];
+  return { items, photos, gallery, reading, queries: [...queries, ...siteSearches], wiki: wiki?.name, vocabulary };
 }
 
 export function describeError(e: unknown) {

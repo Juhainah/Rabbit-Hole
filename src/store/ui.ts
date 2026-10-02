@@ -52,8 +52,9 @@ interface UiState {
 export const useUi = create<UiState>()((set) => ({
   view: 'board',
   rightTab: 'ai',
-  rightOpen: true,
-  leftOpen: true,
+  // Phones start on the board itself; the panels open as a drawer and a bottom sheet.
+  rightOpen: typeof window === 'undefined' || window.innerWidth >= 768,
+  leftOpen: typeof window === 'undefined' || window.innerWidth >= 768,
   settingsOpen: false,
   helpOpen: (() => {
     try {

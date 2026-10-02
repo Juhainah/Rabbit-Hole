@@ -4,27 +4,21 @@ import { Hono, type Context } from 'hono';
 import { stream } from 'hono/streaming';
 import { authProject, onGuestList, verifyVisitor, type Visitor } from './auth';
 import type { ChatEvent, ChatRequest, DigEvent, DigRequest, SourceItem } from '../shared/types';
+import { chatResearch } from './chat-research';
+import { galleryFromUrl } from './research';
 import { runDig } from './dig';
 import { errMsg } from './http';
 import { resolveProviders, streamWithFallback } from './llm';
 import { chatMessages } from './prompts';
-import { norm, rankRelevant, relevanceFilter, terms } from './relevance';
 import { readAnything } from './reader';
 import { youtubeId } from './scrape';
 import { availableSources, searchSource } from './sources';
-import { inspiration, wikiPrimary } from './sources/knowledge';
-import { archiveMedia, periodIn, siteIn, waybackImages } from './sources/archives';
+import { inspiration } from './sources/knowledge';
 import { youtubeTranscript } from './sources/media';
 import { logServerError, overDailyLimit } from './limits';
 
 /** The visitor's sign-in ticket, passed on so Supabase counts and logs as them. */
 const ticket = (c: Context) => c.req.header('authorization')?.match(/^Bearer\s+(.+)$/i)?.[1];
-
-// Words that say what to do, not what to look for.
-const META_WORDS = new Set(
-  ('yes yeah okay please connection connections connect link links linked relation related add pin note card cards board source sources photo photos picture pictures image images info information detail details anything something thing more show find bring tell explain give check work working api here there case clue clues about ' +
-    'strange stranger strangest weird weirdest odd oddest interesting important explanation happened happen think theory theories real fact facts evidence missing know story stories most best worst skeptic skeptics contradict contradicts summary summarize recap overlooked missed').split(' '),
-);
 
 /** Questions about the board itself ("strangest detail on this board?") are answered from the board, not the archives. */
 const ABOUT_THE_BOARD = /\b(clean|tidy|declutter|remove|delete|get rid of|unpin)\b|\b(this|the|my|our)\s+(board|investigation|cards?|clues?|evidence)\b|\bthese\s+(cards?|clues?|cases?|photos?|sources?|people)\b|\bon (the|this|my) board\b|\b(contradict\w*|skeptic\w*|summari[sz]e|recap|so far)\b/i;
@@ -162,61 +156,12 @@ app.post('/api/chat', async (c) => {
       // Sources carried over from the previous answer keep their numbers first.
       const carried = (body.carrySources ?? []).slice(0, 10);
       let sources: SourceItem[] = carried;
-      const aboutBoard = ABOUT_THE_BOARD.test(question) && !/\b(find|search|fetch|bring|pin|get|look up)\b/i.test(question);
+      const aboutBoard = ABOUT_THE_BOARD.test(question) && !/\b(find|search|fetch|bring|pin|get|look up|add|locate|show me|pictures?|photos?)\b/i.test(question);
       if (body.research && question && !aboutBoard) {
         emit({ type: 'status', message: 'Checking the archives…' });
-        const allowed = new Set(availableSources());
-        // Questions and instructions search badly as-is; search the subject instead.
-        const hint = body.hint?.trim().slice(0, 120);
-        const wordy = question.split(/\s+/).length > 5 || /^(can|could|would|please|show|bring|pin|put|add|find|give|tell|list|check|what|whats|what's|why|how|who|when|where|which|is|are|was|were|did|do|does|has|have|any)\b/i.test(question);
-        // New names the question brings in ("any connection to Epstein?") are searched together with the case.
-        const caseWords = new Set(hint ? terms(hint) : []);
-        const extra = terms(question).filter((w) => !caseWords.has(w) && !META_WORDS.has(w)).slice(0, 3);
-        const phrase = wordy && hint ? [hint, ...extra].join(' ') : question;
-        // Asking for pictures? Go to the photo archives.
-        const wantsImages = /\b(photos?|pictures?|pics?|images?|photographs?|maps?|scans?|footage|drawings?|paintings?)\b/i.test(question);
-        // Asking for recordings, films or the Internet Archive? Go to the Archive and fetch things that play.
-        const wantsArchive = /\b(internet archive|archive\.org|archives?|archived)\b/i.test(question);
-        const wantsAudio = /\b(audio|recordings?|recorded|broadcasts?|radio|podcasts?|interviews?|speech(es)?|sound|music|songs?|tapes?)\b/i.test(question);
-        const wantsVideo = /\b(videos?|films?|footage|newsreels?|movies?|tv|television|clips?|documentar(y|ies))\b/i.test(question);
-        const ids = [
-          ...new Set([...(body.sources?.length ? body.sources : ['wikipedia', 'web', 'reddit']), 'commons', ...(wantsImages ? ['openverse', 'europeana', 'nasa'] : [])]),
-        ]
-          .filter((id) => allowed.has(id))
-          .slice(0, wantsImages ? 9 : 7);
-        // Research gets 12 seconds; slow sources are simply left out of this answer.
-        const deadline = AbortSignal.any([signal, AbortSignal.timeout(12_000)]);
-        // "A picture from rotten.com in March 2001": the Wayback Machine has what the site itself showed.
-        const site = siteIn(question) ?? siteIn(hint ?? '');
-        const archived = site && (periodIn(question) || /\b(archive[ds]?|wayback|snapshot|old|back then|used to|original)\b/i.test(question) || wantsImages);
-        const mediaDeadline = AbortSignal.any([signal, AbortSignal.timeout(20_000)]);
-        const mediaTask = Promise.all([
-          wantsAudio || wantsArchive ? archiveMedia(phrase, 'audio', 4, mediaDeadline).catch(() => []) : [],
-          wantsVideo || wantsArchive ? archiveMedia(phrase, 'movies', 4, mediaDeadline).catch(() => []) : [],
-          wantsArchive ? searchSource('archive', phrase, { limit: 4, signal: mediaDeadline }).catch(() => []) : [],
-        ]).then((lists) => lists.flat());
-        const waybackTask = archived ? waybackImages(site, periodIn(question), 8, AbortSignal.any([signal, AbortSignal.timeout(25_000)])).catch(() => []) : Promise.resolve([]);
-        const [primary, ...batches] = await Promise.allSettled([
-          wikiPrimary(phrase, deadline),
-          ...ids.map((id) => searchSource(id, phrase, { limit: wantsImages && ['commons', 'openverse', 'europeana', 'nasa'].includes(id) ? 5 : 3, signal: deadline })),
-        ]);
-        // The main article must belong to the case: asking "did the data.gov key work?" on an
-        // Apollo 11 board shouldn't cite a data scientist's biography.
-        const caseTerms = hint ? terms(hint) : [];
-        const fits = (a: { title: string; extract: string }) => !caseTerms.length || caseTerms.some((w) => norm(`${a.title} ${a.extract.slice(0, 1500)}`).includes(w));
-        const p = primary.status === 'fulfilled' && primary.value && fits(primary.value) ? primary.value : null;
-        const topic = { phrasings: [phrase, p?.title, hint], context: p?.extract };
-        const isRelevant = relevanceFilter(topic);
-        const found = rankRelevant(batches.flatMap((b) => (b.status === 'fulfilled' ? (b.value as SourceItem[]) : [])).filter(isRelevant), topic);
-        if (p) found.unshift({ id: `wikipedia:${p.title}`, source: 'wikipedia', kind: 'article', title: p.title, snippet: p.extract.slice(0, 600), url: p.url, image: p.image });
+        const found = await chatResearch(question, body.hint?.trim().slice(0, 120), body.sources, signal, body.focus);
         const seen = new Set<string>();
-        // For picture requests, real photos come first so they get the low numbers.
-        const fromArchive = await waybackTask;
-        const media = await mediaTask;
-        const playable = media.length ? rankRelevant(media.filter(relevanceFilter({ phrasings: [phrase, hint], context: p?.extract })), { phrasings: [phrase, hint] }) : [];
-        // Archived pictures of the site asked about come first, so they get the low numbers.
-        const ordered = [...fromArchive, ...playable, ...(wantsImages ? [...found.filter((s) => s.image), ...found.filter((s) => !s.image)] : found)];
-        sources = [...carried, ...ordered].filter((s) => !seen.has(s.url ?? s.id) && seen.add(s.url ?? s.id)).slice(0, 20);
+        sources = [...carried, ...found].filter((s) => !seen.has(s.image ?? s.url ?? s.id) && seen.add(s.image ?? s.url ?? s.id)).slice(0, 20);
       }
       if (sources.length) emit({ type: 'sources', items: sources });
       const messages = chatMessages(body.messages, body.context, sources);
@@ -241,6 +186,16 @@ app.get('/api/scrape', async (c) => {
   if (limited(c, 'scrape', 120, 10 * 60_000)) return c.json({ error: 'Slow down a little.' }, 429);
   try {
     return c.json(await readAnything(url));
+  } catch (e) {
+    return c.json({ error: errMsg(e) }, 502);
+  }
+});
+
+app.get('/api/wiki-list', async (c) => {
+  if (limited(c, 'scrape', 120, 10 * 60_000)) return c.json({ error: 'Slow down a little.' }, 429);
+  try {
+    const g = await galleryFromUrl(c.req.query('url') ?? '', c.req.query('subject') ?? '', AbortSignal.timeout(25_000));
+    return g ? c.json({ title: g.title, url: g.url, items: g.items.map((p) => ({ title: p.title, image: p.image, url: p.url })) }) : c.json({ error: 'No pictured list on that page' }, 404);
   } catch (e) {
     return c.json({ error: errMsg(e) }, 502);
   }

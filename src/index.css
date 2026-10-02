@@ -739,9 +739,9 @@ button {
     #fdfbf6;
 }
 .photo-clip {
-  position: absolute;
-  right: -14px;
-  top: -18px;
+  position: relative;
+  float: right;
+  margin: -26px -26px 8px 12px;
   width: 92px;
   padding: 5px 5px 14px;
   background: #fff;
@@ -801,6 +801,27 @@ button {
 .gallery-head h3 {
   margin-top: 2px;
   font-size: 20px;
+}
+.gallery-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 8px;
+}
+.gallery-more {
+  flex-shrink: 0;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: rgba(31, 27, 22, 0.08);
+  font: 600 11.5px/1.4 var(--f-ui, Inter, sans-serif);
+  color: #3a3128;
+}
+.gallery-more:hover {
+  background: rgba(31, 27, 22, 0.16);
+}
+.gallery-more:disabled {
+  opacity: 0.6;
 }
 .gallery-grid {
   display: grid;
@@ -865,18 +886,23 @@ button {
 }
 .clue-image .frame {
   position: relative;
-  aspect-ratio: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 110px;
   background: #1d1a17;
   overflow: hidden;
 }
 .clue-image .frame img {
+  display: block;
   width: 100%;
-  height: 100%;
-  object-fit: cover;
+  height: auto;
+  max-height: 380px;
+  object-fit: contain;
   transition: transform 0.6s;
 }
 .clue-image:hover .frame img {
-  transform: scale(1.06);
+  transform: scale(1.02);
 }
 .clue-image .frame::after {
   content: '';
@@ -1265,6 +1291,114 @@ button {
 }
 .leaflet-popup-tip {
   background: var(--color-paper);
+}
+
+/* Pinned mid-dig, not yet vetted: faded until the AI keeps it. */
+.clue.vetting {
+  opacity: 0.55;
+  filter: saturate(0.4);
+}
+.vetting-stamp {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  z-index: 5;
+  transform: translateX(-50%) rotate(-4deg);
+  padding: 1px 7px;
+  border: 1.5px solid #8a6d3b;
+  border-radius: 3px;
+  font: 700 10px/1.4 var(--f-type);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: #8a6d3b;
+  background: rgba(255, 252, 240, 0.85);
+  pointer-events: none;
+}
+
+/* ───────────────────────── Phones ───────────────────────── */
+.mobile-nav {
+  display: flex;
+  flex-shrink: 0;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  background: var(--color-desk);
+  border-top: 1px solid rgba(0, 0, 0, 0.5);
+  box-shadow: 0 -8px 20px -12px rgba(0, 0, 0, 0.9);
+  z-index: 70;
+}
+.mobile-nav button {
+  touch-action: manipulation;
+}
+@media (max-width: 767px) {
+  .top-bar {
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+  .side-rail,
+  .side-left .resize-handle,
+  .side-right .resize-handle {
+    display: none !important;
+  }
+  /* Your boards: a drawer from the left. */
+  .side-left {
+    position: fixed !important;
+    top: 0;
+    bottom: calc(52px + env(safe-area-inset-bottom, 0px));
+    left: 0;
+    width: min(86vw, 340px) !important;
+    z-index: 65 !important;
+    box-shadow: 12px 0 30px rgba(0, 0, 0, 0.5);
+    animation: drawer-in 0.22s ease-out;
+  }
+  /* Partner, archives, card, reader: a sheet from the bottom. */
+  .side-right {
+    position: fixed !important;
+    left: 0;
+    right: 0;
+    bottom: calc(52px + env(safe-area-inset-bottom, 0px));
+    width: 100% !important;
+    height: min(78dvh, calc(100dvh - 120px));
+    z-index: 65 !important;
+    border-radius: 14px 14px 0 0;
+    box-shadow: 0 -12px 30px rgba(0, 0, 0, 0.55);
+    animation: sheet-in 0.22s ease-out;
+  }
+  .phone-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 60;
+    background: rgba(0, 0, 0, 0.45);
+  }
+  .react-flow__minimap {
+    display: none;
+  }
+  /* The board toolbar fits the screen and scrolls sideways if it must. */
+  .board-toolbar {
+    bottom: 12px !important;
+    max-width: calc(100vw - 24px);
+  }
+  .board-toolbar > .paper-panel {
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .react-flow__controls {
+    bottom: 70px !important;
+  }
+}
+@keyframes drawer-in {
+  from {
+    transform: translateX(-100%);
+  }
+}
+@keyframes sheet-in {
+  from {
+    transform: translateY(100%);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .side-left,
+  .side-right {
+    animation: none;
+  }
 }
 
 /* ───────────────────────── Performance ───────────────────────── */

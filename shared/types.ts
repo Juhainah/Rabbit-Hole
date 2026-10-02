@@ -71,6 +71,9 @@ export interface Tangent {
 export interface TimelineItem {
   date: string;
   event: string;
+  /** Evidence number the moment comes from (from the AI), then the item id it resolves to. */
+  evidence?: number;
+  item?: string;
 }
 
 export interface Analysis {
@@ -140,7 +143,7 @@ export type DigEvent =
   /** Item ids that are good but not the best: moved off the board into the case's "More finds". */
   | { type: 'extras'; ids: string[] }
   /** A who's-who list from the subject's wiki (characters, members), pinned as one card of portraits. */
-  | { type: 'gallery'; gallery: { title: string; url: string; source: string; items: SourceItem[] } }
+  | { type: 'gallery'; gallery: { title: string; url: string; source: string; items: SourceItem[]; about?: string } }
   | { type: 'error'; message: string }
   /** Heartbeat so the client can tell a slow answer from a dead connection. */
   | { type: 'ping' }
@@ -179,6 +182,8 @@ export interface ChatRequest {
   carrySources?: SourceItem[];
   /** What the conversation is about (selected card or latest case), for searching. */
   hint?: string;
+  /** The card being asked about and its link: its own page is read first ("go to where that list came from"). */
+  focus?: { url: string; title: string };
 }
 
 export interface ScrapeResult {

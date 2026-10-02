@@ -41,6 +41,29 @@ export function namesSubject(q: string, text: string): boolean {
   return p.anchors.length <= 2 ? hit.size === p.anchors.length : hit.size >= p.anchors.length - 1;
 }
 
+const ASKING = new Set('what which who whom whose why how when where whats is are was were did do does can could would should will please tell show find bring add pin give list explain any some about there here specific specifically being been'.split(' '));
+
+/**
+ * A long topic or a question as a short search: "Star girl game controversy star chat" → "Star girl
+ * game chat"; "What long-term health consequences … World Trade Center collapse?" with lead "9/11" →
+ * "9/11 World Trade Center health consequences". Names first, then the telling words; never filler.
+ */
+export function compactQuery(q: string, max = 5, lead = ''): string {
+  const words = q.replace(/[?!.,;:()"“”]+/g, ' ').split(/\s+/).filter(Boolean);
+  const seen = new Set<string>();
+  const out: string[] = [];
+  const add = (w: string) => { const k = norm(w); if (!seen.has(k)) { seen.add(k); out.push(w); } };
+  for (const w of lead.split(/\s+/).filter(Boolean)) add(w);
+  const keep = (w: string) => {
+    const t = tokens(w);
+    return t.some((x) => /\d/.test(x) || (x.length >= 3 && !STOP.has(x) && !GENERIC.has(stem(x)) && !ASKING.has(x)));
+  };
+  const named = words.filter((w, i) => i > 0 && /^[A-Z0-9]/.test(w) && keep(w));
+  for (const w of named) add(w);
+  for (const w of words) if (keep(w)) add(w);
+  return out.slice(0, max).join(' ') || q;
+}
+
 /** The subject's name as typed ("star girl" in "star girl mobile game controversy"). */
 export function subjectName(q: string): string {
   const p = phrasing(q);
@@ -97,7 +120,7 @@ function hitsIn(toks: string[], p: Phrasing): Set<string> {
   for (const [a, b] of p.pairs) {
     if (!hit.has(a) || !hit.has(b)) continue;
     // In order and close: "numbers station", not "Station platform numbers".
-    const close = pos.get(a)!.some((x) => pos.get(b)!.some((y) => y > x && y - x <= 2));
+    const close = pos.get(a)!.some((x) => pos.get(b)!.some((y) => y - x === 1 || (y - x === 2 && toks[x + 1].length <= 2)));
     if (!close) hit.delete(b);
   }
   return hit;
@@ -127,6 +150,10 @@ export function checkPremise(q: string, docs: { title: string; snippet?: string 
   const mentions = (a: string) => docToks.filter((dt) => positions(dt, a).length).length;
   const present = p.anchors.filter((a) => mentions(a) > 0);
   if (!present.length) return none; // nothing matched at all: leave it to the dig to say so
+  // Results that mostly miss the subject's own name ("star girl") say nothing about the rest of the search.
+  const head = subjectHead(p);
+  const aboutIt = docToks.filter((dt) => { const hit = hitsIn(dt, p); return head.every((w) => hit.has(w)); }).length;
+  if (aboutIt < Math.min(2, docs.length)) return none;
   // Group the words that appear together in results; the biggest group is the real subject.
   const root = new Map(present.map((a) => [a, a]));
   const find = (a: string): string => (root.get(a) === a ? a : find(root.get(a)!));
@@ -146,14 +173,15 @@ export function checkPremise(q: string, docs: { title: string; snippet?: string 
   const seenWords = new Set(docToks.flat().filter((w) => w.length >= 4));
   const typos: Record<string, string> = {};
   for (const w of original(unknownStems)) {
-    const near = [...seenWords].find((s) => Math.abs(s.length - w.length) <= 2 && editDistance(w, s) <= (w.length >= 6 ? 2 : 1));
+    if (w.length < 5 || head.includes(stem(w))) continue;
+    const near = [...seenWords].find((s) => Math.abs(s.length - w.length) <= 2 && editDistance(w, s) <= (w.length >= 7 ? 2 : 1));
     if (near) typos[w] = near;
   }
   // Only something name-like is set aside: "storm8", or a word typed with a capital. An ordinary
   // word the first results happen to miss ("children") stays in the search.
   const nameLike = (w: string) => /\d/.test(w) || new RegExp(`(^|[^\\p{L}])${w[0].toUpperCase()}${w.slice(1)}`, 'u').test(q);
   const unknown = original(unknownStems).filter((w) => !typos[w] && nameLike(w));
-  const unlinked = original(unlinkedStems);
+  const unlinked = original(unlinkedStems).filter((w) => nameLike(w) && !head.includes(stem(w)));
   const drop = new Set([...unknown, ...unlinked]);
   const focus = typed.filter((w) => !drop.has(w) && (w.length > 1 || /\d/.test(w))).map((w) => typos[w] ?? w).join(' ');
   return { focus: focus || q, unknown, unlinked, typos };
@@ -188,7 +216,7 @@ function subjectHead(p: Phrasing): string[] {
   return pair && p.anchors.indexOf(pair[0]) === 0 ? pair : [p.anchors[0]];
 }
 
-function passes(toks: string[], p: Phrasing, lenient: boolean, post = false): boolean {
+function passes(toks: string[], p: Phrasing, lenient: boolean, post = false, strict = false): boolean {
   if (!p.all.length) return true;
   if (post && p.anchors.length > 2 && namesFirstSubject(toks, p)) return true;
   if (!p.anchors.length) return p.all.filter((w) => positions(toks, w).length).length >= Math.ceil(p.all.length / 2);
@@ -198,6 +226,10 @@ function passes(toks: string[], p: Phrasing, lenient: boolean, post = false): bo
   // Every result must name the subject, the name the search starts with: "Star Girl" needs both
   // words together (not Honkai Star Rail, not a T-shirt with "stars"); "Apollo 11" needs "Apollo".
   if (n > 2 && !subjectHead(p).every((w) => hit.has(w))) return false;
+  // A two-word name said together ("Star Girl") is the subject, however much else the search says
+  // ("star girl game controversy star chat"): "Outblaze sells Star Girl to Crosby Capital" is the case.
+  // Namesakes that share it are left to the AI, which reads every result before the board is final.
+  if (n > 3 && subjectHead(p).length === 2 && !strict) return true;
   if (lenient) return hits >= Math.min(n, n <= 2 ? n : n - 1) || (n > 2 && hits >= 2);
   if (n <= 2) return hits === n;
   if (n <= 4) return hits >= n - 1;
@@ -225,6 +257,8 @@ function contextOf(extract: string | undefined, ps: Phrasing[]): Set<string> {
 export interface Topic {
   phrasings: (string | undefined)[];
   context?: string;
+  /** No name-alone pass: the result must also say what the search is about. */
+  strict?: boolean;
 }
 
 const textOf = (item: SourceItem) => (item.kind === 'post' ? item.title : [item.title, item.snippet, item.author].filter(Boolean).join(' '));
@@ -239,6 +273,8 @@ export function relevanceFilter(topic: Topic) {
   const askedFor = (re: RegExp) => ps.some((p) => re.test(p.whole));
   return (item: SourceItem): boolean => {
     if (EXEMPT.has(item.source) || !ps.length) return true;
+    // Topic, tag and search-result pages list everything and are about nothing.
+    if (item.url && /^https?:\/\/[^/]+\/(.*\/)?(topics?|tags?|categor(y|ies)|search|explore|hashtag)(\/|$)/i.test(item.url)) return false;
     // Roundups and side-pages (albums, "… in fiction") share the name, not the subject.
     if (ROUNDUP.test(item.title) && !askedFor(ROUNDUP)) return false;
     if (SIDE_PAGE.test(item.title) && !askedFor(SIDE_PAGE)) return false;
@@ -249,7 +285,7 @@ export function relevanceFilter(topic: Topic) {
       const title = tokens(item.title);
       if (!ps.some((p) => hitsIn(title, p).size > 0)) return false;
     }
-    if (!ps.some((p) => passes(toks, p, LENIENT.has(item.source), item.kind === 'post'))) return false;
+    if (!ps.some((p) => passes(toks, p, LENIENT.has(item.source), item.kind === 'post', topic.strict))) return false;
     // Named only in passing (a line-up, an author list)? Then it must also touch the case's
     // subject, or it's likely a namesake: Leonid Kulik the noise band, not the meteorite hunter.
     if (ctx.size && !LENIENT.has(item.source) && !ps.some((p) => hitsIn(tokens(item.title), p).size)) return toks.some((t) => ctx.has(stem(t)));
@@ -262,6 +298,11 @@ const ROUNDUP = /\b(top \d+|\d+ (most|best|weirdest|creepiest|scariest|strangest
 // Side-pages that share the name but not the subject.
 const SIDE_PAGE =
   /\b(discography|album|song|single|in popular culture|in fiction|soundtrack|video game|board game|longplay|walkthrough|let'?s play|playthrough|gameplay|speedrun)\b|\((tv|television|web) series\)|\((film|novel|band|musical|play|opera|comics?|manga|disambiguation)\)/i;
+
+/** Does this result use any of the case's own words ("animoca", "boyfriends", "simsimi")? */
+export function touches(item: SourceItem, vocabulary: Set<string>): boolean {
+  return tokens(`${item.title} ${item.snippet ?? ''}`).some((t) => vocabulary.has(stem(t)) || vocabulary.has(t));
+}
 
 /** Best matches first, so the few board slots per source go to the strongest evidence. */
 export function rankRelevant(items: SourceItem[], topic: Topic): SourceItem[] {

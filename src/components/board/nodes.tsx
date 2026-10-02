@@ -1,4 +1,5 @@
 import { Handle, NodeResizer, Position, useUpdateNodeInternals, type NodeProps } from '@xyflow/react';
+import { fillGallery } from '../../lib/gallery';
 import clsx from 'clsx';
 import { ArrowDown, MessageCircle, Play, Square, BookOpen } from 'lucide-react';
 import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
@@ -37,12 +38,16 @@ function Card(props: {
   const messy = useSettings((s) => s.messy);
   const rot = messy ? (props.data.rotation ?? 0) : 0;
   const fresh = useFresh(props.id);
+  // React Flow measures the pin mid-fall; once the card lands, measure again so strings meet the pin.
+  const updateInternals = useUpdateNodeInternals();
   return (
     <div
-      className={clsx('clue', fresh && 'fresh', props.className, props.selected && 'is-selected')}
+      onAnimationEnd={(e) => e.animationName === 'drop-in' && updateInternals(props.id)}
+      className={clsx('clue', fresh && 'fresh', props.className, props.selected && 'is-selected', props.data.vetting && 'vetting')}
       style={{ '--rot': `${rot}deg`, ...props.style } as CSSProperties}
     >
       {props.tape && <span className="tape washi" style={{ '--w': props.tape } as CSSProperties} />}
+      {props.data.vetting && <span className="vetting-stamp">checking</span>}
       <Handle type="source" position={Position.Top} id="pin" className="pin" style={{ '--pin': props.data.pin ?? props.pin ?? '#c8322f' } as CSSProperties} />
       {props.children}
     </div>
@@ -178,7 +183,7 @@ export function EntityNode({ id, data, selected }: P) {
           <img src={data.image} alt="" draggable={false} />
         </div>
       )}
-      <h3 className={clsx('clue-title text-[19px] mt-1', data.image && 'pr-[74px]')}>{data.title}</h3>
+      <h3 className="clue-title text-[19px] mt-1">{data.title}</h3>
       {data.text && <p className="mt-[13px] text-[12.5px] leading-[22px] text-ink/85 line-clamp-5">{data.text}</p>}
       {data.lat != null && data.lon != null && (
         <StaticMap points={[{ lat: data.lat, lon: data.lon, label: '' }]} width={216} height={84} labels={false} className="mini-map mt-2 rounded-sm" />
@@ -220,6 +225,22 @@ export function NoteNode({ id, data, selected }: P) {
 // ─── Who's who: a contact sheet of portraits from the subject's wiki ─────────
 export function GalleryNode({ id, data, selected }: P) {
   const people = data.items ?? [];
+  const [all, setAll] = useState(false);
+  const [fetching, setFetching] = useState(false);
+  const [note, setNote] = useState('');
+  const more = async () => {
+    setFetching(true);
+    setNote('');
+    try {
+      const n = await fillGallery(id);
+      if (n > 10) setAll(true);
+      else setNote('That is the whole list.');
+    } catch (e) {
+      setNote(e instanceof Error ? e.message : 'Could not read the list');
+    } finally {
+      setFetching(false);
+    }
+  };
   return (
     <Card id={id} data={data} selected={selected} className="clue-gallery" pin={data.pin ?? '#c8322f'}>
       <div className="gallery-head">
@@ -227,7 +248,7 @@ export function GalleryNode({ id, data, selected }: P) {
         <h3 className="clue-title">{data.title}</h3>
       </div>
       <div className="gallery-grid">
-        {people.slice(0, 10).map((p) => (
+        {(all ? people : people.slice(0, 10)).map((p) => (
           <button
             key={p.title}
             className="gallery-face nodrag"
@@ -242,7 +263,36 @@ export function GalleryNode({ id, data, selected }: P) {
           </button>
         ))}
       </div>
-      <SourceBadge id={data.source} className="mt-2 max-w-full" />
+      <div className="gallery-foot">
+        <SourceBadge id={data.source} className="min-w-0 max-w-full" />
+        {note && <span className="text-[11px] text-ink-soft">{note}</span>}
+        {people.length > 10 ? (
+          <button
+            className="gallery-more nodrag"
+            onClick={(e) => {
+              e.stopPropagation();
+              setAll((v) => !v);
+            }}
+          >
+            {all ? 'Show fewer' : `Show all ${people.length}`}
+          </button>
+        ) : (
+          !data.listComplete &&
+          data.url && (
+            <button
+              className="gallery-more nodrag"
+              disabled={fetching}
+              onClick={(e) => {
+                e.stopPropagation();
+                void more();
+              }}
+              title="Read the wiki list this came from and add everyone on it"
+            >
+              {fetching ? 'Fetching the list…' : 'Fetch the whole list'}
+            </button>
+          )
+        )}
+      </div>
     </Card>
   );
 }

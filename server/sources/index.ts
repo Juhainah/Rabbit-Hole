@@ -91,7 +91,7 @@ const TTL = 20 * 60_000;
 export async function searchSource(id: string, q: string, opts: SearchOpts): Promise<SourceItem[]> {
   const fn = SEARCHERS[id];
   if (!fn) throw new Error(`Unknown source "${id}"`);
-  const key = `${id}|${q.trim().toLowerCase()}|${opts.limit}`;
+  const key = `${id}|${q.trim().toLowerCase()}|${opts.limit}|${opts.subject ?? ''}`;
   const hit = cache.get(key);
   if (hit && Date.now() - hit.at < TTL) return hit.items;
   const items = (await fn(q.trim(), opts))

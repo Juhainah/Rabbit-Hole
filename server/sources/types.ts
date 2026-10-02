@@ -3,6 +3,8 @@ import type { SourceItem } from '../../shared/types';
 export interface SearchOpts {
   limit: number;
   signal?: AbortSignal;
+  /** The case's own name ("star girl"), for sources that match titles and need it as one phrase. */
+  subject?: string;
 }
 
 export type SearchFn = (q: string, opts: SearchOpts) => Promise<SourceItem[]>;

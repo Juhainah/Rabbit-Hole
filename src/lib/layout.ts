@@ -194,6 +194,26 @@ export const typeOrder: ClueType[] = ['topic', 'entity', 'map', 'image', 'clip',
  * `movable` cards slide; everything else (the case file, other cases) stays put and
  * acts as an obstacle. Returns the new positions of the cards that moved.
  */
+/**
+ * The nearest open patch of cork around `base` for a card this size, so new cards never land on
+ * top of old ones. Returns the centre to place it at.
+ */
+export function freeSpot(nodes: ClueNode[], base: Point, size: { w: number; h: number }, pad = 30): Point {
+  const boxes = nodes.map((n) => ({ ...n.position, ...sizeOf(n) }));
+  const clear = (x: number, y: number) => boxes.every((b) => x + size.w + pad <= b.x || b.x + b.w + pad <= x || y + size.h + pad <= b.y || b.y + b.h + pad <= y);
+  const turn = Math.random() * Math.PI * 2;
+  for (let r = 0; r < 4000; r += 80) {
+    const steps = r === 0 ? 1 : Math.max(8, Math.round((2 * Math.PI * r) / 140));
+    for (let k = 0; k < steps; k++) {
+      const a = turn + (k / steps) * Math.PI * 2;
+      const cx = base.x + Math.cos(a) * r;
+      const cy = base.y + Math.sin(a) * r * 0.8;
+      if (clear(cx - size.w / 2, cy - size.h / 2)) return { x: Math.round(cx), y: Math.round(cy) };
+    }
+  }
+  return { x: base.x + 420, y: base.y };
+}
+
 export function untangle(nodes: ClueNode[], movable: Set<string>, start = new Map<string, Point>(), pad = 26, rounds = 80): Map<string, Point> {
   const boxes = nodes.map((n) => {
     const s = sizeOf(n);

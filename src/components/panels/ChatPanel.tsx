@@ -126,12 +126,36 @@ function homeFor(src: SourceItem, fallback?: string) {
   return topicOf(board, anchor)?.id ?? fallback;
 }
 
+/**
+ * A new person/place card gets its picture from Wikipedia, but only when that page is about
+ * someone in this case (its summary mentions the case), never a namesake.
+ */
+async function pictureFor(nodeId: string, title: string, near?: string) {
+  const board = currentBoard();
+  const topic = topicOf(board, board.nodes.find((n) => n.id === near));
+  const caseWords = tokenize(`${topic?.data.query ?? ''} ${topic?.data.title ?? ''}`).filter((w) => w.length >= 4 || /\d/.test(w));
+  try {
+    const r = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title.replace(/ /g, '_'))}?redirect=true`);
+    if (!r.ok) return;
+    const p = await r.json();
+    if (p.type === 'disambiguation' || !p.thumbnail?.source) return;
+    const about = tokenize(`${p.description ?? ''} ${p.extract ?? ''}`);
+    if (caseWords.length && !caseWords.some((w) => about.includes(w))) return;
+    const image = p.originalimage?.source && (p.originalimage.width ?? 0) <= 1600 ? p.originalimage.source : p.thumbnail.source;
+    const node = currentBoard().nodes.find((n) => n.id === nodeId);
+    if (node && !node.data.image) useBoards.getState().updateNode(nodeId, { image, url: node.data.url ?? p.content_urls?.desktop?.page });
+  } catch {
+    /* no picture is fine */
+  }
+}
+
 /** Carries out the partner's board actions. Returns a line per thing done. */
 function runActions(actions: string[], sources: SourceItem[]): string[] {
   const done: string[] = [];
   const near = anchorId();
   // New cards first, so connect/add lines in the same answer can find them.
   const kinds = /^(person|place|event|org|organization|object|thing|concept)$/i;
+  const created: string[] = [];
   for (const a of actions) {
     const card = a.match(/^card\s+(\w+)\s+(.+?)(?:\s*:\s*(.+))?$/i);
     if (!card) continue;
@@ -143,7 +167,9 @@ function runActions(actions: string[], sources: SourceItem[]): string[] {
     }
     const kind = card[1].toLowerCase();
     const entityType = (kinds.test(kind) ? (kind === 'organization' ? 'org' : kind === 'thing' ? 'object' : kind) : 'concept') as EntityType;
-    addClue('entity', { title, entityType, text: card[3]?.trim().slice(0, 400) }, { near });
+    const id = addClue('entity', { title, entityType, text: card[3]?.trim().slice(0, 400) }, { near });
+    created.push(id);
+    if (['person', 'place', 'org', 'object', 'event'].includes(entityType)) void pictureFor(id, title, near);
     done.push(`Added a card for “${title}”`);
   }
   const removals = new Set<string>();
@@ -210,6 +236,10 @@ function runActions(actions: string[], sources: SourceItem[]): string[] {
       done.push('Left a sticky note');
     }
   }
+  // A new card the answer didn't tie to anything hangs off the case it was asked about.
+  const edges = currentBoard().edges;
+  const loose = near ? created.filter((id) => !edges.some((e) => e.source === id || e.target === id)) : [];
+  if (loose.length) useBoards.getState().addEdges(loose.map((id) => makeEdge(near!, id, { kind: 'user' })));
   if (removals.size) {
     // Never empty the board by accident: the first case stays unless it was named on its own.
     useBoards.getState().removeNodes([...removals], `Cleaned up ${removals.size} card${removals.size === 1 ? '' : 's'}`);
@@ -367,6 +397,10 @@ export function ChatPanel() {
             const card = sel.data.query ?? sel.data.title;
             const inCase = caseName(sel);
             return inCase && !card.toLowerCase().includes(inCase.toLowerCase()) && sel.type !== 'topic' ? `${card} ${inCase}` : card;
+          })(),
+          focus: (() => {
+            const sel = currentBoard().nodes.find((n) => n.id === useUi.getState().selectedNodeId);
+            return sel?.data.url && sel.type !== 'topic' ? { url: sel.data.url, title: sel.data.title } : undefined;
           })(),
           messages: history,
           context: prefs.chatUsesBoard ? boardContext() : undefined,

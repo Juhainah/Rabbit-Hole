@@ -22,7 +22,7 @@ export function RightPanel({ available }: { available: string[] }) {
   const width = useSettings((s) => s.rightWidth);
   const setPrefs = useSettings((s) => s.set);
   return (
-    <aside className="relative z-20 flex shrink-0 flex-col bg-desk-2" style={{ width }}>
+    <aside className="side-right relative z-20 flex shrink-0 flex-col bg-desk-2" style={{ width }}>
       <ResizeHandle
         edge="left"
         width={width}
@@ -78,7 +78,7 @@ export function RightPanel({ available }: { available: string[] }) {
 export function RightRail() {
   const tab = useUi((s) => s.rightTab);
   return (
-    <aside className="relative z-20 flex w-11 shrink-0 flex-col items-center gap-1 border-l border-black/40 bg-desk-2 py-3">
+    <aside className="side-rail relative z-20 flex w-11 shrink-0 flex-col items-center gap-1 border-l border-black/40 bg-desk-2 py-3">
       <button onClick={() => useUi.getState().set({ rightOpen: true })} className="rounded-lg p-2 text-paper/70 hover:bg-white/5 hover:text-paper" title="Show panel">
         <ChevronsLeft size={17} />
       </button>

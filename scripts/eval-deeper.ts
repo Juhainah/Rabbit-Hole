@@ -18,20 +18,28 @@ const CASES = [
   { topic: 'Saturn V', caseQuery: 'Apollo 11' },
   { topic: 'Kholat Syakhl', caseQuery: 'Dyatlov Pass incident' },
   { topic: 'Voynich manuscript carbon dating', caseQuery: 'Voynich manuscript' },
+  { topic: 'SimSimi', caseQuery: 'star girl mobile game controversy' },
+  { topic: 'Perrie Edwards', caseQuery: 'zayn malik leaving one direction' },
+  // Three holes deep: dug from a card inside a deeper case.
+  { topic: 'Kulik expedition 1927', caseQuery: 'Tunguska event', trail: ['Tunguska event', 'Leonid Kulik'] },
+  { topic: 'Star Chat', caseQuery: 'star girl mobile game controversy', trail: ['star girl mobile game controversy', 'SimSimi'] },
 ];
 const JUDGED = 'scripts/.eval-deeper-judged.json';
 const judged: Record<string, { subject: boolean; linked: boolean }> = existsSync(JUDGED) ? JSON.parse(readFileSync(JUDGED, 'utf8')) : {};
 const digSources = SOURCES.filter((s) => s.dig).map((s) => s.id);
 
-/** Runs the evidence part of a dig (stops before the AI analysis) and returns what would be pinned. */
-async function evidence(topic: string, caseQuery: string): Promise<SourceItem[]> {
+/** Runs a whole dig and returns what stays on the board (after the AI's pruning and hand-picking). */
+async function evidence(topic: string, caseQuery: string, trail = [caseQuery]): Promise<SourceItem[]> {
   const items: SourceItem[] = [];
+  const gone = new Set<string>();
   const ctrl = new AbortController();
   const emit = (e: DigEvent) => {
-    if (e.type === 'source' || e.type === 'photos' || e.type === 'media') items.push(...e.items);
-    if (e.type === 'status' && /Connecting the dots/.test(e.message)) ctrl.abort();
+    if (e.type === 'source' || e.type === 'photos' || e.type === 'media') items.push(...e.items.slice(0, e.type === 'source' ? (e.limit ?? 3) : e.type === 'photos' ? 6 : 3));
+    if (e.type === 'gallery') items.push(...e.gallery.items.slice(0, 3));
+    if (e.type === 'prune' || e.type === 'extras') e.ids.forEach((id) => gone.add(id));
   };
-  await runDig({ topic, caseQuery, trail: [caseQuery], sources: digSources, perSource: 3 }, emit, ctrl.signal).catch(() => undefined);
+  await runDig({ topic, caseQuery, trail, sources: digSources, perSource: 3 }, emit, ctrl.signal).catch(() => undefined);
+  for (let i = items.length - 1; i >= 0; i--) if (gone.has(items[i].id)) items.splice(i, 1);
   const seen = new Set<string>();
   return items.filter((it) => !seen.has(it.url ?? it.id) && seen.add(it.url ?? it.id));
 }
@@ -69,7 +77,7 @@ let subject = 0;
 let linked = 0;
 const noise: string[] = [];
 for (const c of CASES) {
-  const items = await evidence(c.topic, c.caseQuery);
+  const items = await evidence(c.topic, c.caseQuery, c.trail);
   await judge(c.topic, c.caseQuery, items);
   const marks = items.map((it) => judged[`${c.caseQuery}|${c.topic}|${it.id}`]);
   const s = marks.filter((m) => m?.subject).length;
