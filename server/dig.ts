@@ -299,7 +299,7 @@ export async function runDig(req: DigRequest, emit: Emit, signal: AbortSignal) {
       ...ids.map((id) => searchSource(id, phrase, { limit: id === 'commons' ? 8 : 5, signal })),
       ...(site ? [waybackImages(site, undefined, 6, signal)] : []),
       // Google Images: the posters, stills, screenshots and faces the archives rarely hold.
-      serperImages(u?.subject ?? phrase, 8, signal).then((r) => r.filter((it) => namesSubject(subject, `${it.title} ${it.meta?.site ?? ''}`)).slice(0, 4)),
+      serperImages(u?.subject ?? phrase, 8, signal).then((r) => r.filter((it) => !/fandom\.com|pinterest\.|instagram\.com/i.test(it.url ?? '') && namesSubject(subject, `${it.title} ${it.meta?.site ?? ''}`)).slice(0, 4)),
     ]);
     const items = rankRelevant(keep(batches.flatMap((b) => (b.status === 'fulfilled' ? b.value : [])).filter((it) => it.image)), { ...topicOf, phrasings: [phrase, titleHelps] });
     return venue ? [] : framedPick(items, 8, 1);

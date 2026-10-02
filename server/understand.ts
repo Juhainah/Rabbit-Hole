@@ -38,6 +38,19 @@ const SYSTEM = `You plan research for a detective-board research app, like an ex
  "doubt": "one sentence if the typed search links things the results never connect (a wrong company, a connection no result shows), else empty"}
 Use only names that appear in the typed search or the results. Never invent facts.`;
 
+// Words that describe rather than name: "British singer" or "One Direction singer" would let in
+// every article about any singer.
+const DESCRIBING = /\b(singer|actor|actress|band|group|film|movie|game|app|company|brand|player|politician|writer|author|rapper|musician|celebrity|member|british|american|indian|english|french|german|former|famous)\b/i;
+
+/** Another name for the subject, not a description of it: shares a word with it, or is a short proper name ("9/11", "1D"). */
+function isName(alias: string, subject: string): boolean {
+  const words = (s: string) => s.toLowerCase().split(/[^\p{L}\p{N}/]+/u).filter((w) => w.length > 1);
+  const own = new Set(words(subject));
+  if (words(alias).some((w) => own.has(w)) && !DESCRIBING.test(alias.replace(new RegExp(subject.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'), ''))) return true;
+  const parts = alias.trim().split(/\s+/);
+  return parts.length <= 3 && !DESCRIBING.test(alias) && parts.every((p) => /^[\p{Lu}\d"“'(]/u.test(p));
+}
+
 /** Asks the AI to read the search against the first results. Null if no AI answers in time. */
 export async function understand(asked: string, firstResults: SourceItem[], signal: AbortSignal, inCase?: string): Promise<Understanding | null> {
   const results = firstResults
@@ -64,7 +77,7 @@ export async function understand(asked: string, firstResults: SourceItem[], sign
       }
       return {
         subject,
-        aliases: list(j.aliases, 4, 80).filter((a) => a.toLowerCase() !== subject.toLowerCase()),
+        aliases: list(j.aliases, 4, 80).filter((a) => a.toLowerCase() !== subject.toLowerCase() && isName(a, subject)),
         focus: list(j.focus, 6, 40),
         query: str(j.query, 80) || subject,
         searches: list(j.searches, 6, 120),

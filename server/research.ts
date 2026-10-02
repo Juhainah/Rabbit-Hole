@@ -98,13 +98,19 @@ async function wikiApi<T = any>(wiki: Wiki, params: Record<string, string | numb
 }
 
 /** The fan wiki about this subject: named after it, or with a page that is. */
-async function findWiki(subject: string, signal: AbortSignal): Promise<Wiki | undefined> {
+/**
+ * `context` is the whole search ("zayn leaving one direction"): a wiki named after something in it
+ * (the One Direction wiki) may hold the subject's page; any other wiki that merely has a page with
+ * the same name is a namesake (a cartoon's "The Bermuda Triangle" episode).
+ */
+async function findWiki(subject: string, signal: AbortSignal, context = ''): Promise<Wiki | undefined> {
   const s = await getJson(`https://services.fandom.com/unified-search/community-search?query=${enc(subject)}&lang=en&limit=6`, { signal, headers: WIKI_HEADERS, timeout: 8000 }).catch(() => null);
   const wikis: Wiki[] = (s?.results ?? []).map((w: any) => ({ name: String(w.name), base: (String(w.url).startsWith('http') ? String(w.url) : `https://${w.url}`).replace(/\/$/, '') }));
   const named = wikis.find((w) => namesSubject(subject, w.name));
   if (named) return named;
   // Not named after it: a wiki that has a page with the subject's name (a person on a band's wiki).
-  for (const w of wikis.slice(0, 3)) {
+  const core = (name: string) => name.replace(/\b(wiki|fandom|wikia|database|the)\b/gi, ' ').replace(/\s+/g, ' ').trim();
+  for (const w of wikis.slice(0, 3).filter((x) => core(x.name) && namesSubject(core(x.name), context))) {
     const j = await wikiApi(w, { action: 'query', list: 'search', srsearch: subject, srlimit: 1 }, signal).catch(() => null);
     const top = j?.query?.search?.[0]?.title;
     if (top && namesSubject(subject, top) && namesSubject(top, subject)) return w;
@@ -315,7 +321,7 @@ export async function deepResearch(
   const planned = given?.queries.length
     ? Promise.resolve({ queries: [...new Set(given.queries.map((q) => (namesSubject(subject, q) ? q : `${subject} ${q}`)))].slice(0, 6), sites: given.sites })
     : planQueries(query, subject, clues, signal);
-  const [plan, wiki] = await Promise.all([planned, timeout(findWiki(subject, signal), 9000, undefined)]);
+  const [plan, wiki] = await Promise.all([planned, timeout(findWiki(subject, signal, `${query} ${(given?.focus ?? []).join(' ')}`), 9000, undefined)]);
   const queries = plan.queries;
   // The places this topic lives: searched for the subject, inside each one.
   const siteSearches = plan.sites
@@ -413,16 +419,18 @@ export async function deepResearch(
   let photos: SourceItem[] = [];
   let gallery: Research['gallery'];
   if (wiki) {
-    // No list from the AI: the list page that what we read mentions most ("talk with Boyfriends").
-    if (!listPage) {
-      const text = [...corpus, ...wikiTexts].join(' ').toLowerCase();
-      const mentions = (t: string) => text.split(mainTitle(t).toLowerCase().replace(/s$/, '')).length - 1;
-      listPage = pool
-        .filter((t) => listLike(t, subject))
-        .map((t) => ({ t, m: mentions(t) }))
-        .filter((x) => x.m > 0)
-        .sort((a, b) => b.m - a.m)[0]?.t;
-    }
+    // The list page that what we read mentions most ("talk with Boyfriends"): used when the AI picked
+    // none, or picked a page that is not a list (the feature page itself), or its list has no pictures.
+    const text = [...corpus, ...wikiTexts].join(' ').toLowerCase();
+    const mentions = (t: string) => text.split(mainTitle(t).toLowerCase().replace(/s$/, '')).length - 1;
+    const mentioned = pool
+      .filter((t) => listLike(t, subject) && t !== listPage)
+      .map((t) => ({ t, m: mentions(t) }))
+      .filter((x) => x.m > 0)
+      .sort((a, b) => b.m - a.m)
+      .map((x) => x.t);
+    if (listPage && (topWiki.includes(listPage) || !listLike(listPage, subject))) listPage = undefined;
+    const lists = [...(listPage ? [listPage] : []), ...mentioned].slice(0, 2);
     const [pics, list] = await Promise.all([
       // Pictures from pages about specific things (a feature, a person) first; the subject's own pages add one at most.
       Promise.all(
@@ -430,7 +438,13 @@ export async function deepResearch(
           .slice(0, 3)
           .map((t) => timeout(wikiImages(wiki, t, `On the ${t} page`, namesSubject(subject, mainTitle(t)) ? 1 : 4, signal), 8000, [])),
       ),
-      listPage ? timeout(wikiGallery(wiki, listPage, subject, signal), 14000, undefined) : Promise.resolve(undefined),
+      (async () => {
+        for (const l of lists) {
+          const g = await timeout(wikiGallery(wiki, l, subject, signal), 12000, undefined);
+          if (g) return g;
+        }
+        return undefined;
+      })(),
     ]);
     photos = pics.flat();
     gallery = list;

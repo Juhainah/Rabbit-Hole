@@ -299,7 +299,7 @@ export function relevanceFilter(topic: Topic) {
 const ROUNDUP = /\b(top \d+|\d+ (most|best|weirdest|creepiest|scariest|strangest|biggest|greatest)|most (disturbing|terrifying|mysterious)|list of|roundup|daily .*news|this week in|color by number)\b/i;
 // Side-pages that share the name but not the subject.
 const SIDE_PAGE =
-  /\b(discography|album|song|single|in popular culture|in fiction|soundtrack|video game|board game|longplay|walkthrough|let'?s play|playthrough|gameplay|speedrun)\b|\((tv|television|web) series\)|\((film|novel|band|musical|play|opera|comics?|manga|disambiguation)\)/i;
+  /\b(discography|album|song|single|in popular culture|in fiction|soundtrack|video game|board game|longplay|walkthrough|let'?s play|playthrough|gameplay|speedrun)\b|\((tv|television|web) series\)|\((film|novel|book|band|musical|play|opera|comics?|manga|video game|game|tv series|disambiguation)\)/i;
 
 /** Does this result use any of the case's own words ("animoca", "boyfriends", "simsimi")? */
 export function touches(item: SourceItem, vocabulary: Set<string>): boolean {
