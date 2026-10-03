@@ -13,6 +13,7 @@ import { runDig } from './dig';
 import { errMsg } from './http';
 import { resolveProviders, streamWithFallback } from './llm';
 import { chatMessages } from './prompts';
+import { describePicture } from './vision';
 import { readAnything } from './reader';
 import { youtubeId } from './scrape';
 import { availableSources, searchSource } from './sources';
@@ -181,7 +182,22 @@ app.post('/api/chat', async (c) => {
         sources = [...carried, ...found].filter((s) => !seen.has(s.image ?? s.url ?? s.id) && seen.add(s.image ?? s.url ?? s.id)).slice(0, 20);
       }
       if (sources.length) emit({ type: 'sources', items: sources });
-      const messages = chatMessages(body.messages, body.context, sources);
+      // A picture on the card being asked about: an AI that can see reads it first (and copies out its writing).
+      let context = body.context;
+      if (body.look?.image && typeof body.look.image === 'string') {
+        emit({ type: 'status', message: 'Looking at the picture…' });
+        const title = String(body.look.title ?? '').slice(0, 120);
+        const seen = await describePicture(body.look.image, title, signal).catch(() => '');
+        context = [
+          context,
+          seen
+            ? `\nWHAT THE PICTURE ON "${title}" SHOWS (looked at just now by an AI that can see; its writing copied out):\n${seen}`
+            : `\nThe picture on "${title}" could not be looked at right now; say so if the question needs it.`,
+        ]
+          .filter(Boolean)
+          .join('\n');
+      }
+      const messages = chatMessages(body.messages, context, sources);
       for await (const piece of streamWithFallback(resolveProviders(), { messages, temperature: 0.7, maxTokens: 3000, signal, expectEnd: /TANGENTS\s*:/i }, (p, err) => {
         console.warn(`[ai] ${p.name} (${p.model}) failed during chat: ${err}`);
         emit({ type: 'status', message: 'Backup brain taking over…' });
@@ -226,7 +242,7 @@ app.get('/api/cast', async (c) => {
   if (limited(c, 'scrape', 120, 10 * 60_000)) return c.json({ error: 'Slow down a little.' }, 429);
   try {
     const cast = await castOf(c.req.query('title') ?? '', AbortSignal.timeout(20_000));
-    return cast ? c.json({ title: cast.title, url: cast.url, director: cast.director, items: cast.items.map((p) => ({ title: p.title, image: p.image, url: p.url, role: p.meta?.role })) }) : c.json({ error: 'No cast list on that page' }, 404);
+    return cast?.items.length ? c.json({ title: cast.title, url: cast.url, label: cast.label, director: cast.director, items: cast.items.map((p) => ({ title: p.title, image: p.image, url: p.url, role: p.meta?.role })) }) : c.json({ error: 'No cast or members list on that page' }, 404);
   } catch (e) {
     return c.json({ error: errMsg(e) }, 502);
   }
@@ -235,8 +251,10 @@ app.get('/api/cast', async (c) => {
 app.get('/api/find-list', async (c) => {
   if (limited(c, 'scrape', 120, 10 * 60_000)) return c.json({ error: 'Slow down a little.' }, 429);
   try {
-    const g = await findList(c.req.query('subject') ?? '', c.req.query('what') ?? '', AbortSignal.timeout(30_000));
-    return g ? c.json({ title: g.title, label: g.label, url: g.url, wiki: g.wiki, items: g.items.map((p) => ({ title: p.title, image: p.image, url: p.url, role: p.meta?.role ? String(p.meta.role) : undefined })) }) : c.json({ error: 'No pictured list like that on a fan wiki' }, 404);
+    const g = await findList(c.req.query('subject') ?? '', c.req.query('what') ?? '', AbortSignal.timeout(70_000));
+    return g
+      ? c.json({ title: g.title, label: g.label, url: g.url, wiki: g.wiki, source: g.source, items: g.items.map((p) => ({ title: p.title, image: p.image, url: p.url, role: p.meta?.role ? String(p.meta.role) : undefined })) })
+      : c.json({ error: 'No list like that on a fan wiki, Wikipedia or the web' }, 404);
   } catch (e) {
     return c.json({ error: errMsg(e) }, 502);
   }

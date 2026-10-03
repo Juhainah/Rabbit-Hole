@@ -41,6 +41,17 @@ export function namesSubject(q: string, text: string): boolean {
   return p.anchors.length <= 2 ? hit.size === p.anchors.length : hit.size >= p.anchors.length - 1;
 }
 
+/** Does the text say the name itself, its words side by side ("Bakery Story"), not just each word somewhere? */
+export function saysName(name: string, text: string): boolean {
+  const want = tokens(name).map(stem);
+  if (!want.length) return true;
+  const got = tokens(text).map(stem);
+  for (let i = 0; i + want.length <= got.length; i++) {
+    if (want.every((w, j) => got[i + j] === w)) return true;
+  }
+  return false;
+}
+
 const ASKING = new Set('what which who whom whose why how when where whats is are was were did do does can could would should will please tell show find bring add pin give list explain any some about there here specific specifically being been'.split(' '));
 
 /**

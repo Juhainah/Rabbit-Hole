@@ -6,7 +6,7 @@ import { wikiPrimary } from './sources/knowledge';
 import { readAnything } from './reader';
 import { understand } from './understand';
 import { vetPictures } from './vision';
-import { castOf, isScreenWork } from './sources/cast';
+import { castOf, isGroup, isScreenWork } from './sources/cast';
 import { serper, serperImages, webSearch } from './sources/web';
 
 // Words that say what to do, not what to look for.
@@ -165,10 +165,10 @@ export async function chatResearch(
   const found = rankRelevant([...google, ...batches.flat()].filter((s) => !ROUNDUP_TITLE.test(s.title) && isRelevant(s)), topic);
   if (p) found.unshift({ id: `wikipedia:${p.title}`, source: 'wikipedia', kind: 'article', title: p.title, snippet: p.extract.slice(0, 600), url: p.url, image: p.image });
   // A film or series on the board: who plays whom, so "list the leads and their characters" can be answered.
-  const castTask = p && isScreenWork(p.extract) ? within(castOf(p.title, signal), 9000, null) : Promise.resolve(null);
+  const castTask = p && (isScreenWork(p.extract) || isGroup(p.extract)) ? within(castOf(p.title, signal), 9000, null) : Promise.resolve(null);
   const [fromArchive, media, fromCard, planned, cast] = await Promise.all([waybackTask, mediaTask, focusTask, plannedTask, castTask]);
   const castSource: SourceItem[] = cast
-    ? [{ id: `cast-list:${cast.title}`, source: 'wikipedia', kind: 'article', title: `Cast of ${cast.title}`, url: cast.url, snippet: [cast.director.length ? `Directed by ${cast.director.join(', ')}.` : '', ...cast.items.map((it) => (it.meta?.role ? `${it.title} as ${it.meta.role}` : it.title))].filter(Boolean).join('; ') }]
+    ? [{ id: `cast-list:${cast.title}`, source: 'wikipedia', kind: 'article', title: `${cast.label === 'Cast & crew' ? 'Cast' : cast.label} of ${cast.title}`, url: cast.url, snippet: [cast.director.length ? `Directed by ${cast.director.join(', ')}.` : '', ...cast.items.map((it) => (it.meta?.role ? `${it.title} as ${it.meta.role}` : it.title))].filter(Boolean).join('; ') }]
     : [];
   // Searches the partner chose itself are trusted to be on point; planned ones must name the subject.
   const plannedTopic = { phrasings: [...planned.names, lead || undefined, phrase], context: p?.extract };

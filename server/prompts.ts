@@ -19,7 +19,7 @@ const SCHEMA = `{
   "title": "evocative case title, max 6 words, about this topic only",
   "summary": "4-6 sentences: what it is, why it matters, what is strange about it",
   "hook": "one gripping sentence",
-  "entities": [{"name": "", "type": "person|place|org|event|concept|object|work", "description": "1-2 specific sentences", "date": "YYYY or YYYY-MM-DD (omit if none)", "place": "for places/events: geocodable location, e.g. 'Kholat Syakhl, Russia' (omit otherwise)"}],
+  "entities": [{"name": "", "type": "person|place|org|event|concept|object|work", "description": "1-2 specific sentences", "date": "YYYY or YYYY-MM-DD (omit if none)", "place": "for places/events: geocodable location, e.g. 'Lake Bled, Slovenia' (omit otherwise)"}],
   "relations": [{"from": "entity name or TOPIC", "to": "entity name", "label": "2-4 word verb phrase"}],
   "timeline": [{"date": "YYYY[-MM[-DD]] (negative year for BC)", "event": "short line", "evidence": number of the evidence it comes from (omit if it comes from a page read in full)}],
   "tangents": [{"title": "", "hook": "one sentence on why it's a rabbit hole", "query": "best search query for it"}],
@@ -28,7 +28,7 @@ const SCHEMA = `{
   "cites": [{"evidence": 3, "entity": "exact entity name from entities", "label": "2-5 words: what this source shows about it"}],
   "keep": [the 10-14 evidence numbers that best tell this case, best first: what actually happened (reporting from the time AND later look-backs or explainers), first-hand accounts and forum threads, official statements or documents; one of any near-duplicates; minor or generic items left out],
   "offtopic": [evidence numbers that are NOT really about this topic: lists or posts that only mention it in passing, and NAMESAKES (a different app, game, film, band or person that only shares the name, e.g. another app also called the same)],
-  "premise": "one sentence if the topic as typed contains a name, link or claim the evidence does not support (a wrong company, a connection no source documents), saying what the sources do show; otherwise an empty string"
+  "premise": "one sentence if the topic AS THE USER TYPED IT contains a name, link or claim the evidence does not support (a wrong company, a connection no source documents), saying what the sources do show; otherwise an empty string. Never use it to remark on the evidence or the main article themselves: if a source or article is about something else, leave it out of the case and say nothing"
 }
 Counts: 7-10 entities, 8-14 relations, 4-8 timeline items, 5-7 tangents, 2-4 questions, 4-12 cites (every important piece of evidence, especially first-hand accounts, threads and documents, tied to the entity it is evidence about). offtopic may be empty.`;
 

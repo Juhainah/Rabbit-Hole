@@ -100,7 +100,7 @@ export const api = {
   },
 
   /** A list (characters, objects, items) from the subject's fan wiki, with pictures. */
-  async findList(subject: string, what: string): Promise<{ title: string; label: string; url: string; wiki: string; items: { title: string; image?: string; url?: string; role?: string }[] }> {
+  async findList(subject: string, what: string): Promise<{ title: string; label: string; url: string; wiki: string; source?: string; items: { title: string; image?: string; url?: string; role?: string }[] }> {
     const res = await call(`/api/find-list?subject=${encodeURIComponent(subject)}&what=${encodeURIComponent(what)}`);
     if (!res.ok) throw new Error(await readError(res));
     return res.json();
@@ -114,7 +114,7 @@ export const api = {
   },
 
   /** Who is in a film or series and who they play, from its Wikipedia article. */
-  async cast(title: string): Promise<{ title: string; url: string; director: string[]; items: { title: string; image?: string; url?: string; role?: string }[] }> {
+  async cast(title: string): Promise<{ title: string; url: string; label?: string; director: string[]; items: { title: string; image?: string; url?: string; role?: string }[] }> {
     const res = await call(`/api/cast?title=${encodeURIComponent(title)}`);
     if (!res.ok) throw new Error(await readError(res));
     return res.json();

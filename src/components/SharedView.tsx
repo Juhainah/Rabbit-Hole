@@ -131,7 +131,7 @@ const KIND_NAMES: Record<string, string> = {
   quote: 'Quote',
   label: 'Label',
   map: 'Map',
-  gallery: 'Gallery',
+  gallery: 'List',
 };
 
 /**

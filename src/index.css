@@ -798,7 +798,13 @@ button {
   border-radius: 3px;
   box-shadow: var(--card-shadow);
 }
-.gallery-head h3 {
+.gallery-head {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+.gallery-head h3,
+.gallery-head .clue-title {
   margin-top: 2px;
   font-size: 20px;
 }
@@ -854,6 +860,87 @@ button {
   grid-template-columns: repeat(5, 1fr);
   gap: 8px;
   margin-top: 10px;
+}
+/* Editing a list card: pencil and cross on each entry, an Add tile, a small form. */
+.gallery-face-wrap {
+  position: relative;
+  display: grid;
+}
+.gallery-face-tools {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  z-index: 2;
+  display: flex;
+  gap: 2px;
+}
+.gallery-face-tools button {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  background: var(--color-ink);
+  color: var(--color-paper);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+.gallery-face-tools button:hover {
+  background: #c8322f;
+}
+.gallery-add {
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 2px;
+  min-height: 70px;
+  border: 2px dashed rgba(60, 40, 20, 0.35);
+  color: var(--color-ink-soft);
+  font: 600 11px/1 var(--font-ui);
+  background: rgba(255, 253, 247, 0.5);
+}
+.gallery-add:hover {
+  border-color: #c8322f;
+  color: #c8322f;
+}
+.list-item-form {
+  display: grid;
+  gap: 6px;
+  margin: 6px 0 8px;
+  padding: 10px;
+  background: #fffdf7;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+  font-family: var(--font-ui);
+}
+.list-item-form .add-input {
+  margin: 0;
+}
+.list-item-form-head {
+  font: 700 11px/1 var(--font-ui);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-ink-soft);
+}
+.gallery-renamable {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  text-align: left;
+  border-radius: 3px;
+}
+.gallery-renamable:hover {
+  background: rgba(200, 50, 47, 0.08);
+}
+.gallery-pencil {
+  flex: none;
+  opacity: 0.5;
+}
+.gallery-rename {
+  width: 100%;
+  background: #fffdf7;
+  border: 1px dashed #c8322f;
+  outline: 0;
+  padding: 1px 4px;
 }
 .gallery-face {
   display: grid;

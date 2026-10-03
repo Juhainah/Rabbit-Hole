@@ -58,10 +58,24 @@ export async function addPdfFile(file: File, opts: Opts = {}) {
     const text = pages.join('\n\n').trim();
     const meta = await doc.getMetadata().catch(() => null);
     const info = (meta?.info ?? {}) as { Title?: string; Author?: string };
+    // The first page as a picture: the card shows it, and the partner can look at it (a scan has no text to read).
+    const image = await (async () => {
+      const page = await doc.getPage(1);
+      const base = page.getViewport({ scale: 1 });
+      const viewport = page.getViewport({ scale: Math.min(2, 1100 / Math.max(base.width, base.height)) });
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(viewport.width);
+      canvas.height = Math.round(viewport.height);
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return undefined;
+      await page.render({ canvasContext: ctx, viewport }).promise;
+      return canvas.toDataURL('image/jpeg', 0.8);
+    })().catch(() => undefined);
     useBoards.getState().updateNode(id, {
       title: info.Title?.trim() || baseName(file.name),
       author: info.Author?.trim() || undefined,
-      text: text ? text.slice(0, 6000) : 'This PDF has no text layer (it is probably a scan).',
+      text: text ? text.slice(0, 6000) : 'A scanned PDF with no text layer: ask the partner and it will read the page picture.',
+      image,
       meta: { file: 'PDF', pages: doc.numPages },
     });
   } catch (e) {

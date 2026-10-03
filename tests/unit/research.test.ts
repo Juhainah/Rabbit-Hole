@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { SourceItem } from '../../shared/types';
-import { checkPremise, compactQuery, namesSubject, relevanceFilter, subjectName } from '../../server/relevance';
+import { checkPremise, compactQuery, namesSubject, relevanceFilter, saysName, subjectName } from '../../server/relevance';
 import { isName } from '../../server/understand';
 
 // The rules that keep a dig on its subject. Each case here was a real bug: long searches that found
@@ -75,5 +75,17 @@ describe('other names for a subject', () => {
     expect(isName('British singer', 'Liam Payne')).toBe(false);
     expect(isName('One Direction singer', 'Liam Payne')).toBe(false);
     expect(isName('German 9/11 hijackers', 'Hamburg cell')).toBe(false);
+  });
+});
+
+describe('the main article must say the name itself', () => {
+  // A dig on a game called "<two words>" once got the article on a bakery chain, which mentions both words apart.
+  it('finds a name written out, side by side', () => {
+    expect(saysName('Bakery Story', 'Bakery Story is a simulation game by Storm8.')).toBe(true);
+    expect(saysName('Talking Angela', 'The app features Talking Angela, a cat.')).toBe(true);
+  });
+  it('does not accept the words scattered apart', () => {
+    expect(saysName('Bakery Story', 'Paul is a French chain of bakery restaurants; its story began in 1889.')).toBe(false);
+    expect(saysName('Restaurant Story', "Alice's Restaurant is a story song by Arlo Guthrie.")).toBe(false);
   });
 });

@@ -1,10 +1,11 @@
 import { Handle, NodeResizer, Position, useUpdateNodeInternals, type NodeProps } from '@xyflow/react';
 import { fillGallery } from '../../lib/gallery';
 import clsx from 'clsx';
-import { ArrowDown, MessageCircle, Play, Square, BookOpen } from 'lucide-react';
+import { ArrowDown, MessageCircle, Play, Square, BookOpen, Pencil, Plus, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { sourceMeta } from '../../../shared/sources';
 import { askAbout, autoFall, caseFromTangent, startDig, stopDig } from '../../lib/dig';
+import { shrink } from '../../lib/evidence';
 import { compact, domain, ENTITY_COLORS, ENTITY_LABEL, hash01, prettyDate, STAMPS } from '../../lib/utils';
 import { useBoards } from '../../store/boards';
 import { useSettings } from '../../store/settings';
@@ -309,11 +310,128 @@ export function NoteNode({ id, data, selected }: P) {
 }
 
 // ─── Who's who: a contact sheet of portraits from the subject's wiki ─────────
+/** A list card's heading says what it holds: "Weapons", "Cast & crew"; "Who's who" only for a list of people. */
+function listHeading(data: ClueData) {
+  if (data.listLabel && data.listLabel.toLowerCase() !== data.title.toLowerCase()) return data.listLabel;
+  const t = `${data.listLabel ?? ''} ${data.title}`;
+  if (/\b(who|cast|crew|characters?|members?|people|family|families|staff|team|players?|guests?|suspects?|victims?|band|lineup|friends|boyfriends?|girlfriends?)\b/i.test(t)) return "Who's who";
+  return 'The list';
+}
+
+type ListItem = NonNullable<ClueData['items']>[number];
+
+/** Add or change one entry on a list card: its name, what it is, and a picture (a link or from your device). */
+function ListItemForm({ item, onSave, onCancel }: { item?: ListItem; onSave: (it: ListItem) => void; onCancel: () => void }) {
+  const [name, setName] = useState(item?.title ?? '');
+  const [role, setRole] = useState(item?.role ?? '');
+  const [image, setImage] = useState(item?.image ?? '');
+  const [err, setErr] = useState('');
+  const file = useRef<HTMLInputElement>(null);
+  const local = image.startsWith('data:');
+  return (
+    <form
+      className="list-item-form nodrag nowheel"
+      onClick={(e) => e.stopPropagation()}
+      onKeyDown={(e) => e.key === 'Escape' && onCancel()}
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (!name.trim()) return;
+        onSave({ ...item, title: name.trim().slice(0, 60), role: role.trim().slice(0, 70) || undefined, image: image.trim() || undefined });
+      }}
+    >
+      <div className="list-item-form-head">{item ? 'Change this entry' : 'Add to this list'}</div>
+      <input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="Name" className="add-input" />
+      <input value={role} onChange={(e) => setRole(e.target.value)} placeholder="What it is, or their part (optional)" className="add-input" />
+      <div className="flex gap-1.5">
+        <input
+          value={local ? 'Photo from your device' : image}
+          readOnly={local}
+          onChange={(e) => setImage(e.target.value)}
+          onFocus={() => local && setImage('')}
+          placeholder="Picture link (optional)"
+          className="add-input min-w-0 flex-1"
+        />
+        <button type="button" className="chip !px-2" title="A picture from your device" onClick={() => file.current?.click()}>
+          📷
+        </button>
+      </div>
+      {err && <div className="text-[11px] text-[#b3261e]">{err}</div>}
+      <input
+        ref={file}
+        type="file"
+        accept="image/*"
+        hidden
+        onChange={(e) => {
+          const pic = e.target.files?.[0];
+          e.target.value = '';
+          if (pic) shrink(pic, 420).then(setImage, (x) => setErr(x instanceof Error ? x.message : String(x)));
+        }}
+      />
+      <div className="mt-1 flex justify-end gap-1.5">
+        <button type="button" className="chip" onClick={onCancel}>
+          Cancel
+        </button>
+        <button type="submit" className="chip on" disabled={!name.trim()}>
+          {item ? 'Save' : 'Add'}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+/** A heading or title you can click to rename. */
+function Renamable({ value, placeholder, className, onSave, editable }: { value: string; placeholder: string; className: string; onSave: (v: string) => void; editable: boolean }) {
+  const [editing, setEditing] = useState(false);
+  if (editing) {
+    return (
+      <input
+        autoFocus
+        defaultValue={value}
+        placeholder={placeholder}
+        className={clsx(className, 'gallery-rename nodrag')}
+        onClick={(e) => e.stopPropagation()}
+        onBlur={(e) => {
+          const v = e.target.value.trim();
+          if (v && v !== value) onSave(v.slice(0, 80));
+          setEditing(false);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === 'Escape') (e.target as HTMLInputElement).blur();
+        }}
+      />
+    );
+  }
+  return editable ? (
+    <button
+      className={clsx(className, 'gallery-renamable nodrag')}
+      title="Click to rename"
+      onClick={(e) => {
+        e.stopPropagation();
+        setEditing(true);
+      }}
+    >
+      {value || placeholder}
+      <Pencil size={11} className="gallery-pencil" />
+    </button>
+  ) : (
+    <span className={className}>{value || placeholder}</span>
+  );
+}
+
 export function GalleryNode({ id, data, selected }: P) {
   const people = data.items ?? [];
   const [all, setAll] = useState(false);
   const [fetching, setFetching] = useState(false);
   const [note, setNote] = useState('');
+  const [editing, setEditing] = useState<number | 'new' | null>(null);
+  const update = useBoards((s) => s.updateNode);
+  useEffect(() => {
+    if (!selected) setEditing(null);
+  }, [selected]);
+  const change = (label: string, patch: Partial<ClueData>) => {
+    useBoards.getState().snapshot(label);
+    update(id, patch);
+  };
   const more = async () => {
     setFetching(true);
     setNote('');
@@ -327,34 +445,84 @@ export function GalleryNode({ id, data, selected }: P) {
       setFetching(false);
     }
   };
+  // While the card is picked, every entry shows (so any of them can be changed) and can be edited.
+  const shown = all || selected ? people : people.slice(0, 10);
   return (
     <Card id={id} data={data} selected={selected} className="clue-gallery" pin={data.pin ?? '#c8322f'}>
       <div className="gallery-head">
-        <span className="label-caps">{data.listLabel || "Who's who"}</span>
-        <h3 className="clue-title">{data.title}</h3>
+        <Renamable value={listHeading(data)} placeholder="What this list holds" className="label-caps" editable={!!selected} onSave={(v) => change('Renamed a list heading', { listLabel: v })} />
+        <Renamable value={data.title} placeholder="Name this list" className="clue-title" editable={!!selected} onSave={(v) => change('Renamed a list', { title: v })} />
         {data.text && <div className="gallery-note">{data.text}</div>}
       </div>
-      <div className={clsx('gallery-grid', all && 'all nowheel nodrag')}>
-        {(all ? people : people.slice(0, 10)).map((p) => (
-          <button
-            key={p.title}
-            className="gallery-face nodrag"
-            title={`Read about ${p.title}`}
-            onClick={(e) => {
-              e.stopPropagation();
-              if (p.url) read(id, p.url);
-            }}
-          >
-            <SafeImg src={p.image} alt="" draggable={false} loading="lazy" fallback={<div className="gallery-noface">{p.title.slice(0, 1)}</div>} />
-            <span>{p.title}</span>
-            {p.role && <em className="gallery-role">{p.role}</em>}
-          </button>
-        ))}
-      </div>
+      {editing !== null ? (
+        <ListItemForm
+          item={editing === 'new' ? undefined : people[editing]}
+          onCancel={() => setEditing(null)}
+          onSave={(it) => {
+            const next = editing === 'new' ? [...people, it] : people.map((p, j) => (j === editing ? it : p));
+            change(editing === 'new' ? 'Added to a list' : 'Changed a list entry', { items: next });
+            setEditing(null);
+          }}
+        />
+      ) : (
+        <div className={clsx('gallery-grid', (all || selected) && people.length > 10 && 'all nowheel nodrag')}>
+          {shown.map((p, i) => (
+            <div key={i} className="gallery-face-wrap">
+              <button
+                className="gallery-face nodrag"
+                title={p.url ? 'Read about ' + p.title : p.title}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (p.url) read(id, p.url);
+                }}
+              >
+                <SafeImg src={p.image} alt="" draggable={false} loading="lazy" fallback={<div className="gallery-noface">{p.title.slice(0, 1)}</div>} />
+                <span>{p.title}</span>
+                {p.role && <em className="gallery-role">{p.role}</em>}
+              </button>
+              {selected && (
+                <div className="gallery-face-tools nodrag">
+                  <button
+                    title="Change this entry"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setEditing(i);
+                    }}
+                  >
+                    <Pencil size={11} />
+                  </button>
+                  <button
+                    title="Take it off the list"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      change('Took an entry off a list', { items: people.filter((_, j) => j !== i) });
+                    }}
+                  >
+                    <X size={11} />
+                  </button>
+                </div>
+              )}
+            </div>
+          ))}
+          {selected && (
+            <button
+              className="gallery-add nodrag"
+              title="Add someone or something to this list"
+              onClick={(e) => {
+                e.stopPropagation();
+                setEditing('new');
+              }}
+            >
+              <Plus size={18} />
+              <span>Add</span>
+            </button>
+          )}
+        </div>
+      )}
       <div className="gallery-foot">
         <SourceBadge id={data.source} className="min-w-0 max-w-full" />
         {note && <span className="text-[11px] text-ink-soft">{note}</span>}
-        {people.length > 10 ? (
+        {people.length > 10 && !selected ? (
           <button
             className="gallery-more nodrag"
             onClick={(e) => {
@@ -362,11 +530,12 @@ export function GalleryNode({ id, data, selected }: P) {
               setAll((v) => !v);
             }}
           >
-            {all ? 'Show fewer' : `Show all ${people.length}`}
+            {all ? 'Show fewer' : 'Show all ' + people.length}
           </button>
         ) : (
           !data.listComplete &&
-          data.url && (
+          data.url &&
+          editing === null && (
             <button
               className="gallery-more nodrag"
               disabled={fetching}
@@ -374,7 +543,7 @@ export function GalleryNode({ id, data, selected }: P) {
                 e.stopPropagation();
                 void more();
               }}
-              title="Read the wiki list this came from and add everyone on it"
+              title="Read the list this came from and add everything on it"
             >
               {fetching ? 'Fetching the list…' : 'Fetch the whole list'}
             </button>

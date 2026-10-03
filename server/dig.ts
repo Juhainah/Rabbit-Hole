@@ -3,7 +3,7 @@ import { errMsg, sleep } from './http';
 import { parseJsonLoose } from './json';
 import { completeWithFallback, resolveProviders } from './llm';
 import { digMessages, normalizeAnalysis, normalizeTangents, tangentMessages } from './prompts';
-import { checkPremise, compactQuery, editDistance, namesSubject, norm, rankRelevant, relevanceFilter, subjectName, subjectWords, terms, touches } from './relevance';
+import { checkPremise, compactQuery, editDistance, namesSubject, norm, rankRelevant, relevanceFilter, saysName, subjectName, subjectWords, terms, touches } from './relevance';
 import { serper, serperImages, webSearch } from './sources/web';
 import { deepResearch, type Research } from './research';
 import { understand, type Understanding } from './understand';
@@ -12,7 +12,7 @@ import { availableSources, searchSource } from './sources';
 import { archiveMedia, siteIn, waybackImages } from './sources/archives';
 import { nameMatcher, norm as nameKey, tokenize } from '../shared/names';
 import { enrichEntities, wikiPrimary } from './sources/knowledge';
-import { castOf, isScreenWork } from './sources/cast';
+import { castOf, isGroup, isScreenWork, type Cast } from './sources/cast';
 import { needsLooking, vetPictures } from './vision';
 
 export type Emit = (ev: DigEvent) => void;
@@ -25,8 +25,15 @@ const NO_PAGE_IMAGES = new Set([
 
 /** Does the Wikipedia hit actually match the topic, or did search wander off? */
 /** The main article has to be about the subject, not just share a word like "theory" with it. */
-function primaryMatches(query: string, p: Primary) {
-  return namesSubject(query, `${p.title} ${p.extract.slice(0, 1500)}`);
+function primaryMatches(query: string, p: Primary, isName = false) {
+  const opening = p.extract.slice(0, 1500);
+  if (!namesSubject(query, `${p.title} ${opening}`)) return false;
+  // A name of a few words has to appear as itself: an article on a bakery chain mentions a bakery and a story,
+  // not the game called "Bakery Story"; a song called "Alice's Restaurant" is not "Restaurant Story".
+  const n = query.trim().split(/\s+/).length;
+  if (!isName || n < 2 || n > 5) return true;
+  const squash = (t: string) => norm(t).replace(/[^\p{L}\p{N}]+/gu, '');
+  return saysName(query, p.title) || squash(p.title).includes(squash(query)) || saysName(query, opening);
 }
 
 /** Long questions search badly. "why did the hikers die in 1959" searches better as "Dyatlov Pass incident". */
@@ -212,12 +219,12 @@ export async function runDig(req: DigRequest, emit: Emit, signal: AbortSignal) {
     // The subject's own article ("Dedh Ishqiya"), not one about the angle ("LGBTQ rights in India").
     const lookup = u?.subject ?? query;
     primary = await Promise.race([wikiPrimary(lookup, signal).catch(() => null), sleep(4500).then(() => null)]);
-    if (primary && !primaryMatches(lookup, primary)) primary = null;
+    if (primary && !primaryMatches(lookup, primary, !!u?.subject)) primary = null;
     // "Talking Angela conspiracy theories" can land on a broader article; look the name up on its own.
     const name = subjectWords(query).join(' ');
     if (name && name !== norm(query) && (!primary || !namesSubject(name, primary.title))) {
       const alt = await Promise.race([wikiPrimary(name, signal).catch(() => null), sleep(3500).then(() => null)]);
-      if (alt && namesSubject(name, `${alt.title} ${alt.extract.slice(0, 1500)}`)) primary = alt;
+      if (alt && primaryMatches(name, alt, true)) primary = alt;
     }
   }
   // In a deeper dig, the general article ("Reddit", "FBI") is only the main article if it mentions the case.
@@ -263,7 +270,18 @@ export async function runDig(req: DigRequest, emit: Emit, signal: AbortSignal) {
         console.warn(`[research] ${errMsg(e)}`);
         return null;
       });
-  const castTask = primary && isScreenWork(primary.extract) && !venue ? castOf(primary.title, signal).catch(() => null) : Promise.resolve(null);
+  // Who's who for any work, band, group or organisation; and for a work of the same name the article links
+  // (the series a band was formed for), its cast too.
+  const castTask: Promise<Cast[]> =
+    primary && (isScreenWork(primary.extract) || isGroup(primary.extract)) && !venue
+      ? castOf(primary.title, signal)
+          .then(async (c) => {
+            if (!c) return [];
+            const sib = c.siblings[0] ? await castOf(c.siblings[0], signal).catch(() => null) : null;
+            return [c, ...(sib?.items.length ? [sib] : [])].filter((x) => x.items.length >= 2);
+          })
+          .catch(() => [])
+      : Promise.resolve([]);
   const seen = new Set<string>();
   const keep = (items: SourceItem[]) =>
     items.filter((it) => {
@@ -343,14 +361,17 @@ export async function runDig(req: DigRequest, emit: Emit, signal: AbortSignal) {
   if (signal.aborted) return;
   if (!signal.aborted) emit({ type: 'status', message: 'Finishing the deep research…' });
   const research = await Promise.race([researchTask, sleep(30000).then(() => null)]);
-  // A film or series: who is in it, who they play, and who directed it, as a who's-who card.
-  const cast = await Promise.race([castTask, sleep(3000).then(() => null)]);
-  const castReading = cast
-    ? [{ title: `Cast of ${cast.title} (Wikipedia)`, url: cast.url, source: 'wikipedia', text: [cast.director.length ? `Directed by ${cast.director.join(', ')}.` : '', ...cast.items.map((it) => (it.meta?.role ? `${it.title} as ${it.meta.role}` : it.title))].filter(Boolean).join('\n') }]
-    : [];
-  if (cast && !signal.aborted) {
+  // A film, series, band or group: who is in it (and who they play), as who's-who cards.
+  const casts = await Promise.race([castTask, sleep(3000).then(() => [] as Cast[])]);
+  const castReading = casts.map((cast) => ({
+    title: `${cast.label === 'Cast & crew' ? 'Cast' : cast.label} of ${cast.title} (Wikipedia)`,
+    url: cast.url,
+    source: 'wikipedia',
+    text: [cast.director.length ? `Directed by ${cast.director.join(', ')}.` : '', ...cast.items.map((it) => (it.meta?.role ? `${it.title} as ${it.meta.role}` : it.title))].filter(Boolean).join('\n'),
+  }));
+  for (const cast of signal.aborted ? [] : casts) {
     sideItems.push(...cast.items);
-    emit({ type: 'gallery', gallery: { title: `Who's who in ${cast.title}`, url: cast.url, source: 'wikipedia', items: cast.items, note: cast.director.length ? `Directed by ${cast.director.join(', ')}` : undefined } });
+    emit({ type: 'gallery', gallery: { title: `Who's who in ${cast.title}`, label: cast.label, url: cast.url, source: 'wikipedia', items: cast.items, note: cast.director.length ? `Directed by ${cast.director.join(', ')}` : undefined } });
   }
   if (signal.aborted) return;
   {
@@ -383,6 +404,7 @@ export async function runDig(req: DigRequest, emit: Emit, signal: AbortSignal) {
     for (const it of fresh) bySource.set(it.source, [...(bySource.get(it.source) ?? []), it]);
     for (const [source, items] of bySource) emit({ type: 'source', source, items, limit: items.length });
     if (research.gallery) emit({ type: 'gallery', gallery: { ...research.gallery, source: 'fandom' } });
+    for (const g of research.more ?? []) emit({ type: 'gallery', gallery: { ...g, source: 'fandom' } });
     // Results let in only for naming the subject ("Star Girl: Cosmic Conversations", another app) must also
     // touch what this case's own sources talk about (Animoca, Boyfriends, SimSimi); namesakes don't.
     const vocabulary = new Set(research.vocabulary);
@@ -582,7 +604,7 @@ export async function runDig(req: DigRequest, emit: Emit, signal: AbortSignal) {
     emit({ type: 'analysis', analysis });
 
     emit({ type: 'status', message: 'Pinning photos and locations…' });
-    const entities = await enrichEntities(analysis.entities, signal);
+    const entities = await enrichEntities(analysis.entities, signal, subject);
     emit({ type: 'enrich', entities });
   } catch (e) {
     if (signal.aborted) return;

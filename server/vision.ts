@@ -115,3 +115,44 @@ export async function vetPictures(items: SourceItem[], about: string, signal: Ab
     return [{ ...it, snippet: s.shows ? `${s.shows}${it.snippet ? ` · ${it.snippet}` : ''}` : it.snippet }];
   });
 }
+
+const described = new Map<string, string>();
+
+/**
+ * What a picture shows, for the research partner: who or what is in it, and every bit of writing in it
+ * copied out (a certificate, a letter, a sign, a scanned page). Empty when no seeing model is free.
+ */
+export async function describePicture(image: string, title: string, signal: AbortSignal): Promise<string> {
+  const key = image.length > 200 ? `${image.slice(0, 120)}${image.length}${image.slice(-80)}` : image;
+  const hit = described.get(key);
+  if (hit) return hit;
+  const url = image.startsWith('data:') ? image : await asDataUrl(image, signal);
+  if (!url || url.length > 6_000_000) return '';
+  const prompt = `A researcher pinned this picture to their board as "${title}". Describe it for them, factually:
+1. What it is (a photo, a document, a screenshot, a drawing…) and what or who it shows.
+2. Every piece of writing in it, copied out word for word (names, dates, numbers, headings), in reading order.
+3. Anything that tells where or when it is from (logos, stamps, signs, clothing, places).
+Plain text, no more than 250 words. Do not guess names that are not written in it.`;
+  for (const sr of seers()) {
+    if ((resting.get(sr.model) ?? 0) > Date.now()) continue;
+    const res = await fetch(sr.url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sr.key}` },
+      body: JSON.stringify({ model: sr.model, messages: [{ role: 'user', content: [{ type: 'text', text: prompt }, { type: 'image_url', image_url: { url } }] }], temperature: 0.1, max_tokens: 700 }),
+      signal,
+    }).catch(() => null);
+    if (!res) continue;
+    if (!res.ok) {
+      resting.set(sr.model, Date.now() + (res.status === 429 ? 10 * 60_000 : 60 * 60_000));
+      continue;
+    }
+    const j = (await res.json().catch(() => null)) as { choices?: { message?: { content?: string } }[] } | null;
+    const text = String(j?.choices?.[0]?.message?.content ?? '').trim().slice(0, 2400);
+    if (text) {
+      if (described.size > 200) described.clear();
+      described.set(key, text);
+      return text;
+    }
+  }
+  return '';
+}

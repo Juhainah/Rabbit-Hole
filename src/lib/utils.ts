@@ -53,7 +53,7 @@ export const TYPE_LABEL: Record<ClueType, string> = {
   quote: 'Quote',
   map: 'Map',
   label: 'Scrap label',
-  gallery: 'Who\'s who',
+  gallery: 'Lists',
   frame: 'Theory frame',
 };
 
@@ -160,17 +160,19 @@ export const MAP_STYLES = {
     attribution: 'Tiles &copy; Esri &mdash; National Geographic, Esri, DeLorme, NAVTEQ, UNEP-WCMC, USGS, NASA, ESA, METI, NRCAN, GEBCO, NOAA, iPC',
     maxZoom: 16,
   },
+  // OpenStreetMap's own tile servers are volunteer-run and block apps in some places ("Access blocked"),
+  // so every style comes from the same tile service as the board's map cards.
   streets: {
     name: 'Streets',
-    url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',
+    attribution: 'Tiles &copy; Esri &mdash; Esri, HERE, Garmin, USGS, Intermap, INCREMENT P, NRCan, METI, Esri China (Hong Kong), &copy; OpenStreetMap contributors',
     maxZoom: 19,
   },
   topo: {
     name: 'Topo',
-    url: 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
-    attribution: '&copy; OpenStreetMap contributors, SRTM | &copy; <a href="https://opentopomap.org">OpenTopoMap</a> (CC-BY-SA)',
-    maxZoom: 17,
+    url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}',
+    attribution: 'Tiles &copy; Esri &mdash; Esri, HERE, Garmin, USGS, NGA, EPA, USDA, NPS, &copy; OpenStreetMap contributors',
+    maxZoom: 19,
   },
   night: {
     name: 'Night',

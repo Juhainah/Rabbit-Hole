@@ -1,4 +1,5 @@
 import type { EntityEnrichment, Primary, SourceItem } from '../../shared/types';
+import { namesSubject } from '../relevance';
 import { decodeEntities, enc, getJson, stripHtml } from '../http';
 import { geocode } from './places';
 import type { SearchFn } from './types';
@@ -152,6 +153,8 @@ const PAGE_PROPS = {
 export async function enrichEntities(
   entities: { name: string; type: string; place?: string }[],
   signal?: AbortSignal,
+  /** The case's subject: an idea or a thing ("Recipe", "Oven") only gets an article that is about it in this case. */
+  about?: string,
 ): Promise<Record<string, EntityEnrichment>> {
   const out: Record<string, EntityEnrichment> = {};
   const found = new Map<string, WpPage>();
@@ -196,6 +199,9 @@ export async function enrichEntities(
   for (const e of entities) {
     const p = found.get(e.name);
     if (!p) continue;
+    // Wikipedia's general article on a common idea or object (what a recipe is, the history of ovens) is not
+    // evidence about the case: the card keeps the case's own description instead.
+    if ((e.type === 'concept' || e.type === 'object') && about && !namesSubject(about, `${p.title} ${stripHtml(p.extract ?? '', 600)}`)) continue;
     const geo = e.type === 'place' || e.type === 'event';
     out[e.name] = {
       image: p.thumbnail?.source,

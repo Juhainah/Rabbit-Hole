@@ -28,6 +28,8 @@ export interface Research {
   /** A list the wiki keeps with a picture for each entry ("Boyfriends"), when one fits the case. */
   /** `about`: the page the list belongs to (the feature a list of characters comes from), so the board can tie them. */
   gallery?: { title: string; url: string; items: SourceItem[]; about?: string; label?: string };
+  /** Other lists on the wiki the case leans on (its characters, beside the items the search asked for). */
+  more?: NonNullable<Research['gallery']>[];
   /** The relevant passages of pages read in full, for the AI. */
   reading: Reading[];
   queries: string[];
@@ -38,6 +40,8 @@ export interface Research {
 
 const WIKI_HEADERS = { 'User-Agent': BROWSER_UA };
 /** Words in a search that ask about a subject rather than name a set of things in it. */
+/** Words that ask for a list rather than name what goes in it. */
+const LIST_ASK = new Set('list lists listing card cards whos who all every full complete whole make create pin add show give fetch get please also too wiki fandom'.split(' '));
 const GENERIC_ASK = new Set('controversy scandal history story theory theories conspiracy mystery explained facts truth death leaving drama rumor rumors news game games movie film show series book anime manga character characters'.split(' '));
 
 // Listing pages (topics, tags, search results) mention everything and explain nothing.
@@ -93,6 +97,8 @@ async function planQueries(query: string, subject: string, clues: string, signal
 interface Wiki {
   name: string;
   base: string;
+  /** Roughly how many pages it has (Fandom's search gives 10, 100, 1000…). */
+  pages?: number;
 }
 
 async function wikiApi<T = any>(wiki: Wiki, params: Record<string, string | number>, signal?: AbortSignal): Promise<T> {
@@ -109,7 +115,7 @@ async function wikiApi<T = any>(wiki: Wiki, params: Record<string, string | numb
 export async function findWiki(subject: string, signal: AbortSignal, context = ''): Promise<Wiki | undefined> {
   const search = (q: string) =>
     getJson(`https://services.fandom.com/unified-search/community-search?query=${enc(q)}&lang=en&limit=6`, { signal, headers: WIKI_HEADERS, timeout: 8000 })
-      .then((s) => (s?.results ?? []).map((w: any) => ({ name: String(w.name), base: (String(w.url).startsWith('http') ? String(w.url) : `https://${w.url}`).replace(/\/$/, '') })) as Wiki[])
+      .then((s) => (s?.results ?? []).map((w: any) => ({ name: String(w.name), base: (String(w.url).startsWith('http') ? String(w.url) : `https://${w.url}`).replace(/\/$/, ''), pages: Number(w.pageCount) || undefined })) as Wiki[])
       .catch(() => [] as Wiki[]);
   // Fandom's wiki search matches wiki names, so besides the subject, the search's other words and pairs of
   // words are tried on their own: one of them is usually the franchise ("supernatural", "fairy tail").
@@ -122,6 +128,12 @@ export async function findWiki(subject: string, signal: AbortSignal, context = '
   const core = (name: string) => name.replace(/\b(wiki|fandom|wikia|database|the)\b/gi, ' ').replace(/\s+/g, ' ').trim();
   // A wiki named after something else the search says ("Supernatural", "Fairy Tail") is where its subject lives,
   // if it has a page for the subject: "The Colt" is on the Supernatural wiki, not a game called Colt Canyon.
+  // A wiki named exactly after the subject is its home ("<the singer> Wiki"), whatever other words the search has:
+  // a wiki named after one of those words ("Albums Wiki") is a catalogue of everyone's.
+  const squash = (t: string) => t.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
+  // (A real wiki, not a handful of pages someone started under the same name.)
+  const exact = wikis.find((w) => core(w.name) && squash(core(w.name)) === squash(subject));
+  if (exact && (exact.pages ?? 0) >= 500) return exact;
   const franchise = wikis.filter((x) => core(x.name) && !namesSubject(subject, core(x.name)) && namesSubject(core(x.name), context));
   for (const w of franchise.slice(0, 3)) {
     const j = await wikiApi(w, { action: 'query', list: 'search', srsearch: subject, srlimit: 1 }, signal).catch(() => null);
@@ -139,7 +151,7 @@ export async function findWiki(subject: string, signal: AbortSignal, context = '
   return undefined;
 }
 
-const wikiUrl = (wiki: Wiki, title: string) => `${wiki.base}/wiki/${enc(title.replace(/ /g, '_'))}`;
+const wikiUrl = (wiki: Wiki, title: string) => `${wiki.base.replace(/\/w$/, '')}/wiki/${enc(title.replace(/ /g, '_'))}`;
 
 async function wikiSearch(wiki: Wiki, q: string, limit: number, signal: AbortSignal): Promise<{ title: string; snippet: string }[]> {
   const j = await wikiApi(wiki, { action: 'query', list: 'search', srsearch: q, srlimit: limit }, signal).catch(() => null);
@@ -232,18 +244,39 @@ export async function galleryFromUrl(url: string, subject: string, signal: Abort
  * Supernatural, "recipes" in a cooking game. The wiki's own pages are searched for the list, and the first
  * one whose members are mostly pictured becomes a gallery, labelled with what it is.
  */
-export async function findList(subject: string, what: string, signal: AbortSignal): Promise<(Research['gallery'] & { label: string; wiki: string }) | undefined> {
-  const wiki = await findWiki(subject, signal, what);
-  if (!wiki) return undefined;
+export async function findList(subject: string, what: string, signal: AbortSignal): Promise<(Research['gallery'] & { label: string; wiki: string; source: string }) | undefined> {
+  const wiki = await findWiki(subject, signal, `${subject} ${what}`);
+  if (wiki) {
+    const g = await wikiList(wiki, subject, what, signal);
+    if (g) return { ...g, source: 'fandom' };
+  }
+  return pageList(subject, what, signal);
+}
+
+async function wikiList(wiki: Wiki, subject: string, what: string, signal: AbortSignal): Promise<(Research['gallery'] & { label: string; wiki: string }) | undefined> {
   // Fan wikis file every key, weapon or recipe under a category: the most exact list there is.
   const fromCategory = await categoryGallery(wiki, subject, what, signal);
   if (fromCategory) return fromCategory;
-  const hits = [...(await wikiSearch(wiki, what, 8, signal)), ...(await wikiSearch(wiki, `List of ${what}`, 4, signal))];
-  const words = new Set(terms(what));
+  // The wiki's word for them may be another one: the AI matches the request to the wiki's categories by meaning.
+  const picked = await timeout(askedCategory(wiki, subject, what, signal), 16000, { wants: false, gallery: undefined });
+  if (picked.gallery) return picked.gallery;
+  return wikiPagesList(wiki, subject, what, signal);
+}
+
+/** A page on the wiki that lists what was asked for: in a table, or as pages it links with pictures. */
+async function wikiPagesList(wiki: Wiki, subject: string, what: string, signal: AbortSignal): Promise<(Research['gallery'] & { label: string; wiki: string }) | undefined> {
+  const plain = new Set([...terms(subject), ...terms(wiki.name), ...LIST_ASK]);
+  const asked = terms(what).filter((w) => !plain.has(w));
+  if (!asked.length) return undefined;
+  const hits = [...(await wikiSearch(wiki, what, 8, signal)), ...(await wikiSearch(wiki, `List of ${asked.join(' ')}`, 4, signal))];
+  const words = new Set(asked);
   const fits = (t: string) => terms(t).filter((w) => words.has(w)).length;
   // Pages named like the list asked for first ("Celestial Spirits" for "celestial spirit keys").
   const titles = [...new Set(hits.map((h) => h.title))].filter((t) => fits(t) > 0).sort((a, b) => fits(b) - fits(a) || Number(listLike(b, subject)) - Number(listLike(a, subject)));
   for (const t of titles.slice(0, 4)) {
+    // A page that keeps its list in a table says exactly what is on it; otherwise the pages it links with pictures.
+    const fromTable = await timeout(tableList(wiki, t, subject, signal), 12000, undefined);
+    if (fromTable) return { ...fromTable, wiki: wiki.name };
     const g = await timeout(wikiGallery(wiki, t, subject, signal, 0, 80), 12000, undefined);
     if (g) return { ...g, label: t.replace(/\s*\(.*\)\s*$/, ''), wiki: wiki.name };
   }
@@ -256,52 +289,153 @@ export async function findList(subject: string, what: string, signal: AbortSigna
   return undefined;
 }
 
+const WIKIPEDIA: Wiki = { name: 'Wikipedia', base: 'https://en.wikipedia.org/w' };
+
+/** No fan wiki list: Wikipedia's "List of …" tables, then any page that lists them, read by the AI. */
+async function pageList(subject: string, what: string, signal: AbortSignal): Promise<(Research['gallery'] & { label: string; wiki: string; source: string }) | undefined> {
+  const wanted = terms(what).filter((w) => !LIST_ASK.has(w));
+  const onWhat = (t: string) => terms(t).some((w) => wanted.includes(w) || wanted.includes(w.replace(/s$/, '')));
+  const hits = await wikiSearch(WIKIPEDIA, `${subject} ${what}`, 8, signal);
+  for (const t of hits.map((h) => h.title).filter((t) => /^list of /i.test(t) && namesSubject(subject, t) && onWhat(t)).slice(0, 2)) {
+    const g = await timeout(tableList(WIKIPEDIA, t, subject, signal), 12000, undefined);
+    if (g) return { ...g, wiki: 'Wikipedia', source: 'wikipedia' };
+  }
+  const results = await timeout(webSearch(`${subject} ${what} list`, 8, signal), 12000, [] as SourceItem[]);
+  const readable = results.filter((r) => {
+    if (!r.url) return false;
+    const h = new URL(r.url).hostname.replace(/^www\./, '');
+    return !NOT_READABLE.test(h) && namesSubject(subject, `${r.title} ${r.snippet ?? ''} ${r.url}`);
+  });
+  for (const r of readable.slice(0, 3)) {
+    const page = await timeout(readAnything(r.url!), 12000, null);
+    if (!page?.text || page.text.length < 300) continue;
+    const got = await timeout(listFromPage(subject, what, page.text, signal), 20000, null);
+    if (!got || got.items.length < 4) continue;
+    const site = new URL(r.url!).hostname.replace(/^www\./, '');
+    return {
+      title: page.title || r.title,
+      url: r.url!,
+      label: got.label,
+      wiki: site,
+      source: 'web',
+      items: got.items.map((it, i) => ({
+        id: `list:${r.url}:${i}`,
+        source: 'web',
+        kind: 'entity' as const,
+        title: it.name,
+        snippet: it.detail || `One of the ${got.label} in ${subject}`,
+        url: r.url!,
+        meta: it.detail ? { role: it.detail.slice(0, 70) } : undefined,
+      })),
+    };
+  }
+  return undefined;
+}
+
+/** The AI reads a page and writes out the list it holds; only names the page really has are kept. */
+async function listFromPage(subject: string, what: string, text: string, signal: AbortSignal): Promise<{ label: string; items: { name: string; detail: string }[] } | null> {
+  const page = text.slice(0, 14000);
+  const flat = page.toLowerCase();
+  const r = await completeWithFallback(
+    resolveProviders(),
+    {
+      messages: [
+        { role: 'system', content: 'You copy a list out of a web page. Output only JSON: {"label": "1-3 words", "items": [{"name": "", "detail": "under 12 words, or empty"}]}.' },
+        {
+          role: 'user',
+          content: `SUBJECT: ${subject}\nLIST WANTED: ${what}\n\nPAGE:\n${page}\n\nWrite out every one of the ${what} of ${subject} that this page names, in the page's order, up to 60. Use names exactly as the page writes them. "detail": what the page says about that one (a level, a price, a role, a date), or empty. "label": what the list holds, worded the way the request words it, title case. If the page does not list them, return no items.`,
+        },
+      ],
+      temperature: 0,
+      maxTokens: 1800,
+      signal,
+      timeoutMs: 20000,
+    },
+    (t) => {
+      const v = parseJsonLoose<{ label?: string; items?: { name?: string; detail?: string }[] }>(t);
+      const seen = new Set<string>();
+      const items = (v.items ?? [])
+        .map((x) => ({ name: String(x?.name ?? '').trim().slice(0, 60), detail: String(x?.detail ?? '').trim().slice(0, 80) }))
+        .filter((x) => x.name.length > 1 && flat.includes(x.name.toLowerCase()) && !seen.has(x.name.toLowerCase()) && seen.add(x.name.toLowerCase()));
+      if (!items.length) throw new Error('no list on the page');
+      const label = typeof v.label === 'string' && v.label.trim() ? v.label.trim().slice(0, 30) : what;
+      return { label, items };
+    },
+  ).catch(() => null);
+  return r?.value ?? null;
+}
+
 /** The first table on a page with a name column, as list items (name, a detail line, a picture if any). */
 async function tableList(wiki: Wiki, title: string, subject: string, signal: AbortSignal): Promise<(Research['gallery'] & { label: string }) | undefined> {
   const j = await wikiApi(wiki, { action: 'parse', page: title, prop: 'text', redirects: 1 }, signal).catch(() => null);
   const html = String(j?.parse?.text ?? '');
   const page = String(j?.parse?.title ?? title);
+  const cellsOf = (r: string) => (r.match(/<t[hd][^>]*>[\s\S]*?<\/t[hd]>/gi) ?? []).map((c) => stripHtml(c, 120).replace(/\s+/g, ' ').trim());
+  // A list split over several tables of the same shape ("Gold keys", "Silver keys") is read as one.
+  const groups = new Map<string, SourceItem[]>();
   for (const table of html.match(/<table[\s\S]*?<\/table>/gi) ?? []) {
+    // Navigation boxes at the foot of a page link everything on the wiki: not a list of the things.
+    if (/^<table[^>]*class="[^"]*\b(navbox|infobox|toc|mbox|ambox|metadata)/i.test(table)) continue;
     const rows = table.match(/<tr[\s\S]*?<\/tr>/gi) ?? [];
-    if (rows.length < 6) continue;
-    const cellsOf = (r: string) => (r.match(/<t[hd][^>]*>[\s\S]*?<\/t[hd]>/gi) ?? []).map((c) => stripHtml(c, 120).replace(/\s+/g, ' ').trim());
-    const head = cellsOf(rows[0] ?? '');
-    const items: SourceItem[] = [];
-    for (const r of rows.slice(1)) {
+    // The header is the first row of two or more cells; a caption row ("Gold Keys") may come before it.
+    const at = rows.findIndex((r) => cellsOf(r).length >= 2);
+    if (at < 0) continue;
+    const head = cellsOf(rows[at]);
+    // Some wikis build the header from plain cells: a row with no links or pictures above rows that have them.
+    const linked = (r: string) => /<(a|img)\b/i.test(r);
+    const headed = /<th/i.test(rows[at]) || (!linked(rows[at]) && rows.slice(at + 1).filter(linked).length >= 3);
+    const body = headed ? rows.slice(at + 1) : rows.slice(at);
+    // The name column: one headed "Name" or "Title", else the first column of words (not numbers or dates).
+    let col = headed ? head.findIndex((h) => /^(name|title|english name|item)s?$/i.test(h)) : -1;
+    if (col < 0) {
+      col = head.findIndex((_, i) => {
+        const vals = body.map((r) => cellsOf(r)[i] ?? '').filter(Boolean);
+        return vals.length >= 3 && vals.filter((v) => /[A-Za-z]{2,}/.test(v) && v.length <= 60).length >= vals.length * 0.7;
+      });
+    }
+    if (col < 0) continue;
+    const key = head.map((h) => h.toLowerCase()).join('|');
+    const items = groups.get(key) ?? [];
+    for (const r of body) {
       const cells = cellsOf(r);
-      const name = cells.find((c) => /[A-Za-z]{2,}/.test(c));
-      if (!name || name.length > 60) continue;
+      if (cells.length < Math.min(2, head.length)) continue;
+      // Episode tables quote their titles ("“The Boy in the Iceberg”").
+      const name = cells[col]?.replace(/^["“”']+\s*|\s*["“”']+$/g, '').replace(/^\s*["“]\s*(.+?)\s*["”]\s*/, '$1 ').trim();
+      if (!name || name.length > 60 || !/[A-Za-z]{2,}/.test(name)) continue;
       const img = r.match(/<img[^>]+(?:data-src|src)="(https:[^"]+)"/i)?.[1]?.replace(/\/scale-to-width-down\/\d+/, '/scale-to-width-down/330');
       const link = r.match(/<a [^>]*href="\/wiki\/([^"#?]+)"/i)?.[1];
       // Two telling columns as the detail line ("Level: 1 · Time: 1min").
       const detail = cells
-        .map((c, i) => (c && c !== name && head[i] ? `${head[i]}: ${c}` : ''))
+        .map((c, i) => (i !== col && c && c !== name && c.length <= 40 && head[i] ? head[i] + ': ' + c : ''))
         .filter(Boolean)
         .slice(0, 2)
         .join(' · ');
       items.push({
-        id: `fandom:${wiki.base}:${page}:${name}`,
+        id: 'fandom:' + wiki.base + ':' + page + ':' + name,
         source: 'fandom',
         kind: 'image',
         title: name,
-        snippet: `${name} in ${subject} (${wiki.name})`,
+        snippet: name + ' in ' + subject + ' (' + wiki.name + ')',
         url: link ? wikiUrl(wiki, decodeURIComponent(link).replace(/_/g, ' ')) : wikiUrl(wiki, page),
         image: img && !/data:image/.test(img) ? img : undefined,
         meta: detail ? { role: detail.slice(0, 70) } : undefined,
       });
-      if (items.length >= 80) break;
     }
-    if (items.length >= 5) {
-      const label = page.replace(/^List of /i, '').replace(/\s*\(.*\)\s*$/, '');
-      return { title: page, url: wikiUrl(wiki, page), label: label.slice(0, 40), items };
-    }
+    groups.set(key, items);
   }
-  return undefined;
+  const best = [...groups.values()].sort((a, b) => b.length - a.length)[0];
+  if (!best || best.length < 5) return undefined;
+  const label = page.replace(/^List of /i, '').replace(/\s*\(.*\)\s*$/, '');
+  return { title: page, url: wikiUrl(wiki, page), label: label.slice(0, 40), items: best.slice(0, 80) };
 }
 
 /** The wiki category that best matches what was asked for, as a pictured list. */
-async function categoryGallery(wiki: Wiki, subject: string, what: string, signal: AbortSignal): Promise<(Research['gallery'] & { label: string; wiki: string }) | undefined> {
-  const words = terms(what);
+async function categoryGallery(wiki: Wiki, subject: string, asked: string, signal: AbortSignal): Promise<(Research['gallery'] & { label: string; wiki: string }) | undefined> {
+  // Only the words naming the things: not the subject's own name, the wiki's, or the asking ("list all … too").
+  const skip = new Set([...terms(subject), ...terms(wiki.name), ...LIST_ASK]);
+  const words = terms(asked).filter((w) => !skip.has(w));
+  if (!words.length) return undefined;
+  const what = words.join(' ');
   // "celestial spirit keys" also tries "celestial spirits": the object word is often not in the category name.
   const tries = [...new Set([what, words.slice(0, -1).join(' '), ...words])].filter((q) => q.trim().length > 2).slice(0, 4);
   const found = new Set<string>();
@@ -327,33 +461,141 @@ async function categoryGallery(wiki: Wiki, subject: string, what: string, signal
   };
   const ranked = [...found].map((c) => ({ c, s: score(c) })).filter((x) => x.s > 0).sort((a, b) => b.s - a.s);
   for (const { c } of ranked.slice(0, 3)) {
-    const j = await wikiApi(
-      wiki,
-      { action: 'query', generator: 'categorymembers', gcmtitle: c, gcmnamespace: 0, gcmlimit: 50, prop: 'pageimages', piprop: 'thumbnail', pithumbsize: 330, pilimit: 'max' },
-      signal,
-    ).catch(() => null);
-    const members = ((j?.query?.pages ?? []) as any[]).filter((p) => !namesSubject(subject, String(p.title)));
-    const pictured = members.filter((p) => p.thumbnail?.source);
-    if (members.length < 3 || pictured.length < Math.min(3, members.length * 0.4)) continue;
-    const label = name(c);
-    return {
-      title: label,
-      url: wikiUrl(wiki, c),
-      label,
-      wiki: wiki.name,
-      items: [...pictured, ...members.filter((p) => !p.thumbnail?.source)].slice(0, 80).map((p) => ({
-        id: `fandom:${wiki.base}:${p.pageid}`,
-        source: 'fandom',
-        kind: 'image' as const,
-        title: String(p.title),
-        snippet: `One of the ${label} in ${subject} (${wiki.name})`,
-        url: wikiUrl(wiki, String(p.title)),
-        image: p.thumbnail?.source,
-        meta: { wiki: wiki.name, list: label },
-      })),
-    };
+    const g = await categoryList(wiki, c, subject, name(c), signal);
+    if (g) return g;
   }
   return undefined;
+}
+
+/** A category's members as a pictured list (at least 3, and mostly pictured unless `bare` is allowed). */
+async function categoryList(wiki: Wiki, category: string, subject: string, label: string, signal: AbortSignal, bare = false): Promise<(Research['gallery'] & { label: string; wiki: string }) | undefined> {
+  const c = category.startsWith('Category:') ? category : `Category:${category}`;
+  const j = await wikiApi(
+    wiki,
+    { action: 'query', generator: 'categorymembers', gcmtitle: c, gcmnamespace: 0, gcmlimit: 50, prop: 'pageimages', piprop: 'thumbnail', pithumbsize: 330, pilimit: 'max' },
+    signal,
+  ).catch(() => null);
+  const members = ((j?.query?.pages ?? []) as any[]).filter((p) => !namesSubject(subject, String(p.title)));
+  const title = c.replace(/^Category:/, '');
+  // A category that only files a few sub-kinds ("Hostile mobs", "Passive mobs") or list pages: open them up.
+  if (members.length < 8) {
+    const subs = await wikiApi(wiki, { action: 'query', list: 'categorymembers', cmtitle: c, cmtype: 'subcat', cmlimit: 12 }, signal).catch(() => null);
+    const subcats = ((subs?.query?.categorymembers ?? []) as any[]).map((m) => String(m.title)).filter((t) => !UPKEEP.test(t)).slice(0, 6);
+    const seen = new Set(members.map((p) => p.pageid));
+    for (const sc of subcats) {
+      if (members.length >= 80) break;
+      const k = await wikiApi(
+        wiki,
+        { action: 'query', generator: 'categorymembers', gcmtitle: sc, gcmnamespace: 0, gcmlimit: 50, prop: 'pageimages', piprop: 'thumbnail', pithumbsize: 330, pilimit: 'max' },
+        signal,
+      ).catch(() => null);
+      for (const p of (k?.query?.pages ?? []) as any[]) if (!seen.has(p.pageid) && !namesSubject(subject, String(p.title))) seen.add(p.pageid) && members.push(p);
+    }
+    if (members.length < 8) {
+      // Pages in it that are lists themselves ("List of … dishes"): the biggest table among them.
+      const tables = await Promise.all(
+        members
+          .map((p) => String(p.title))
+          .filter((t) => listLike(t, subject))
+          .slice(0, 3)
+          .map((t) => timeout(tableList(wiki, t, subject, signal), 12000, undefined)),
+      );
+      const best = tables.filter((t) => !!t).sort((a, b) => b!.items.length - a!.items.length)[0];
+      if (best && best.items.length >= 5) return { ...best, label, wiki: wiki.name };
+    }
+  }
+  const pictured = members.filter((p) => p.thumbnail?.source);
+  if (members.length < 3 || (!bare && pictured.length < Math.min(3, members.length * 0.4))) return undefined;
+  return {
+    title,
+    url: wikiUrl(wiki, c),
+    label,
+    wiki: wiki.name,
+    items: [...pictured, ...members.filter((p) => !p.thumbnail?.source)].slice(0, 80).map((p) => ({
+      id: `fandom:${wiki.base}:${p.pageid}`,
+      source: 'fandom',
+      kind: 'image' as const,
+      title: String(p.title),
+      snippet: `One of the ${label} in ${subject} (${wiki.name})`,
+      url: wikiUrl(wiki, String(p.title)),
+      image: p.thumbnail?.source,
+      meta: { wiki: wiki.name, list: label },
+    })),
+  };
+}
+
+/** Category names that file pages for the wiki's upkeep, not things in the subject. */
+const UPKEEP = /\b(images?|pictures?|photos?|files?|templates?|stubs?|navigation|navboxes?|infobox(es)?|documentation|maintenance|candidates|deletion|disambiguation|redirects?|policy|policies|help|admins?|users?|blogs?|videos?|screenshots?|galleries|hidden|articles|pages|community|staff|browse|wiki)\b/i;
+
+/**
+ * Which of the wiki's own categories holds what a search asks for. People and wikis word things differently
+ * (a search for "gear" can be the wiki's "Equipment"), so the AI matches by meaning. `wants` says whether the
+ * search asks for a set of things at all; a search about an event or a person's life does not.
+ */
+export async function pickCategory(wiki: Wiki, subject: string, asked: string, signal: AbortSignal): Promise<{ wants: boolean; category?: string; label?: string } | undefined> {
+  // Big wikis keep thousands of categories, listed A to Z 500 at a time: read up to four pages of them.
+  const all: any[] = [];
+  let from: string | undefined;
+  for (let i = 0; i < 4; i++) {
+    const j = await wikiApi(wiki, { action: 'query', list: 'allcategories', acmin: 4, aclimit: 500, acprop: 'size', ...(from ? { acfrom: from } : {}) }, signal).catch(() => null);
+    all.push(...(j?.query?.allcategories ?? []));
+    from = j?.continue?.accontinue;
+    if (!from) break;
+  }
+  // The AI sees the categories that share a word with the request first, then the biggest ones.
+  const askedWords = new Set(terms(asked));
+  const near = (n: string) => terms(n).some((w) => askedWords.has(w));
+  const cats = all
+    .map((c) => ({ name: String(c.category ?? c['*'] ?? ''), size: Number(c.size ?? 0) }))
+    .filter((c) => c.name && !UPKEEP.test(c.name))
+    .sort((a, b) => Number(near(b.name)) - Number(near(a.name)) || b.size - a.size)
+    .slice(0, 600);
+  if (!cats.length) return undefined;
+  const known = new Map(cats.map((c) => [c.name.toLowerCase(), c.name]));
+  // What the wiki itself says about the thing asked for: it ties the request's words to the wiki's own.
+  const skip = new Set([...terms(subject), ...LIST_ASK]);
+  const lookFor = terms(asked).filter((w) => !skip.has(w)).join(' ') || asked;
+  const said = (await wikiSearch(wiki, lookFor, 3, signal).catch(() => [])).map((h) => `${h.title}: ${h.snippet}`).join('\n');
+  const r = await completeWithFallback(
+    resolveProviders(),
+    {
+      messages: [
+        { role: 'system', content: 'You match a research request to a category on a fan wiki. Output only JSON: {"list": true or false, "category": "exact category name or empty", "label": "1-3 words"}.' },
+        {
+          role: 'user',
+          content: `SUBJECT: ${subject}\nTHE REQUEST: ${asked}\n${said ? `\nWHAT THE WIKI SAYS ABOUT IT:\n${said}\n` : ''}\nCATEGORIES ON ${wiki.name} (number of pages in brackets):\n${cats.map((c) => `${c.name} (${c.size})`).join(' | ')}\n\n"list": does the request ask for a set of things or people inside the subject (its items, objects, characters, places, episodes, abilities…)? A request about an event, a controversy, a person's life or the subject in general is false.\n"category": when list is true, the ONE category with one page for each of the things asked for. Match by meaning, not spelling: the wiki may use another word for them, or file each one under what it unlocks, holds or stands for. Pick the MOST SPECIFIC category that still holds them all: a broad category full of other kinds of things is wrong when a narrower one fits, and so is a category of only one sub-kind of them. Never a category of pictures, or of people merely connected to them. Empty when no category holds them.\n"label": what the list holds, worded the way the request words it, title case.`,
+        },
+      ],
+      temperature: 0,
+      maxTokens: 120,
+      signal,
+      timeoutMs: 10000,
+    },
+    (t) => {
+      const v = parseJsonLoose<{ list?: boolean | string; category?: string; label?: string }>(t);
+      const category = v.category ? known.get(String(v.category).replace(/^Category:/i, '').trim().toLowerCase()) : undefined;
+      const label = typeof v.label === 'string' && v.label.trim() ? v.label.trim().slice(0, 30) : undefined;
+      return { wants: v.list === true || v.list === 'true' || !!category, category, label };
+    },
+  ).catch(() => null);
+  return r?.value;
+}
+
+/** A wiki category for what was asked, picked by meaning: its members as a list labelled the way the search put it. */
+async function askedCategory(wiki: Wiki, subject: string, asked: string, signal: AbortSignal) {
+  const pick = await pickCategory(wiki, subject, asked, signal);
+  if (!pick?.category) return { wants: !!pick?.wants, gallery: undefined };
+  const label = pick.label ?? pick.category;
+  // The AI matched by meaning, and can reach for too broad a category; a page named in the request's own
+  // words ("… Gate Keys") is surer when the wiki has one.
+  const plain = new Set([...terms(subject), ...terms(wiki.name), ...LIST_ASK]);
+  const words = terms(asked).filter((w) => !plain.has(w));
+  if (words.length && !terms(pick.category).some((w) => words.includes(w))) {
+    const page = await timeout(wikiPagesList(wiki, subject, asked, signal), 14000, undefined);
+    if (page && terms(page.title).filter((w) => words.includes(w)).length >= Math.min(2, words.length)) return { wants: true, gallery: { ...page, label } };
+  }
+  const gallery = await categoryList(wiki, pick.category, subject, label, signal, true);
+  return { wants: pick.wants, gallery };
 }
 /** Every article a wiki page links to: where the parts of a case live. */
 async function wikiLinks(wiki: Wiki, title: string, signal: AbortSignal): Promise<string[]> {
@@ -393,7 +635,11 @@ async function pickWikiPages(query: string, wikiName: string, excerpt: string, p
 /** A title like "Boyfriends (Star Girl)" or "Characters": a plural common noun, not the subject itself. */
 const listLike = (title: string, subject: string) => {
   const main = title.replace(/\s*\(.*\)\s*$/, '').trim();
-  return /^[A-Z]?[a-z]+s$|^[A-Z][a-z]+ [a-z]+s$/.test(main) && !namesSubject(subject, main);
+  // "List of … episodes" is a list whatever it names.
+  if (/^list of /i.test(main)) return true;
+  // A plural noun ("Boyfriends", "Gate keys"), not a word that merely ends in s ("Famous", "Status", "Chaos").
+  const plural = /^[A-Z]?[a-z]+s$|^[A-Z][a-z]+ [a-z]+s$/.test(main) && !/(ous|ss|us|is|os|ics|ness)$/i.test(main);
+  return plural && !namesSubject(subject, main);
 };
 
 // ── Reading pages in full ──
@@ -571,6 +817,7 @@ export async function deepResearch(
   // Pictures: the picked wiki pages' images, and the who's-who list the AI chose.
   let photos: SourceItem[] = [];
   let gallery: Research['gallery'];
+  const more: NonNullable<Research['gallery']>[] = [];
   if (wiki) {
     // The list page that what we read mentions most ("talk with Boyfriends"): used when the AI picked
     // none, or picked a page that is not a list (the feature page itself), or its list has no pictures.
@@ -603,7 +850,8 @@ export async function deepResearch(
     gallery = list;
     if (gallery && listLabel && gallery.title === listPage) gallery.label = listLabel;
     // The search names a set of things ("gate keys", "weapons", "Horcruxes"): the wiki's category of them.
-    const named = terms(query).filter((w) => !terms(subject).includes(w) && !GENERIC_ASK.has(w));
+    const plain = new Set([...terms(subject), ...terms(wiki.name), ...GENERIC_ASK, ...LIST_ASK]);
+    const named = terms(query).filter((w) => !plain.has(w));
     // What the planner understood the search to be about ("celestial spirit keys") comes first.
     const sets = [...(given?.focus ?? []).slice(0, 3), ...(named.length ? [named.join(' ')] : [])];
     // A list the AI picked that shares no word with what was asked ("Demons" for "the colt and other weapons")
@@ -612,12 +860,31 @@ export async function deepResearch(
     const onPoint = (t: string) => terms(t).some((w) => asked.has(w) || asked.has(w.replace(/s$/, '')) || asked.has(`${w}s`));
     const aiList = gallery;
     if (aiList && named.length && !onPoint(aiList.title)) gallery = undefined;
+    // The wiki may word them differently from the search: the AI matches the search to the wiki's categories
+    // by meaning, alongside the word match below.
+    const byMeaning = !gallery && named.length ? timeout(askedCategory(wiki, subject, query, signal), 16000, { wants: false, gallery: undefined }) : undefined;
     for (const what of sets) {
       if (gallery) break;
       const g = await timeout(categoryGallery(wiki, subject, what, signal), 7000, undefined);
       if (g) gallery = { title: g.title, url: g.url, items: g.items.slice(0, 40), label: g.label };
     }
-    gallery ??= aiList;
+    let missing = false;
+    if (!gallery && byMeaning) {
+      const m = await byMeaning;
+      if (m.gallery) gallery = { title: m.gallery.title, url: m.gallery.url, items: m.gallery.items.slice(0, 40), label: m.gallery.label };
+      else if (m.wants) {
+        // No category of them: a page that lists them (in a table, or as pictured links).
+        const p = await timeout(wikiPagesList(wiki, subject, query, signal), 15000, undefined);
+        if (p) gallery = { title: p.title, url: p.url, items: p.items.slice(0, 40), label: p.label };
+        // The search asks for a set of things the wiki doesn't list: better no list than an unrelated one.
+        else missing = true;
+      }
+    }
+    // From more than one angle: the list the search asks for, and beside it the wiki's list the case leans on.
+    if (!missing) {
+      if (!gallery) gallery = aiList;
+      else if (aiList && aiList.title !== gallery.title) more.push(aiList);
+    }
     if (gallery) {
       const bare = (t: string) => t.replace(/\s*\(.*\)\s*$/, '');
       const stemOf = bare(gallery.title).toLowerCase().replace(/s$/, '');
@@ -629,7 +896,7 @@ export async function deepResearch(
     }
   }
   const vocabulary = [...new Set([...salientTerms([...wikiTexts, ...reading.map((r) => r.text), ...scout.filter((s) => namesSubject(subject, s.title)).map((s) => `${s.title} ${s.snippet ?? ''}`)], subject, 24), ...(wiki ? terms(wiki.name).filter((w) => w.length >= 5 && !terms(subject).includes(w) && w !== 'wiki') : [])])];
-  return { items, photos, gallery, reading, queries: [...queries, ...siteSearches], wiki: wiki?.name, vocabulary };
+  return { items, photos, gallery, more, reading, queries: [...queries, ...siteSearches], wiki: wiki?.name, vocabulary };
 }
 
 export function describeError(e: unknown) {

@@ -188,6 +188,8 @@ export interface ChatRequest {
   focus?: { url: string; title: string };
   /** Web searches the partner asked for itself ("ACTION: search …"), run before it answers again. */
   searchFor?: string[];
+  /** The picture on the card being asked about (a photo you added, a scanned page): the partner looks at it. */
+  look?: { title: string; image: string };
 }
 
 export interface ScrapeResult {

@@ -303,12 +303,12 @@ function runActions(actions: string[], sources: SourceItem[]): string[] {
       void api
         .findList(subject, what)
         .then((g) => {
-          const id = addClue('gallery', { title: `${g.label} (${subject})`, listLabel: g.label, url: g.url, source: 'fandom', items: g.items }, { near: anchor, tie: true });
-          useUi.getState().log(`🗂 ${g.label}: ${g.items.length} from the ${g.wiki} wiki`, 'ok');
+          const id = addClue('gallery', { title: `${subject}: ${g.title}`, listLabel: g.label, url: g.url, source: g.source ?? 'fandom', items: g.items }, { near: anchor, tie: true });
+          useUi.getState().log(`🗂 ${g.label}: ${g.items.length} from ${g.source === 'fandom' || !g.source ? `the ${g.wiki} wiki` : g.wiki}`, 'ok');
           setTimeout(() => useUi.getState().focusNodes([id]), 300);
         })
-        .catch((e) => useUi.getState().log(`Couldn't find a pictured list of ${what} for ${subject}: ${e instanceof Error ? e.message : e}`, 'warn'));
-      done.push(`Fetching the list of ${what} from the ${subject} wiki`);
+        .catch((e) => useUi.getState().log(`Couldn't find a list of ${what} for ${subject}: ${e instanceof Error ? e.message : e}`, 'warn'));
+      done.push(`Finding the list of ${what} for ${subject} (fan wiki, Wikipedia or the web)`);
       continue;
     }
     const castFor = a.match(/^cast\s+\[\[(.+?)\]\]/i);
@@ -318,8 +318,8 @@ function runActions(actions: string[], sources: SourceItem[]): string[] {
       void api
         .cast(name)
         .then((c) => {
-          const id = addClue('gallery', { title: `Who's who in ${c.title}`, url: c.url, source: 'wikipedia', items: c.items, text: c.director.length ? `Directed by ${c.director.join(', ')}` : undefined }, { near: film?.id ?? near, tie: true });
-          useUi.getState().log(`🎬 Who's who in ${c.title}: ${c.items.length} people and their parts`, 'ok');
+          const id = addClue('gallery', { title: `Who's who in ${c.title}`, listLabel: c.label ?? 'Cast & crew', url: c.url, source: 'wikipedia', items: c.items, text: c.director.length ? `Directed by ${c.director.join(', ')}` : undefined }, { near: film?.id ?? near, tie: true });
+          useUi.getState().log(`🎬 Who's who in ${c.title}: ${c.items.length} ${c.label === 'Cast & crew' || !c.label ? 'people and their parts' : c.label.toLowerCase()}`, 'ok');
           return id;
         })
         .catch((e) => useUi.getState().log(`Couldn't find a cast list for “${name}”: ${e instanceof Error ? e.message : e}`, 'warn'));
@@ -559,6 +559,12 @@ export function ChatPanel() {
     const boardId = opts.boardId ?? s.currentId;
     // The partner changes the board only when you ask it to (a follow-up search keeps the original permission).
     const allowChanges = opts.allowChanges ?? WANTS_CHANGE.test(q);
+    // Your own material (a photo, a document) is private: it stays off web searches unless you ask for one.
+    const picked = s.boards[boardId]?.nodes.find((n) => n.id === useUi.getState().selectedNodeId);
+    const ownCard = picked?.data.source === 'mine';
+    if (ownCard && !opts.searchFor && !/\b(search|google|look (it |this |that )?up|online|on the web|internet|find (more|out|sources)|research)\b/i.test(q)) opts = { ...opts, offline: true };
+    // The partner looks at the picture on the card asked about: a photo you added, a scanned page, a pinned photo.
+    const look = picked?.data.image && (ownCard || picked.type === 'image') ? { title: picked.data.title, image: picked.data.image } : undefined;
     const history = [...(s.boards[boardId]?.chat ?? []).filter((c) => !c.error && !c.pending), { role: 'user' as const, content: q }].map((c) => ({
       role: c.role,
       content: c.role === 'assistant' ? splitAnswer(c.content).text : c.content,
@@ -595,6 +601,7 @@ export function ChatPanel() {
             return sel?.data.url && sel.type !== 'topic' && sel.data.source !== 'mine' ? { url: sel.data.url, title: sel.data.title } : undefined;
           })(),
           messages: history,
+          look,
           context: prefs.chatUsesBoard ? boardContext() : undefined,
           research: (research && !opts.offline) || !!opts.searchFor?.length,
           searchFor: opts.searchFor,

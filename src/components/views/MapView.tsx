@@ -40,7 +40,7 @@ export function MapView() {
   return (
     <div className="relative h-full w-full">
       <MapContainer center={[30, 10]} zoom={2} className="h-full w-full" worldCopyJump>
-        <TileLayer key={style} url={tiles.url} attribution={tiles.attribution} maxZoom={tiles.maxZoom} subdomains="abc" />
+        <TileLayer key={style} url={tiles.url} attribution={tiles.attribution} maxZoom={tiles.maxZoom} referrerPolicy="strict-origin-when-cross-origin" />
         <Fit points={geo.map((n) => [n.data.lat, n.data.lon])} />
         {lines.map((l, i) => (
           <Polyline key={i} positions={l} pathOptions={{ color: '#d23a36', weight: 2.2, dashArray: '6 6', opacity: 0.85 }} />

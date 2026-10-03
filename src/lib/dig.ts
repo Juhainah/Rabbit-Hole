@@ -315,7 +315,7 @@ export async function startDig(opts: { query: string; parentId?: string; url?: s
             useBoards.getState().addEdges([makeEdge(topicId, card.id, { kind: 'evidence' }, 'pin', true)]);
             newIds.push(card.id);
             galleries.push({ id: card.id, about: g.about, title: g.title });
-            log(`🗂 Who's who: ${g.items.length} from ${g.title}`, 'ok', g.source);
+            log(`🗂 ${g.label ?? "Who's who"}: ${g.items.length} from ${g.title}`, 'ok', g.source);
             break;
           }
           case 'extras': {

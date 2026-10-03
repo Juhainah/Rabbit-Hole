@@ -49,9 +49,10 @@ export function boardContext(): string {
       lines.push(`It belongs to the case "${topic.data.title}" (the user searched: ${topic.data.query ?? topic.data.title}). Answer about this card IN THAT CASE.`);
     }
     if (sel.data.source === 'mine') {
-      lines.push(`This is the user's OWN card: they added it themselves (${sel.type === 'image' ? 'a photo from their device' : 'their own material'}). It is not from the web and not a public topic. Do not identify it with anything online.${sel.type === 'image' ? ' You cannot see the photo: only its name and the notes below are known.' : ''}`);
+      lines.push(`This is the user's OWN card: they added it themselves (${sel.type === 'image' ? 'a photo from their device' : 'their own material'}). It is not from the web and not a public topic. Do not identify it with anything online or search the web for it unless the user asks.${sel.data.image ? ' What its picture shows is described further down when it could be looked at.' : ''}`);
     }
-    if (sel.data.text) lines.push(sel.data.text.slice(0, 1500));
+    // Your own documents are read in full (a PDF's text, your notes); other cards in brief.
+    if (sel.data.text) lines.push(sel.data.text.slice(0, sel.data.source === 'mine' ? 6000 : 1500));
     if (sel.data.date) lines.push(`Date: ${sel.data.date}`);
     if (sel.data.url) lines.push(`Source: ${sel.data.url}`);
     const links = board.edges

@@ -11,6 +11,10 @@ export interface Cast {
   director: string[];
   /** One per actor: title = actor, meta.role = the character. */
   items: SourceItem[];
+  /** What the list is: a work's cast, a band's or group's members, or an organisation's people. */
+  label: string;
+  /** Articles named after this one that the lead links ("Big Time Rush (TV series)" from the band). */
+  siblings: string[];
 }
 
 const wiki = (params: Record<string, string>, signal?: AbortSignal) =>
@@ -35,6 +39,18 @@ const CREW: [RegExp, string][] = [
   [/^(developers?)$/i, 'Developer'],
 ];
 
+/** "(TV series)", "(film)", "(2010 video game)": a work you can cast, not an album, a song or a disambiguation page. */
+const SCREEN_KIND = /\((?:\d{4} )?(?:american |british |japanese |korean |indian )?(tv series|television series|series|film|movie|miniseries|web series|anime|manga|novel|book|video game|game|musical|play|show|tv show|sitcom)\)$/i;
+
+/** A name as the infobox shows it, without footnote marks, language tags or season notes. */
+const cleanName = (n: string) => n.replace(/\s*\[[^\]]*\]/g, '').replace(/\s*\([^)]*\)/g, '').replace(/^List\s+(?=[A-Z])/, '').replace(/\s+/g, ' ').trim();
+
+/** Is this article about a band, group, team or company: something with members? Judged by its first sentence. */
+export function isGroup(extract: string): boolean {
+  const first = extract.slice(0, 260);
+  return /\b(is|was|are|were) an? [^.]{0,90}?\b(band|boy band|girl group|boy group|idol group|pop group|rock group|vocal group|group|duo|trio|quartet|quintet|ensemble|orchestra|choir|collective|troupe|comedy group|team|club|company|corporation|studio|organi[sz]ation|label|foundation|agency|party)\b/i.test(first);
+}
+
 /** Is this article about a film, series, book, game, play…? Judged by its first sentence. */
 export function isScreenWork(extract: string): boolean {
   const first = extract.slice(0, 260);
@@ -51,11 +67,13 @@ function infoboxRow(html: string, label: RegExp): { name: string; page?: string 
     // "Director(s)" and "Directed by" alike.
     if (!th || !label.test(text(th[1]).replace(/\(s\)/gi, '').replace(/ /g, ' ').trim())) continue;
     const td = row.match(/<td[^>]*>([\s\S]*?)<\/td>/i)?.[1] ?? '';
-    const links = [...td.matchAll(/<a [^>]*href="\/wiki\/([^"#?]+)"[^>]*>([\s\S]*?)<\/a>/gi)].map((m) => ({ name: text(m[2]), page: decodeURIComponent(m[1]) }));
+    const links = [...td.matchAll(/<a [^>]*href="\/wiki\/([^"#?]+)"[^>]*>([\s\S]*?)<\/a>/gi)]
+      .filter((m) => !/^(Help|File|Category|Template|Wikipedia):/.test(decodeURIComponent(m[1])))
+      .map((m) => ({ name: cleanName(text(m[2])), page: decodeURIComponent(m[1]) }));
     if (links.length) return links.filter((l) => l.name && !/^\[?\d+\]?$/.test(l.name));
     return td
       .split(/<br\s*\/?>|<\/li>/i)
-      .map((x) => ({ name: text(x) }))
+      .map((x) => ({ name: cleanName(text(x)) }))
       .filter((x) => x.name);
   }
   return [];
@@ -121,7 +139,11 @@ export async function castOf(page: string, signal?: AbortSignal, max = 24): Prom
   // Who plays whom (films, series, plays), else who is who (novels, games).
   const castSection =
     named(/^(cast|cast and characters|main cast|starring|voice cast|cast and crew|cast and roles|original cast|principal cast)$/i) ??
-    named(/^(main )?characters?$|^characters and |^(main|principal|major) characters$|^protagonists?$/i);
+    named(/^(main )?characters?$|^characters and |^(main|principal|major) characters$|^protagonists?$/i) ??
+    // A band's or group's people: "Members", "Band members", "Personnel", "Line-up".
+    named(/^(members|band members|group members|current members|personnel|line-?ups?|members and line-?ups?|lineup|roster|current roster|key people|leadership)$/i);
+  const isMembers = !!castSection && /members|personnel|line-?up|roster/i.test(text(String(castSection.line)));
+  const isPeople = !!castSection && /key people|leadership/i.test(text(String(castSection.line)));
   const [lead, castHtml] = await Promise.all([
     wiki({ action: 'parse', page: title, section: '0', prop: 'text' }, signal).catch(() => null),
     castSection ? wiki({ action: 'parse', page: title, section: String(castSection.index), prop: 'text' }, signal).catch(() => null) : Promise.resolve(null),
@@ -136,9 +158,35 @@ export async function castOf(page: string, signal?: AbortSignal, max = 24): Prom
     }
   }
   let rows = castSection ? castRows(String(castHtml?.parse?.text ?? '')) : [];
+  let label = isMembers ? 'Members' : isPeople ? 'Key people' : 'Cast & crew';
   // No cast section: the infobox's "Starring" names, without their parts.
   if (rows.length < 2) rows = infoboxRow(leadHtml, /^(starring|voices of)$/i).map((x) => ({ actor: x.name, page: x.page }));
-  if (rows.length < 2 && crew.length < 2) return null;
+  // A band or group: the infobox's members, then its past members.
+  if (rows.length < 2) {
+    const now = infoboxRow(leadHtml, /^(members|current members)$/i).map((x) => ({ actor: x.name, page: x.page, role: 'Member' }));
+    const past = infoboxRow(leadHtml, /^(past members|former members)$/i).map((x) => ({ actor: x.name, page: x.page, role: 'Former member' }));
+    if (now.length + past.length >= 2) {
+      rows = [...now, ...past];
+      label = 'Members';
+    }
+  }
+  // An organisation: its founders and key people.
+  if (rows.length < 2) {
+    const people = [
+      ...infoboxRow(leadHtml, /^(founders?|founded by)$/i).map((x) => ({ actor: x.name, page: x.page, role: 'Founder' })),
+      ...infoboxRow(leadHtml, /^(key people)$/i).map((x) => ({ actor: x.name, page: x.page, role: undefined as string | undefined })),
+    ].filter((x, i, all) => all.findIndex((y) => y.actor === x.actor) === i);
+    if (people.length >= 2) {
+      rows = people;
+      label = 'Key people';
+    }
+  }
+  // Works named after this one that the lead links: the series a band was made for, the film of a book.
+  const base = title.replace(/\s*\([^)]*\)$/, '');
+  const siblings = [...new Set([...leadHtml.matchAll(/href="\/wiki\/([^"#?]+)"/g)].map((m) => decodeURIComponent(m[1]).replace(/_/g, ' ')))]
+    .filter((t) => t !== title && t.startsWith(base + ' (') && SCREEN_KIND.test(t.slice(base.length)))
+    .slice(0, 2);
+  if (rows.length < 2 && crew.length < 2) return siblings.length ? { title, url, director, items: [], label, siblings } : null;
   rows = rows.filter((r) => !crew.some((c) => c.actor === r.actor && !r.role)).slice(0, max);
   const people = [...crew, ...rows];
   // Everyone's photo from their own article.
@@ -175,11 +223,11 @@ export async function castOf(page: string, signal?: AbortSignal, max = 24): Prom
       source: 'wikipedia',
       kind: 'image',
       title: r.actor,
-      snippet: job ? `${r.role} of ${title}: ${r.actor}` : r.role ? `${r.actor} plays ${r.role} in ${title}` : `${r.actor} in ${title}`,
+      snippet: job ? `${r.role} of ${title}: ${r.actor}` : label !== 'Cast & crew' ? `${r.actor}${r.role ? ` (${r.role})` : ''} of ${title}` : r.role ? `${r.actor} plays ${r.role} in ${title}` : `${r.actor} in ${title}`,
       url: r.page ? `https://en.wikipedia.org/wiki/${r.page}` : url,
       image: pageTitle ? pics.get(pageTitle) : undefined,
       meta: r.role ? { role: r.role, ...(job ? { job: 1 } : {}) } : undefined,
     };
   });
-  return { title, url, director, items };
+  return { title, url, director, items, label, siblings };
 }
