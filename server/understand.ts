@@ -5,15 +5,15 @@ import { completeWithFallback, resolveProviders } from './llm';
 
 // Before digging, read the search the way a librarian would: what is it really about, how is
 // that spelled in the world, and where would a good researcher look? One spelling slip
-// ("dedh ishqyiya") or a modifier in front of the name ("lgbtq dedh ishqiya") must not
+// in a name, or a word in front of it ("controversy …"), must not
 // send the whole dig down the wrong hole.
 
 export interface Understanding {
-  /** The thing at the centre, spelled the way sources spell it ("Dedh Ishqiya", "Star Girl"). */
+  /** The thing at the centre, spelled the way sources spell it. */
   subject: string;
   /** Other names sources use for it ("9/11" for "September 11 attacks"). */
   aliases: string[];
-  /** What about it the user is after, in words sources would use ("LGBTQ", "queer", "Lihaaf"). */
+  /** What about it the user is after, in the words sources would use. */
   focus: string[];
   /** The search, spelled right and short: what every archive is asked. */
   query: string;
@@ -21,16 +21,16 @@ export interface Understanding {
   searches: string[];
   /** Where this kind of topic is documented or discussed (domains, r/subreddits). */
   sites: string[];
-  /** Spelling fixes ("ishqyiya" → "Ishqiya"). */
+  /** Spelling fixes: the typed word and the one the sources use. */
   fixes: Record<string, string>;
   /** A link the search assumes that no result supports (a wrong company…). */
   doubt?: string;
 }
 
-const SYSTEM = `You plan research for a detective-board research app, like an expert librarian. The user typed a search (it may have typos, or put a word like "lgbtq" or "controversy" before the name). Use the FIRST RESULTS as evidence of what exists and how it is spelled. Output ONLY JSON:
-{"subject": "the specific person, work, event, product, place or phenomenon at the centre, spelled exactly as the results spell it (e.g. \\"Dedh Ishqiya\\", \\"Star Girl\\", \\"September 11 attacks\\"); for a broad theme, its short core name",
+const SYSTEM = `You plan research for a detective-board research app, like an expert librarian. The user typed a search (it may have typos, or put a word like "history" or "controversy" before the name). Use the FIRST RESULTS as evidence of what exists and how it is spelled. Output ONLY JSON:
+{"subject": "the specific person, work, event, product, place or phenomenon at the centre, spelled exactly as the results spell it (the name as the results print it, not as typed); for a broad theme, its short core name",
  "aliases": ["up to 4 other names the results use for the same subject: short forms, other spellings"],
- "focus": ["up to 6 words or short phrases for WHAT ABOUT the subject the user wants, including the synonyms articles use (e.g. LGBTQ, queer, lesbian, same-sex); [] if they want the subject in general"],
+ "focus": ["up to 6 words or short phrases for WHAT ABOUT the subject the user wants, including the synonyms articles use (e.g. for a search about a band's break-up: break-up, split, left the band); [] if they want the subject in general"],
  "query": "the search, spelling corrected, at most 6 words, subject first",
  "fixes": {"typed word": "corrected word"},
  "searches": ["6 web searches of 3-9 words, each containing the subject or an alias: the focus angle first; news coverage from when it happened (add a year only if the results show it; never guess one); who made, owns or runs it; first-hand accounts and discussions; the disputed or strange part; a later look-back or analysis. If the user names a related work, person or source (e.g. a story it was based on), one search for that link"],
@@ -43,7 +43,7 @@ Use only names that appear in the typed search or the results. Never invent fact
 const DESCRIBING = /\b(singer|actor|actress|band|group|film|movie|game|app|company|brand|player|politician|writer|author|rapper|musician|celebrity|member|british|american|indian|english|french|german|former|famous)\b/i;
 
 /** Another name for the subject, not a description of it: shares a word with it, or is a short proper name ("9/11", "1D"). */
-function isName(alias: string, subject: string): boolean {
+export function isName(alias: string, subject: string): boolean {
   const words = (s: string) => s.toLowerCase().split(/[^\p{L}\p{N}/]+/u).filter((w) => w.length > 1);
   const own = new Set(words(subject));
   if (words(alias).some((w) => own.has(w)) && !DESCRIBING.test(alias.replace(new RegExp(subject.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'), ''))) return true;

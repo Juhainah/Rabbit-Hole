@@ -26,7 +26,7 @@ export interface Research {
   /** Pictures from the wiki pages that matter (screenshots, portraits). */
   photos: SourceItem[];
   /** A list the wiki keeps with a picture for each entry ("Boyfriends"), when one fits the case. */
-  /** `about`: the page the list belongs to ("Star Chat" for "Boyfriends"), so the board can tie them. */
+  /** `about`: the page the list belongs to (the feature a list of characters comes from), so the board can tie them. */
   gallery?: { title: string; url: string; items: SourceItem[]; about?: string };
   /** The relevant passages of pages read in full, for the AI. */
   reading: Reading[];

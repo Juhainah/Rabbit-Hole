@@ -15,7 +15,8 @@
     "check:ai": "tsx scripts/check-ai.ts",
     "check:sources": "tsx scripts/check-sources.ts",
     "check:keys": "tsx scripts/check-keys.ts",
-    "check:health": "tsx scripts/check-health.ts"
+    "check:health": "tsx scripts/check-health.ts",
+    "test": "vitest run"
   },
   "dependencies": {
     "@hono/node-server": "^2.1.1",
