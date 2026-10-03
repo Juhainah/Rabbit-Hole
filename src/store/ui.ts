@@ -25,7 +25,7 @@ interface UiState {
   activity: ActivityLine[];
   digging: number;
   searchPrefill?: { q: string; at: number };
-  chatPrefill?: { text: string; at: number };
+  chatPrefill?: { text: string; at: number; offline?: boolean; /** A question the app wrote (the Ask button): answering it never changes the board. */ readOnly?: boolean };
   readerUrl?: string;
   focusRequest?: { ids: string[]; at: number; soft?: boolean };
   menu?: { x: number; y: number; nodeId?: string; edgeId?: string };

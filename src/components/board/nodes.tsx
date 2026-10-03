@@ -87,6 +87,49 @@ function useTouchHold(id: string) {
   };
 }
 
+/** A card's text you can write on: double-click it, or press "Add details" on an empty card. */
+function CardText({ id, text, className }: { id: string; text?: string; className: string }) {
+  const [editing, setEditing] = useState(false);
+  const update = useBoards((s) => s.updateNode);
+  if (editing) {
+    return (
+      <textarea
+        className="card-text-edit nodrag nowheel"
+        autoFocus
+        defaultValue={text}
+        placeholder="Write what you know…"
+        onBlur={(e) => {
+          const v = e.target.value.trim();
+          if (v !== (text ?? '')) {
+            useBoards.getState().snapshot('Edited a card');
+            update(id, { text: v || undefined });
+          }
+          setEditing(false);
+        }}
+        onKeyDown={(e) => e.key === 'Escape' && (e.target as HTMLTextAreaElement).blur()}
+      />
+    );
+  }
+  if (!text) {
+    return (
+      <button
+        className="card-add-details nodrag"
+        onClick={(e) => {
+          e.stopPropagation();
+          setEditing(true);
+        }}
+      >
+        ✎ Add details
+      </button>
+    );
+  }
+  return (
+    <p className={className} onDoubleClick={(e) => { e.stopPropagation(); setEditing(true); }} title="Double-click to edit">
+      {text}
+    </p>
+  );
+}
+
 const read = (id: string, url: string) => {
   const ui = useUi.getState();
   ui.select(id);
@@ -217,7 +260,7 @@ export function EntityNode({ id, data, selected }: P) {
         </div>
       )}
       <h3 className="clue-title text-[19px] mt-1">{data.title}</h3>
-      {data.text && <p className="mt-[13px] text-[12.5px] leading-[22px] text-ink/85 line-clamp-5">{data.text}</p>}
+      <CardText id={id} text={data.text} className="mt-[13px] text-[12.5px] leading-[22px] text-ink/85 line-clamp-5" />
       {data.lat != null && data.lon != null && (
         <StaticMap points={[{ lat: data.lat, lon: data.lon, label: '' }]} width={216} height={84} labels={false} className="mini-map mt-2 rounded-sm" />
       )}
@@ -342,6 +385,7 @@ export function ImageNode({ id, data, selected }: P) {
         {data.date && <span className="film-date">{prettyDate(data.date)}</span>}
       </div>
       <div className="caption line-clamp-2">{data.title}</div>
+      {data.source === 'mine' && <CardText id={id} text={data.text} className="mt-1 text-[12px] leading-[18px] text-ink/80 line-clamp-4" />}
       <SourceBadge id={data.source} className="mt-1.5 max-w-full" />
       <Actions id={id} data={data} dig={false} />
     </Card>

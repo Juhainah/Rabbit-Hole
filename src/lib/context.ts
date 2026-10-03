@@ -27,8 +27,9 @@ export function boardContext(): string {
   if (cards.length) {
     lines.push('\nCARDS ON THE BOARD, each with the archive it came from (link any you mention as [[exact title]]):');
     for (const n of cards) {
-      const from = archiveOf(n.data.source);
-      lines.push(`- [${TYPE_LABEL[n.type as ClueType]}${from ? ` · ${from}` : ''}] ${n.data.title.slice(0, 90)}${n.data.date ? ` (${n.data.date})` : ''}`);
+      const own = n.data.source === 'mine';
+      const from = own ? 'added by the user (their own, not from the web)' : archiveOf(n.data.source);
+      lines.push(`- [${TYPE_LABEL[n.type as ClueType]}${from ? ` · ${from}` : ''}] ${n.data.title.slice(0, 90)}${n.data.date ? ` (${n.data.date})` : ''}${own && n.data.text ? `: ${n.data.text.slice(0, 160)}` : ''}`);
     }
     // Grouped by archive, so "is anything from the Smithsonian / data.gov here?" gets an exact answer.
     const byArchive = new Map<string, string[]>();
@@ -46,6 +47,9 @@ export function boardContext(): string {
     const topic = board.nodes.find((n) => n.type === 'topic' && n.data.clusterId === sel.data.clusterId && n.id !== sel.id);
     if (topic) {
       lines.push(`It belongs to the case "${topic.data.title}" (the user searched: ${topic.data.query ?? topic.data.title}). Answer about this card IN THAT CASE.`);
+    }
+    if (sel.data.source === 'mine') {
+      lines.push(`This is the user's OWN card: they added it themselves (${sel.type === 'image' ? 'a photo from their device' : 'their own material'}). It is not from the web and not a public topic. Do not identify it with anything online.${sel.type === 'image' ? ' You cannot see the photo: only its name and the notes below are known.' : ''}`);
     }
     if (sel.data.text) lines.push(sel.data.text.slice(0, 1500));
     if (sel.data.date) lines.push(`Date: ${sel.data.date}`);

@@ -83,6 +83,7 @@ const spot = () => {
 function AddPanel({ close }: { close: () => void }) {
   const [kind, setKind] = useState<(typeof KINDS)[number] | null>(null);
   const [name, setName] = useState('');
+  const [notes, setNotes] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const photo = useRef<HTMLInputElement>(null);
@@ -95,8 +96,11 @@ function AddPanel({ close }: { close: () => void }) {
     setErr('');
     try {
       // A place goes on the map too, when OpenStreetMap knows it.
-      if (kind.type === 'place') await addPlace(n, spot()).catch(() => addNamedCard(n, 'place', spot()));
-      else addNamedCard(n, kind.type, spot());
+      if (kind.type === 'place') {
+        const id = await addPlace(n, spot()).catch(() => addNamedCard(n, 'place', spot(), notes));
+        if (notes.trim()) useBoards.getState().updateNode(id, { text: notes.trim().slice(0, 1200) });
+      } else addNamedCard(n, kind.type, spot(), notes);
+      setNotes('');
       setName('');
       close();
     } catch (e) {
@@ -126,8 +130,15 @@ function AddPanel({ close }: { close: () => void }) {
             {kind.emoji} {kind.ask}
           </div>
           <input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder={kind.eg} className="add-input" />
+          <textarea
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            placeholder="What you know about it (optional): where it was found, who had it, why it matters…"
+            rows={3}
+            className="add-input resize-none"
+          />
           <div className="mt-1.5 text-[11.5px] text-ink-soft">
-            {kind.type === 'place' ? 'Found on the map, with its picture when there is one.' : 'Its picture and a line about it are looked up for you. Edit anything afterwards.'}
+            {kind.type === 'place' ? 'Found on the map when it can be.' : 'If Wikipedia has a page with exactly this name, its picture and summary are added. Otherwise the card is yours, with your notes.'} Double-click a card to write on it later.
           </div>
           {err && <div className="mt-1 text-[12px] text-[#b3261e]">{err}</div>}
           <button type="submit" disabled={!name.trim() || busy} className="add-go">

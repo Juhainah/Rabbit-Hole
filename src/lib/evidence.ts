@@ -138,13 +138,16 @@ export async function fillFromWikipedia(nodeId: string, title: string) {
     if (!r.ok) return false;
     const p = await r.json();
     if (p.type === 'disambiguation') return false;
+    const bare = (s: string) => tokenize(s.replace(/\s*\(.*?\)\s*$/, '')).join(' ');
+    if (bare(String(p.title ?? '')) !== bare(title)) return false;
     const about = tokenize(`${p.description ?? ''} ${p.extract ?? ''}`);
     if (!/\s/.test(title.trim()) && caseWords.length && !caseWords.some((w) => about.includes(w))) return false;
     const now = currentBoard().nodes.find((n) => n.id === nodeId);
     if (!now) return false;
     const image = p.originalimage?.source && (p.originalimage.width ?? 0) <= 1600 ? p.originalimage.source : p.thumbnail?.source;
     const kind = kindFrom(String(p.description ?? ''));
-    const patch: Partial<ClueData> = { url: now.data.url ?? p.content_urls?.desktop?.page };
+    // Wikipedia knows it: a public subject (the partner may research it), not private evidence.
+    const patch: Partial<ClueData> = { url: now.data.url ?? p.content_urls?.desktop?.page, ...(now.data.source === 'mine' ? { source: 'wikipedia' } : {}) };
     if (!now.data.image && image) patch.image = image;
     if (kind && (!now.data.entityType || now.data.entityType === 'concept')) patch.entityType = kind;
     if (!now.data.text && (p.description || p.extract)) patch.text = String(p.extract || p.description).slice(0, 300);
@@ -156,9 +159,9 @@ export async function fillFromWikipedia(nodeId: string, title: string) {
 }
 
 /** A person, place, event… you name: a card that fills itself in. */
-export function addNamedCard(name: string, entityType: EntityType, opts: Opts = {}) {
+export function addNamedCard(name: string, entityType: EntityType, opts: Opts = {}, notes = '') {
   const title = name.trim().slice(0, 80);
-  const id = addClue('entity', { title, entityType, source: 'mine' }, opts);
+  const id = addClue('entity', { title, entityType, source: 'mine', text: notes.trim().slice(0, 1200) || undefined }, opts);
   if (title) void fillFromWikipedia(id, title);
   return id;
 }

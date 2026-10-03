@@ -1581,6 +1581,33 @@ button {
   font-weight: 700;
 }
 
+.card-text-edit {
+  display: block;
+  width: 100%;
+  min-height: 110px;
+  margin-top: 10px;
+  padding: 6px 8px;
+  border: 1px dashed rgba(31, 27, 22, 0.35);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.8);
+  font: 400 12.5px/1.6 var(--font-ui);
+  color: var(--color-ink);
+  resize: vertical;
+  outline: none;
+}
+.card-add-details {
+  margin-top: 10px;
+  padding: 4px 10px;
+  border: 1px dashed rgba(31, 27, 22, 0.3);
+  border-radius: 6px;
+  font: 500 12px/1.4 var(--font-ui);
+  color: #6b5d4f;
+}
+.card-add-details:hover {
+  background: rgba(255, 255, 255, 0.7);
+  color: var(--color-ink);
+}
+
 /* The start card: dig, or build your own. */
 .start-choice {
   padding: 12px 14px 14px;

@@ -171,6 +171,11 @@ function kindFrom(description: string): EntityType | undefined {
 }
 
 /** Carries out the partner's board actions. Returns a line per thing done. */
+/** Words that ask for the board to change. A plain question never pins, adds or moves anything. */
+const WANTS_CHANGE = /\b(add|adds|pin|bring|put|show me|find|get|fetch|attach|create|make|connect|link|tie|list|cast|fill|photos?|pictures?|images?|cards?|remove|delete|clean|tidy|rename|move|notes?|write|label|stamp|search|look up|locate|pull|place|organi[sz]e|arrange)\b/i;
+// Actions that only search, allowed with any question.
+const READ_ONLY = /^search\s/i;
+
 function runActions(actions: string[], sources: SourceItem[]): string[] {
   const done: string[] = [];
   const near = anchorId();
@@ -493,12 +498,14 @@ export function ChatPanel() {
     if (el && stuck) el.scrollTop = el.scrollHeight;
   }, [chat, stuck]);
 
-  const send = async (text: string, opts: { searchFor?: string[]; depth?: number; boardId?: string } = {}) => {
+  const send = async (text: string, opts: { searchFor?: string[]; depth?: number; boardId?: string; offline?: boolean; allowChanges?: boolean } = {}) => {
     const q = text.trim();
     if (!q || (busy && !opts.searchFor)) return;
     const s = useBoards.getState();
     // The answer, its follow-ups and its board actions stay with this board, even if you switch away.
     const boardId = opts.boardId ?? s.currentId;
+    // The partner changes the board only when you ask it to (a follow-up search keeps the original permission).
+    const allowChanges = opts.allowChanges ?? WANTS_CHANGE.test(q);
     const history = [...(s.boards[boardId]?.chat ?? []).filter((c) => !c.error && !c.pending), { role: 'user' as const, content: q }].map((c) => ({
       role: c.role,
       content: c.role === 'assistant' ? splitAnswer(c.content).text : c.content,
@@ -506,7 +513,7 @@ export function ChatPanel() {
     const id = nanoid(8);
     onBoard(boardId, () => {
       s.addChat({ id: nanoid(8), role: 'user', content: q });
-      s.addChat({ id, role: 'assistant', content: '', pending: true, status: research || opts.searchFor ? 'Checking the archives' : 'Thinking' });
+      s.addChat({ id, role: 'assistant', content: '', pending: true, status: (research && !opts.offline) || opts.searchFor ? 'Checking the archives' : 'Thinking' });
     });
     setInput('');
     setBusy(true);
@@ -523,7 +530,8 @@ export function ChatPanel() {
             const b = currentBoard();
             const sel = b.nodes.find((n) => n.id === useUi.getState().selectedNodeId);
             const topic = b.nodes.filter((n) => n.type === 'topic').at(-1);
-            if (!sel) return topic?.data.query ?? topic?.data.title;
+            // Your own card is not a search term: the board's case (or its name) is.
+            if (!sel || sel.data.source === 'mine') return topic?.data.query ?? topic?.data.title ?? (b.name !== 'Untitled board' ? b.name : undefined);
             // A card is searched together with its case: "Buenos Aires" + "Liam Payne death".
             const card = sel.data.query ?? sel.data.title;
             const inCase = caseName(sel);
@@ -531,11 +539,11 @@ export function ChatPanel() {
           })(),
           focus: (() => {
             const sel = currentBoard().nodes.find((n) => n.id === useUi.getState().selectedNodeId);
-            return sel?.data.url && sel.type !== 'topic' ? { url: sel.data.url, title: sel.data.title } : undefined;
+            return sel?.data.url && sel.type !== 'topic' && sel.data.source !== 'mine' ? { url: sel.data.url, title: sel.data.title } : undefined;
           })(),
           messages: history,
           context: prefs.chatUsesBoard ? boardContext() : undefined,
-          research: research || !!opts.searchFor?.length,
+          research: (research && !opts.offline) || !!opts.searchFor?.length,
           searchFor: opts.searchFor,
           sources: prefs.searchSources.filter((x) => ['wikipedia', 'web', 'reddit', 'archive', 'hackernews', 'openalex', 'googlenews', 'youtube'].includes(x)).slice(0, 5),
         })),
@@ -557,26 +565,27 @@ export function ChatPanel() {
       const entry = useBoards.getState().boards[boardId]?.chat.find((c) => c.id === id);
       if (entry && !entry.error) {
         const { actions } = splitAnswer(entry.content);
-        const done = onBoard(boardId, () => runActions(actions, entry.sources ?? []));
+        const allowed = allowChanges ? actions : actions.filter((a) => READ_ONLY.test(a));
+        const done = onBoard(boardId, () => runActions(allowed, entry.sources ?? []));
         if (done.length) onBoard(boardId, () => useBoards.getState().updateChat(id, { done }));
         // It asked to search again: run those searches and let it finish the job (twice at most).
         const more: string[] = actions.map((a) => a.match(/^search\s+(.+)/i)?.[1]?.replace(/^["“]|["”]$/g, '').trim()).filter((x): x is string => !!x).slice(0, 3);
         // An answer that admits the sources came up short gets a real web search, not an offer of one.
         const short = /(do(es)?n['’]?t|do(es)? not|did not|didn['’]t) (contain|mention|include|cover|say|show|have)|can['’]?t (confirm|find|tell|verify|add)|cannot (confirm|find|tell|verify|add)|no (source|evidence|article)s? (on|that|about|here|so far)|not (in|on) the (board|sources)|if you['’]?d like,? (i|we) can|(i|we) can (run|do) a (targeted |web )?search/i.test(splitAnswer(entry.content).text);
-        if (!more.length && short && !opts.depth && !abort.current?.signal.aborted) {
+        if (!more.length && short && !opts.depth && !opts.offline && !abort.current?.signal.aborted) {
           const inCase = caseName(currentBoard().nodes.find((n) => n.id === useUi.getState().selectedNodeId)) ?? currentBoard().nodes.filter((n) => n.type === 'topic').at(-1)?.data.query;
           const asked = q.replace(/\s*\(in the case of [^)]*\)\s*$/i, '').slice(0, 160);
           more.push(inCase && !asked.toLowerCase().includes(inCase.toLowerCase()) ? `${asked} ${inCase}` : asked);
         }
         if (more.length && (opts.depth ?? 0) < 2 && !abort.current?.signal.aborted) {
-          void send(`🔎 Searching the web for ${more.map((m) => `“${m}”`).join(', ')}. Use what turns up to finish what I asked.`, { searchFor: more, depth: (opts.depth ?? 0) + 1, boardId });
+          void send(`🔎 Searching the web for ${more.map((m) => `“${m}”`).join(', ')}. Use what turns up to finish what I asked.`, { searchFor: more, depth: (opts.depth ?? 0) + 1, boardId, allowChanges });
         }
       }
     }
   };
 
   useEffect(() => {
-    if (prefill) void send(prefill.text);
+    if (prefill) void send(prefill.text, { offline: prefill.offline, allowChanges: prefill.readOnly ? false : undefined });
   }, [prefill?.at]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const lastUser = [...chat].reverse().find((c) => c.role === 'user')?.content;

@@ -507,6 +507,12 @@ export function askAbout(nodeId: string) {
     text = topicName ? `What does "${title}" tell us about ${topicName}? Pull out the key facts, names and dates it adds.` : `What are the key facts in "${title}"?`;
   else if (topicName && topicName.toLowerCase() !== title.toLowerCase()) text = `What is "${title}"'s part in ${topicName}? What do the sources say about it?`;
   else text = `What's the story behind "${title}"?`;
-  ui.set({ chatPrefill: { text, at: Date.now() } });
+  // Your own photos, files and private items: the partner helps you work with them, without the web.
+  const own = node.data.source === 'mine';
+  if (own) {
+    const what = node.type === 'image' ? 'a photo I added' : node.type === 'clip' ? 'a document I added' : 'something I added';
+    text = `Help me with my own card "${title}" (${what}). Using only what is on this board, what do we know about it, how might it connect to my other cards, and what should I find out or add next?`;
+  }
+  ui.set({ chatPrefill: { text, at: Date.now(), offline: own, readOnly: true } });
   ui.openTab('ai');
 }
