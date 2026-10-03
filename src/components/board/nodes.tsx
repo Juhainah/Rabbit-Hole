@@ -13,6 +13,7 @@ import { useUi } from '../../store/ui';
 import type { ClueData, ClueNode } from '../../types';
 import { Glyph, SourceBadge } from '../SourceBadge';
 import { SafeImg } from './SafeImg';
+import { PlacePicker } from '../PlacePicker';
 import { StaticMap } from './StaticMap';
 
 type P = NodeProps<ClueNode>;
@@ -796,7 +797,15 @@ export function MapNode({ id, data, selected, width, height }: P) {
   const updateInternals = useUpdateNodeInternals();
   const messy = useSettings((s) => s.messy);
   const fresh = useFresh(id);
+  const [adding, setAdding] = useState(false);
   useEffect(() => updateInternals(id), [id, points.length, w, h, updateInternals]);
+  useEffect(() => {
+    if (!selected) setAdding(false);
+  }, [selected]);
+  const setPoints = (label: string, next: typeof points) => {
+    useBoards.getState().snapshot(label);
+    useBoards.getState().updateNode(id, { points: next });
+  };
   return (
     <>
       <NodeResizer isVisible={!!selected} minWidth={300} minHeight={220} lineStyle={{ borderColor: 'transparent' }} handleStyle={{ width: 10, height: 10, borderRadius: 3 }} />
@@ -815,7 +824,42 @@ export function MapNode({ id, data, selected, width, height }: P) {
         ))}
         <StaticMap points={points} width={w} height={h} handles className="tiles" />
         <div className="crease" />
-        <div className="absolute left-4 bottom-3 date-scrap !text-[17px] max-w-[70%] truncate">{data.title.replace(/^Map: /, '')}</div>
+        {selected && (
+          <div className="map-card-tools nodrag nowheel">
+            {adding ? (
+              <div className="map-card-add paper-panel">
+                <PlacePicker
+                  autoFocus
+                  placeholder="A place, address, map link or coordinates"
+                  onPick={(p) => {
+                    setPoints(`Added ${p.name} to a map`, [...points, { lat: p.lat, lon: p.lon, label: p.name.slice(0, 40), from: 'mine' }]);
+                    setAdding(false);
+                  }}
+                />
+                <button className="chip mt-1 justify-self-end" onClick={() => setAdding(false)}>
+                  Done
+                </button>
+              </div>
+            ) : (
+              <button className="chip map-card-plus" onClick={(e) => { e.stopPropagation(); setAdding(true); }}>
+                + Add a place
+              </button>
+            )}
+            {!adding && points.length > 0 && (
+              <div className="map-card-points">
+                {points.map((p, i) => (
+                  <span key={`${p.label}${i}`} className="chip !py-0.5 !pr-1">
+                    {p.label || `${p.lat.toFixed(2)}, ${p.lon.toFixed(2)}`}
+                    <button title="Take it off this map" className="ml-1 opacity-60 hover:opacity-100" onClick={(e) => { e.stopPropagation(); setPoints('Took a place off a map', points.filter((_, j) => j !== i)); }}>
+                      <X size={11} />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+        <div className="absolute left-4 bottom-3 date-scrap !text-[17px] max-w-[70%] truncate">{data.title.replace(/^Map: /, '') || 'Map'}</div>
         <div className="absolute right-3 bottom-2.5 font-ui text-[8px] text-ink/50">Tiles © Esri, National Geographic</div>
       </div>
     </>

@@ -18,6 +18,8 @@ import { readAnything } from './reader';
 import { youtubeId } from './scrape';
 import { availableSources, searchSource } from './sources';
 import { inspiration } from './sources/knowledge';
+import { placeSuggestions, reverseGeocode } from './sources/places';
+import { isMapLink, isShortMapLink, MAP_HOSTS, parseCoords, parseMapLink } from '../shared/maplink';
 import { youtubeTranscript } from './sources/media';
 import { logServerError, overDailyLimit } from './limits';
 
@@ -267,6 +269,52 @@ app.get('/api/wiki-list', async (c) => {
     return g ? c.json({ title: g.title, url: g.url, items: g.items.map((p) => ({ title: p.title, image: p.image, url: p.url })) }) : c.json({ error: 'No pictured list on that page' }, 404);
   } catch (e) {
     return c.json({ error: errMsg(e) }, 502);
+  }
+});
+
+// Places for the map: suggestions while you type a name, the name of a dropped pin, and where a map link points.
+app.get('/api/places', async (c) => {
+  if (limited(c, 'places', 120, 10 * 60_000)) return c.json({ error: 'Slow down a little.' }, 429);
+  const q = (c.req.query('q') ?? '').trim().slice(0, 200);
+  const signal = AbortSignal.timeout(15_000);
+  try {
+    // A spot: what is there.
+    const lat = Number(c.req.query('lat'));
+    const lon = Number(c.req.query('lon'));
+    if (!q && Number.isFinite(lat) && Number.isFinite(lon)) {
+      const r = await reverseGeocode(lat, lon, signal);
+      return c.json({ places: [{ name: r?.name ?? 'Dropped pin', full: r?.full ?? `${lat.toFixed(5)}, ${lon.toFixed(5)}`, url: r?.url ?? `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lon}`, lat, lon }] });
+    }
+    if (q.length < 2) return c.json({ places: [] });
+    // Coordinates.
+    const at = parseCoords(q);
+    if (at?.lat != null && at.lon != null) {
+      const r = await reverseGeocode(at.lat, at.lon, signal).catch(() => null);
+      return c.json({ places: [{ name: r?.name ?? q, full: r?.full ?? q, url: r?.url ?? `https://www.openstreetmap.org/?mlat=${at.lat}&mlon=${at.lon}`, lat: at.lat, lon: at.lon }] });
+    }
+    // A map link: read it, following a short share link (only ever to map services) to the full one.
+    if (isMapLink(q) || isShortMapLink(q)) {
+      let link = q;
+      for (let hop = 0; hop < 5 && isShortMapLink(link); hop++) {
+        const res = await fetch(link, { redirect: 'manual', signal, headers: { 'User-Agent': 'Mozilla/5.0 (compatible; RabbitHole research)' } });
+        const next = res.headers.get('location');
+        if (!next) break;
+        const url = new URL(next, link);
+        if (!/^https?:$/.test(url.protocol) || !MAP_HOSTS.test(url.hostname)) break;
+        link = url.toString();
+      }
+      const p = parseMapLink(link);
+      if (p?.lat != null && p.lon != null) {
+        const r = p.name ? null : await reverseGeocode(p.lat, p.lon, signal).catch(() => null);
+        return c.json({ places: [{ name: p.name ?? r?.name ?? 'Pinned place', full: r?.full ?? p.name ?? `${p.lat.toFixed(5)}, ${p.lon.toFixed(5)}`, url: link, lat: p.lat, lon: p.lon }] });
+      }
+      if (!p?.name) return c.json({ places: [], error: "That map link doesn't say where it points." });
+      return c.json({ places: (await placeSuggestions(p.name, 5, signal)).map((x) => ({ name: x.name, full: x.full, url: x.url, lat: x.lat, lon: x.lon })) });
+    }
+    // A name or an address.
+    return c.json({ places: (await placeSuggestions(q, 6, signal)).map((x) => ({ name: x.name, full: x.full, url: x.url, lat: x.lat, lon: x.lon })) });
+  } catch (e) {
+    return c.json({ places: [], error: errMsg(e) }, 502);
   }
 });
 

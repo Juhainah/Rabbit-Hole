@@ -57,6 +57,27 @@ async function findPlaces(q: string, limit: number, signal?: AbortSignal): Promi
   return photon(q, limit, signal);
 }
 
+/** The name of the place at a spot (a pin dropped on the map). */
+export async function reverseGeocode(lat: number, lon: number, signal?: AbortSignal): Promise<{ name: string; full: string; url: string } | null> {
+  try {
+    const p = await nominatimQueue(() => getJson<any>(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=jsonv2&zoom=16&accept-language=en`, { signal }));
+    if (p?.display_name) {
+      return { name: p.name || String(p.display_name).split(',')[0], full: String(p.display_name), url: p.osm_type ? `https://www.openstreetmap.org/${p.osm_type}/${p.osm_id}` : `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lon}` };
+    }
+  } catch (e) {
+    if (signal?.aborted) throw e;
+  }
+  const j = await getJson<any>(`https://photon.komoot.io/reverse?lat=${lat}&lon=${lon}&lang=en`, { signal }).catch(() => null);
+  const f = j?.features?.[0]?.properties;
+  if (!f) return null;
+  return { name: f.name ?? f.street ?? f.city ?? 'Dropped pin', full: [f.name, f.street, f.city, f.state, f.country].filter(Boolean).join(', '), url: `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lon}` };
+}
+
+/** Places matching a name, with their full address: suggestions while you type. */
+export async function placeSuggestions(q: string, limit: number, signal?: AbortSignal) {
+  return findPlaces(q, limit, signal);
+}
+
 export async function geocode(name: string, signal?: AbortSignal): Promise<{ lat: number; lon: number } | null> {
   const key = name.trim().toLowerCase();
   if (geoCache.has(key)) return geoCache.get(key)!;

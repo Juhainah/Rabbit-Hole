@@ -25,7 +25,7 @@ export interface MapPoint {
   nodeId?: string;
   mark?: 'circle' | 'x';
   /** Where the point came from: the case's main article, a card in the case, or a search result. */
-  from?: 'primary' | 'entity' | 'evidence';
+  from?: 'primary' | 'entity' | 'evidence' | 'mine';
 }
 
 export type ClueData = {

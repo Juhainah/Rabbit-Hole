@@ -6,6 +6,8 @@ import { openTiePicker } from '../../lib/tie';
 import type { EntityType } from '../../../shared/types';
 import { addClue, pinUrl } from '../../lib/dig';
 import { addFiles, addNamedCard, addPlace } from '../../lib/evidence';
+import { pinPlace, type FoundPlace } from '../../lib/places';
+import { PlacePicker } from '../PlacePicker';
 import { flow, viewportCenter } from '../../lib/flow';
 import { arrange, ARRANGE_LABEL, untangle, type ArrangeMode } from '../../lib/layout';
 import { play } from '../../lib/sound';
@@ -83,8 +85,49 @@ const spot = () => {
   return near ? { near } : {};
 };
 
+/** Build a map card: pick places (by name, address, map link or coordinates), name it, pin it. */
+function MapForm({ back, close }: { back: () => void; close: () => void }) {
+  const [chosen, setChosen] = useState<FoundPlace[]>([]);
+  const [title, setTitle] = useState('');
+  const make = () => {
+    if (!chosen.length) return;
+    const name = title.trim() || chosen.map((p) => p.name).slice(0, 3).join(', ');
+    const id = addClue('map', { title: `Map: ${name}`.slice(0, 90), source: 'mine', points: chosen.map((p) => ({ lat: p.lat, lon: p.lon, label: p.name.slice(0, 40), from: 'mine' as const })) }, spot());
+    setTimeout(() => useUi.getState().focusNodes([id], true), 250);
+    close();
+  };
+  return (
+    <div>
+      <button type="button" className="text-[12px] text-ink-soft hover:text-ink" onClick={back}>
+        ← All cards
+      </button>
+      <div className="mt-1 font-hand text-[21px] leading-none">🗺 Which places go on the map?</div>
+      <PlacePicker autoFocus onPick={(p) => setChosen((c) => (c.some((x) => x.lat === p.lat && x.lon === p.lon) ? c : [...c, p]))} />
+      {chosen.length > 0 && (
+        <div className="mt-1.5 flex flex-wrap gap-1">
+          {chosen.map((p, i) => (
+            <span key={`${p.lat},${p.lon}`} className="chip !py-0.5 !pr-1">
+              📍 {p.name.slice(0, 28)}
+              <button type="button" className="ml-1 opacity-60 hover:opacity-100" title="Leave it off" onClick={() => setChosen((c) => c.filter((_, j) => j !== i))}>
+                ✕
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+      <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="What the map shows (optional)" className="add-input" />
+      <div className="mt-1.5 text-[11.5px] text-ink-soft">Paste a Google, Apple or OpenStreetMap link, type an address, or coordinates. Add as many places as you like.</div>
+      <button type="button" disabled={!chosen.length} className="add-go" onClick={make}>
+        {chosen.length ? `Pin the map (${chosen.length} place${chosen.length === 1 ? '' : 's'})` : 'Pick a place first'}
+      </button>
+    </div>
+  );
+}
+
 function AddPanel({ close }: { close: () => void }) {
   const [kind, setKind] = useState<(typeof KINDS)[number] | null>(null);
+  const [mapping, setMapping] = useState(false);
+  const [found, setFound] = useState<FoundPlace | null>(null);
   const [name, setName] = useState('');
   const [notes, setNotes] = useState('');
   const [busy, setBusy] = useState(false);
@@ -94,17 +137,20 @@ function AddPanel({ close }: { close: () => void }) {
 
   const make = async () => {
     const n = name.trim();
-    if (!n || !kind) return;
+    if ((!n && !found) || !kind) return;
     setBusy(true);
     setErr('');
     try {
-      // A place goes on the map too, when OpenStreetMap knows it.
-      if (kind.type === 'place') {
+      // A place picked from the suggestions pins exactly there; a typed name is looked up, else kept as yours.
+      if (kind.type === 'place' && found) {
+        pinPlace(found, spot(), notes);
+      } else if (kind.type === 'place') {
         const id = await addPlace(n, spot()).catch(() => addNamedCard(n, 'place', spot(), notes));
         if (notes.trim()) useBoards.getState().updateNode(id, { text: notes.trim().slice(0, 1200) });
       } else addNamedCard(n, kind.type, spot(), notes);
       setNotes('');
       setName('');
+      setFound(null);
       close();
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
@@ -117,6 +163,7 @@ function AddPanel({ close }: { close: () => void }) {
     close();
   };
 
+  if (mapping) return <div className="add-panel"><MapForm back={() => setMapping(false)} close={close} /></div>;
   return (
     <div className="add-panel">
       {kind ? (
@@ -132,7 +179,20 @@ function AddPanel({ close }: { close: () => void }) {
           <div className="mt-1 font-hand text-[21px] leading-none">
             {kind.emoji} {kind.ask}
           </div>
-          <input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder={kind.eg} className="add-input" />
+          {kind.type === 'place' ? (
+            found || name ? (
+              <div className="add-input flex items-center justify-between gap-2">
+                <span className="min-w-0 truncate">📍 {found ? found.name : name}{found?.full && found.full !== found.name ? <span className="text-ink-soft"> · {found.full}</span> : null}</span>
+                <button type="button" className="shrink-0 text-[12px] text-ink-soft hover:text-ink" onClick={() => { setFound(null); setName(''); }}>
+                  change
+                </button>
+              </div>
+            ) : (
+              <PlacePicker autoFocus onPick={(p) => setFound(p)} onRaw={(t) => setName(t)} rawLabel="Pin it by name only" />
+            )
+          ) : (
+            <input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder={kind.eg} className="add-input" />
+          )}
           <textarea
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
@@ -141,10 +201,10 @@ function AddPanel({ close }: { close: () => void }) {
             className="add-input resize-none"
           />
           <div className="mt-1.5 text-[11.5px] text-ink-soft">
-            {kind.type === 'place' ? 'Found on the map when it can be.' : 'If Wikipedia has a page with exactly this name, its picture and summary are added. Otherwise the card is yours, with your notes.'} Double-click a card to write on it later.
+            {kind.type === 'place' ? 'Type a place or address, or paste a map link or coordinates, then pick it from the list.' : 'If Wikipedia has a page with exactly this name, its picture and summary are added. Otherwise the card is yours, with your notes.'} Double-click a card to write on it later.
           </div>
           {err && <div className="mt-1 text-[12px] text-[#b3261e]">{err}</div>}
-          <button type="submit" disabled={!name.trim() || busy} className="add-go">
+          <button type="submit" disabled={(!name.trim() && !found) || busy} className="add-go">
             {busy ? 'Adding…' : 'Pin it'}
           </button>
         </form>
@@ -163,6 +223,9 @@ function AddPanel({ close }: { close: () => void }) {
             </button>
             <button className="add-tile" onClick={simple(() => addClue('question', { title: 'Why…?' }, spot()))}>
               <span className="text-[19px]">❓</span>Question
+            </button>
+            <button className="add-tile" onClick={() => setMapping(true)}>
+              <span className="text-[19px]">🗺</span>Map
             </button>
             <button
               className="add-tile"

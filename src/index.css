@@ -2488,3 +2488,149 @@ button {
     max-width: calc(100cqw - 24px);
   }
 }
+
+/* Map editing: a place search with suggestions, drop-a-pin, a card for the dropped spot. */
+.map-tools {
+  position: absolute;
+  top: 12px;
+  left: 56px;
+  z-index: 500;
+  width: min(380px, calc(100% - 68px));
+  padding: 8px;
+  border-radius: 12px;
+}
+.map-tools .add-input {
+  margin: 0;
+}
+.map-styles {
+  position: absolute;
+  right: 10px;
+  bottom: 26px;
+  z-index: 500;
+  display: flex;
+  gap: 4px;
+  padding: 6px;
+  border-radius: 12px;
+}
+.map-draft {
+  position: absolute;
+  left: 50%;
+  bottom: 74px;
+  z-index: 600;
+  display: grid;
+  gap: 6px;
+  width: min(320px, calc(100% - 24px));
+  padding: 12px;
+  border-radius: 12px;
+  transform: translateX(-50%);
+}
+.map-draft .add-input {
+  margin: 0;
+}
+.map-view.dropping .leaflet-container {
+  cursor: crosshair;
+}
+.place-picker {
+  position: relative;
+  display: grid;
+  gap: 4px;
+}
+.place-suggest {
+  display: grid;
+  max-height: 240px;
+  overflow-y: auto;
+  border-radius: 8px;
+  background: var(--color-paper);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+}
+.place-option {
+  display: grid;
+  gap: 1px;
+  padding: 7px 10px;
+  text-align: left;
+  border-bottom: 1px solid rgba(60, 40, 20, 0.08);
+}
+.place-option.on,
+.place-option:hover {
+  background: rgba(200, 50, 47, 0.08);
+}
+.place-name {
+  font: 600 13px/1.25 var(--font-ui);
+  color: var(--color-ink);
+}
+.place-full {
+  font: 400 11px/1.3 var(--font-ui);
+  color: var(--color-ink-soft);
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+.place-note {
+  padding: 7px 10px;
+  font: 400 12px/1.3 var(--font-ui);
+  color: var(--color-ink-soft);
+}
+@media (max-width: 640px) {
+  .map-tools {
+    left: 52px;
+    right: 8px;
+    width: auto;
+  }
+  .map-styles {
+    bottom: 22px;
+    right: 6px;
+  }
+  .map-styles .chip {
+    padding-inline: 8px;
+  }
+}
+/* A map card you are editing: add places, take them off. */
+.map-card-tools {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  left: 12px;
+  z-index: 3;
+  display: grid;
+  justify-items: end;
+  gap: 6px;
+  pointer-events: none;
+}
+.map-card-tools > * {
+  pointer-events: auto;
+}
+.map-card-add {
+  display: grid;
+  width: min(300px, 100%);
+  padding: 8px;
+  border-radius: 10px;
+}
+.map-card-add .add-input {
+  margin: 0;
+}
+.map-card-points {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px;
+  max-height: 96px;
+  overflow-y: auto;
+}
+.map-card-points .chip,
+.map-card-plus {
+  background: var(--color-paper);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+}
+@media (max-width: 640px) {
+  /* The tile credit stays on one line, and the map styles sit above it. */
+  .map-view .leaflet-control-attribution {
+    max-width: calc(100vw - 16px);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .map-view .map-styles {
+    bottom: 30px;
+  }
+}

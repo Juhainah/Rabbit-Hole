@@ -87,6 +87,14 @@ export const api = {
   chat: (req: ChatRequest, onEvent: (e: ChatEvent) => void, signal?: AbortSignal) =>
     streamNdjson('/api/chat', req, onEvent, signal),
 
+  /** Places for the map: by name or address, a map link, coordinates, or (with `at`) what is at a spot. */
+  async places(q: string, at?: { lat: number; lon: number }, signal?: AbortSignal): Promise<{ places: { name: string; full: string; url: string; lat: number; lon: number }[]; error?: string }> {
+    const res = await call(`/api/places?${at ? `lat=${at.lat}&lon=${at.lon}` : `q=${encodeURIComponent(q)}`}`, { signal });
+    const j = await res.json().catch(() => ({ places: [] }));
+    if (!res.ok && !j.places?.length) throw new Error(j.error || 'The map search failed. Try again in a moment.');
+    return { places: j.places ?? [], error: j.error };
+  },
+
   async search(source: string, q: string, limit = 8, signal?: AbortSignal): Promise<SourceItem[]> {
     const res = await call(`/api/search?source=${encodeURIComponent(source)}&q=${encodeURIComponent(q)}&limit=${limit}`, { signal });
     if (!res.ok) throw new Error(await readError(res));
