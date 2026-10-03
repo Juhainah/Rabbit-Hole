@@ -151,6 +151,8 @@ export async function serperImages(q: string, limit: number, signal?: AbortSigna
 }
 
 const webCache = new Map<string, { at: number; items: SourceItem[] }>();
+/** Engines resting after a limit or refusal, until this time. */
+const engineRest = new Map<string, number>();
 
 /**
  * Web search chain: optional free-key engines first (Tavily, Serper), then
@@ -162,6 +164,7 @@ export async function webSearch(q: string, limit: number, signal?: AbortSignal):
   if (hit && Date.now() - hit.at < 30 * 60_000) return hit.items;
   const errors: string[] = [];
   for (const engine of [tavily, serper, brave, duckduckgo]) {
+    if ((engineRest.get(engine.name) ?? 0) > Date.now()) continue;
     try {
       const items = await engine(q, limit, signal);
       if (items.length) {
@@ -170,7 +173,11 @@ export async function webSearch(q: string, limit: number, signal?: AbortSignal):
       }
     } catch (e) {
       if (signal?.aborted) throw e;
-      errors.push(e instanceof Error ? e.message : String(e));
+      const m = e instanceof Error ? e.message : String(e);
+      errors.push(m);
+      // Out of its monthly allowance or key refused: skip it for six hours instead of asking every time.
+      if (/\b(432|401|402|403)\b|usage limit|quota|credits/i.test(m)) engineRest.set(engine.name, Date.now() + 6 * 3600_000);
+      else if (/\b429\b/.test(m)) engineRest.set(engine.name, Date.now() + 2 * 60_000);
     }
   }
   if (errors.length) throw new Error(errors.join('; '));

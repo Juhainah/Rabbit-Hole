@@ -10,6 +10,8 @@ import { Glyph } from '../SourceBadge';
 
 interface Row {
   key: string;
+  /** A moment in the story (editable), as opposed to a dated card. */
+  moment?: boolean;
   year: number;
   sort: string;
   date: string;
@@ -79,6 +81,7 @@ export function TimelineView() {
   const [only, setOnly] = useState<string>();
   const [withSources, setWithSources] = useState(false);
   const [adding, setAdding] = useState(false);
+  const [editing, setEditing] = useState<string | null>(null);
   const cases = useMemo(() => board.nodes.filter((n) => n.type === 'topic').map((n) => ({ id: n.data.clusterId!, title: n.data.title })), [board.nodes]);
   const entities = useMemo(() => board.nodes.filter((n) => n.type === 'entity'), [board.nodes]);
   const rows = useMemo(() => {
@@ -90,7 +93,7 @@ export function TimelineView() {
       if (y == null) continue;
       const topic = topicByCluster.get(t.clusterId);
       const proof = t.nodeId ? byId.get(t.nodeId) : undefined;
-      out.push({ key: t.id, year: y, sort: t.date, date: t.date, title: t.event, sub: topic?.data.title, color: '#c8322f', nodeId: proof?.id ?? topic?.id, proof, clusterId: t.clusterId });
+      out.push({ key: t.id, moment: true, year: y, sort: t.date, date: t.date, title: t.event, sub: topic?.data.title, color: '#c8322f', nodeId: proof?.id ?? topic?.id, proof, clusterId: t.clusterId });
     }
     const told = board.timeline.map((t) => ({ y: yearOf(t.date), text: t.event.toLowerCase(), clusterId: t.clusterId }));
     for (const n of board.nodes) {
@@ -182,6 +185,31 @@ export function TimelineView() {
                     className="group w-full cursor-pointer rounded-sm bg-[#fffdf7] p-3.5 text-left shadow-[0_8px_18px_-10px_rgba(0,0,0,.45)] transition hover:-translate-y-0.5 hover:rotate-[-0.5deg]"
                     style={{ borderTop: `4px solid ${r.color}`, opacity: r.published ? 0.85 : 1 }}
                   >
+                    {r.moment && editing !== r.key && (
+                      <div className="moment-tools">
+                        <button
+                          title="Edit this moment"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setEditing(r.key);
+                          }}
+                        >
+                          ✎
+                        </button>
+                        <button
+                          title="Remove this moment"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            useBoards.getState().editTimeline(r.key, null);
+                          }}
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    )}
+                    {editing === r.key ? (
+                      <MomentEditor date={r.date} text={r.title} onDone={(change) => { if (change) useBoards.getState().editTimeline(r.key, change); setEditing(null); }} />
+                    ) : (
                     <div className="flex items-start gap-3">
                       {r.image && <img src={r.image} alt="" className="size-14 shrink-0 object-cover" />}
                       <div className="min-w-0 flex-1">
@@ -211,6 +239,7 @@ export function TimelineView() {
                         </div>
                       </div>
                     </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -219,6 +248,34 @@ export function TimelineView() {
         </div>
       </div>
     </div>
+  );
+}
+
+/** Change a moment's date or what happened. */
+function MomentEditor({ date, text, onDone }: { date: string; text: string; onDone: (change: { date: string; event: string } | null) => void }) {
+  const [d, setD] = useState(date);
+  const [t, setT] = useState(text);
+  const valid = yearOf(d) != null && t.trim().length > 2;
+  return (
+    <form
+      className="grid gap-2"
+      onClick={(e) => e.stopPropagation()}
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (valid) onDone({ date: d.trim(), event: t.trim().slice(0, 200) });
+      }}
+    >
+      <input value={d} onChange={(e) => setD(e.target.value)} className="rounded border border-ink/20 bg-white px-2 py-1 text-[14px] outline-none focus:border-[#c8322f]" aria-label="When" />
+      <textarea value={t} onChange={(e) => setT(e.target.value)} rows={2} className="resize-none rounded border border-ink/20 bg-white px-2 py-1 text-[14px] outline-none focus:border-[#c8322f]" aria-label="What happened" autoFocus />
+      <div className="flex justify-end gap-2">
+        <button type="button" className="chip" onClick={() => onDone(null)}>
+          Cancel
+        </button>
+        <button type="submit" disabled={!valid} className="chip on disabled:opacity-40">
+          Save
+        </button>
+      </div>
+    </form>
   );
 }
 

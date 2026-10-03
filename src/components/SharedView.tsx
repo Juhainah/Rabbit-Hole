@@ -1,7 +1,7 @@
 import { ConnectionMode, Controls, ReactFlow, ReactFlowProvider, useReactFlow, type NodeMouseHandler } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import clsx from 'clsx';
-import { Check, Copy, ExternalLink, Flag, LoaderCircle, X } from 'lucide-react';
+import { Check, Copy, ExternalLink, Flag, LoaderCircle, X, BookOpen } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { COPY_LATER, loadShared, reportBoard } from '../lib/cloud';
 import { useAuth } from '../lib/auth';
@@ -13,6 +13,7 @@ import type { Board, ClueNode, StringEdge } from '../types';
 import { ViewportSync } from './board/BoardView';
 import { nodeTypes } from './board/nodes';
 import { edgeTypes } from './board/StringEdge';
+import { api } from '../lib/api';
 import { Logo } from './TopBar';
 
 /** A board someone shared by link: look around, nothing can be changed. */
@@ -59,7 +60,7 @@ export function SharedView({ sid, onLeave }: { sid: string; onLeave: () => void 
         {board && (
           <div className="flex min-w-0 flex-1 items-center gap-2 text-paper/90">
             <span className="shrink-0 text-[18px]">{board.emoji}</span>
-            <span className="truncate text-[14px] font-medium">{board.name}</span>
+            <span className="line-clamp-2 text-[14px] font-medium leading-tight">{board.name}</span>
             <span className="hidden shrink-0 rotate-[-2deg] rounded-sm border border-[#e9a23b]/70 px-1.5 py-0.5 font-type text-[10.5px] uppercase tracking-wider text-[#e9a23b] sm:inline-block">
               view only
             </span>
@@ -74,7 +75,7 @@ export function SharedView({ sid, onLeave }: { sid: string; onLeave: () => void 
         {board && (
           <button onClick={makeCopy} className="btn-stamp flex shrink-0 items-center gap-1.5 px-3 py-1.5 text-[12.5px] sm:px-3.5">
             <Copy size={13} />
-            <span className="sm:hidden">{signedIn ? 'COPY' : 'SIGN IN TO COPY'}</span>
+            <span className="sm:hidden">COPY</span>
             <span className="hidden sm:inline">{signedIn ? 'MAKE MY OWN COPY' : 'SIGN IN TO MAKE A COPY'}</span>
           </button>
         )}
@@ -197,6 +198,40 @@ function ReadOnlyBoard({ board }: { board: Board }) {
   );
 }
 
+/** The article itself, read in place (cleaned up, or from the Wayback Machine when the page is gone). */
+function ReadHere({ url }: { url: string }) {
+  const [state, setState] = useState<'idle' | 'loading' | 'done' | 'failed'>('idle');
+  const [page, setPage] = useState<{ title: string; text: string; via?: string } | null>(null);
+  if (state === 'idle') {
+    return (
+      <button
+        className="chip mt-4"
+        onClick={() => {
+          setState('loading');
+          api
+            .scrape(url)
+            .then((p) => {
+              if (p.blocked || !p.text?.trim()) throw new Error('blocked');
+              setPage({ title: p.title, text: p.text, via: p.via });
+              setState('done');
+            })
+            .catch(() => setState('failed'));
+        }}
+      >
+        <BookOpen size={13} /> Read it here
+      </button>
+    );
+  }
+  if (state === 'loading') return <div className="shovel-dots mt-4 text-[13px] text-ink-soft">Fetching the article</div>;
+  if (state === 'failed') return <div className="mt-4 text-[13px] text-ink-soft">This site doesn't let pages be read elsewhere. Open the original below.</div>;
+  return (
+    <div className="reader-text mt-4 border-t border-ink/10 pt-3">
+      {page?.via === 'wayback' && <div className="mb-2 text-[12px] text-ink-soft">From the Wayback Machine's saved copy.</div>}
+      <div className="whitespace-pre-line text-[15px] leading-[1.75] text-[#2f2620]">{page!.text.slice(0, 12000)}</div>
+    </div>
+  );
+}
+
 /** Everything a card holds, in plain readable text, with its strings and the original source. */
 function CardReader({ card, board, onClose, onJump }: { card: ClueNode; board: Board; onClose: () => void; onJump: (id: string) => void }) {
   const d = card.data;
@@ -247,9 +282,10 @@ function CardReader({ card, board, onClose, onJump }: { card: ClueNode; board: B
             ))}
           </div>
         ) : null}
+        {d.url && !yt && <ReadHere key={d.url} url={d.url} />}
         {d.url && (
           <a href={d.url} target="_blank" rel="noreferrer" className="btn-stamp mt-4 inline-flex items-center gap-1.5 px-3.5 py-1.5 text-[12.5px]">
-            <ExternalLink size={13} /> READ THE ORIGINAL
+            <ExternalLink size={13} /> OPEN THE ORIGINAL
           </a>
         )}
         {links.length > 0 && (

@@ -200,7 +200,7 @@ function Account() {
   const { status, email, name } = useAuth();
   if (status !== 'signed-in') return null;
   return (
-    <div className="ml-auto flex min-w-0 items-center gap-2 font-ui text-[13px] text-ink-soft">
+    <div className="ml-auto hidden min-w-0 items-center gap-2 font-ui text-[13px] text-ink-soft md:flex">
       <a href="/terms.html" target="_blank" rel="noreferrer" className="shrink-0 hover:text-ink hover:underline">
         Terms
       </a>

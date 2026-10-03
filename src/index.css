@@ -1633,6 +1633,7 @@ button {
   width: min(460px, calc(100vw - 32px));
 }
 .weave-row {
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -2170,12 +2171,47 @@ button {
   transform: rotate(-6deg) scale(1.12);
   outline: none;
 }
+/* Timeline moment tools: shown on hover, always on touch screens. */
+.moment-tools {
+  position: absolute;
+  right: 8px;
+  top: 8px;
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.group:hover .moment-tools,
+.group:focus-within .moment-tools {
+  opacity: 1;
+}
+@media (hover: none) {
+  .moment-tools {
+    opacity: 1;
+  }
+}
+.moment-tools button {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  background: rgba(31, 27, 22, 0.07);
+  font-size: 13px;
+  color: #6b5d4f;
+}
+.moment-tools button:hover {
+  background: rgba(31, 27, 22, 0.15);
+  color: var(--color-ink);
+}
 .cfile-meta {
   position: absolute;
   inset: auto 16px 11px 16px;
   display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
   justify-content: space-between;
-  gap: 8px;
+  gap: 2px 8px;
   color: #5a4520;
   font-family: var(--font-ui);
   font-size: 12px;

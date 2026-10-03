@@ -92,7 +92,7 @@ export function CaseFiles() {
             <input
               value={topic}
               onChange={(e) => setTopic(e.target.value)}
-              placeholder="a mystery, a person, a film… or paste a link"
+              placeholder="a topic, or paste a link"
               className="min-w-0 flex-1 border-b-2 border-dashed border-ink/30 bg-transparent px-1 py-2 font-type text-[16px] text-ink outline-none placeholder:text-ink/40 focus:border-[#b3261e]"
               aria-label="Topic to dig into"
             />
@@ -119,13 +119,13 @@ export function CaseFiles() {
           </div>
         </section>
 
-        <div className="mt-10 flex flex-wrap items-end gap-x-6 gap-y-3">
+        <div className="mt-10 flex flex-col gap-3 md:flex-row md:flex-wrap md:items-end md:gap-x-6">
           {hasOpenBoard && (
             <button onClick={() => useUi.getState().set({ caseFilesOpen: false })} className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 font-ui text-[13px] text-paper/70 hover:bg-white/10 hover:text-paper">
               <ArrowLeft size={15} /> Back to the board
             </button>
           )}
-          <div className="min-w-0 flex-1">
+          <div className="min-w-0 md:flex-1">
             <h2 className="font-hand text-[38px] leading-none font-bold text-paper md:text-[46px]">Case files</h2>
             <p className="mt-1 font-ui text-[13.5px] text-paper/60">
               {files.length} investigation{files.length === 1 ? '' : 's'} in the drawer. Click a folder to open it; click its sticker to change the icon.
@@ -238,7 +238,7 @@ function Folder({ f, current }: { f: FileSummary; current: boolean }) {
             {f.depth > 0 && ` · depth ${f.depth}`}
           </span>
           {/* The shred button lives on the meta line, so it never lands on the label or stamp. */}
-          <span className="flex items-center gap-1.5">
+          <span className="ml-auto flex shrink-0 items-center gap-1.5 whitespace-nowrap">
             {ago(f.updatedAt)}
             <button
               className={clsx('cfile-trash', f.pinned && '!text-[#c8322f] !opacity-100')}

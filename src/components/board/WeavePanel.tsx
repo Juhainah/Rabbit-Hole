@@ -53,7 +53,7 @@ export function WeavePanel({ close }: { close: () => void }) {
       {err && <div className="text-[12.5px] text-[#b3261e]">{err}</div>}
       {!links && !err && <div className="shovel-dots py-3 text-[13px] text-ink-soft">Reading your cards</div>}
       {links && !links.length && !err && <div className="py-2 text-[13px] text-ink-soft">No new connections stand out. Add a few more cards or notes and try again.</div>}
-      <div className="grid max-h-[46vh] gap-1.5 overflow-y-auto pr-1">
+      <div className="grid max-h-[46vh] grid-cols-[minmax(0,1fr)] gap-1.5 overflow-y-auto overflow-x-hidden pr-1">
         {links?.map((l) => (
           <div key={`${l.a}-${l.b}`} className="weave-row">
             <button
@@ -61,7 +61,7 @@ export function WeavePanel({ close }: { close: () => void }) {
               onClick={() => useUi.getState().focusNodes([l.a, l.b])}
               title="Show these two cards"
             >
-              <div className="truncate text-[13px] font-semibold">
+              <div className="line-clamp-2 break-words text-[13px] font-semibold leading-snug">
                 {title(l.a)} <span className="font-normal text-[#c8322f]">— {l.label} —</span> {title(l.b)}
               </div>
               {l.why && <div className="mt-0.5 line-clamp-2 text-[11.5px] leading-snug text-ink-soft">{l.why}</div>}

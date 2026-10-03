@@ -101,6 +101,11 @@ app.get('/api/health', async (c) => {
 // When sign-in is on, every other API call must carry a valid Firebase ticket.
 app.use('/api/*', async (c, next) => {
   if (!authProject() || c.req.path === '/api/health') return next();
+  // Someone viewing a shared board (no account) can read its articles, a few at a time.
+  if (c.req.method === 'GET' && c.req.path === '/api/scrape' && !c.req.header('authorization')) {
+    if (limited(c, 'guest-read', 30, 10 * 60_000)) return c.json({ error: 'Slow down a little.' }, 429);
+    return next();
+  }
   const visitor = await verifyVisitor(c.req.header('authorization'));
   if (!visitor) return c.json({ error: 'Please sign in to keep digging.', signIn: true }, 401);
   if (!onGuestList(visitor)) return c.json({ error: "This account isn't on the guest list for this Rabbit Hole.", signIn: true }, 403);

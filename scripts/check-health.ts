@@ -18,7 +18,7 @@ try {
   if (health.status !== 200 || !health.body?.ok) throw new Error(`health check answered HTTP ${health.status}`);
   console.log(`  ✅ Server is up                answered in ${health.ms}ms`);
   console.log(`  ${health.body.ai ? '✅' : '❌'} AI brains                  ${health.body.ai ? 'at least one is configured' : 'none configured: add keys to .env'}`);
-  console.log(`  ${health.body.signIn ? '🔐' : '🔓'} Sign-in                    ${health.body.signIn ? 'required (Firebase)' : 'off (fine on your own PC)'}`);
+  console.log(`  ${health.body.signIn ? '🔐' : '🔓'} Sign-in                    ${health.body.signIn ? 'required (Supabase)' : 'off (fine on your own PC)'}`);
 
   const sources = await timed('/api/sources');
   if (sources.status === 200) console.log(`  ✅ Research sources           ${sources.body?.available?.length ?? 0} ready`);

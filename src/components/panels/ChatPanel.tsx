@@ -77,6 +77,16 @@ function flyTo(id: string) {
 }
 
 /** A card mentioned in an answer: click to fly the board to it. */
+/** "Pinned “X” and tied it to “Y”": each quoted card is a link that shows it on the board. */
+function DoneLine({ text }: { text: string }) {
+  const parts = text.split(/“([^”]+)”/);
+  return (
+    <>
+      {parts.map((p, i) => (i % 2 ? <CardLink key={i} title={p} /> : <span key={i}>{p}</span>))}
+    </>
+  );
+}
+
 function CardLink({ title, children }: { title: string; children?: React.ReactNode }) {
   const card = findCard(title);
   if (!card) return <strong>{children ?? title}</strong>;
@@ -467,7 +477,7 @@ const Message = memo(function Message({ m, onRetry }: { m: ChatEntry; onRetry?: 
           <div className="mt-2.5 grid gap-1 border-t border-dashed border-ink/15 pt-2">
             {m.done.map((d, i) => (
               <div key={i} className="text-[12px] font-medium text-[#2f6b3a]">
-                ✓ {d}
+                ✓ <DoneLine text={d} />
               </div>
             ))}
           </div>
