@@ -17,7 +17,7 @@ import clsx from 'clsx';
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type RefObject } from 'react';
 import type { SourceItem } from '../../../shared/types';
 import { addClue, pinItem, pinUrl } from '../../lib/dig';
-import { addFiles, addPasted } from '../../lib/evidence';
+import { addFiles, addPasted, shrink } from '../../lib/evidence';
 import { registerFlow, screenToFlow } from '../../lib/flow';
 import { play } from '../../lib/sound';
 import { tie } from '../../lib/tie';
@@ -223,6 +223,16 @@ function Board() {
     }
     // Photos, PDFs and text files from your computer.
     const files = [...e.dataTransfer.files];
+    const onCard = (e.target as Element).closest?.('.react-flow__node')?.getAttribute('data-id');
+    const picture = files.length === 1 && files[0].type.startsWith('image/') ? files[0] : undefined;
+    const card = onCard ? currentBoard().nodes.find((n) => n.id === onCard) : undefined;
+    if (picture && card && card.type !== 'frame' && card.type !== 'gallery' && card.type !== 'map') {
+      void shrink(picture).then((image) => {
+        useBoards.getState().snapshot(`Photo on “${card.data.title}”`);
+        useBoards.getState().updateNode(card.id, { image });
+      });
+      return;
+    }
     if (files.length) {
       void addFiles(files, { at });
       return;

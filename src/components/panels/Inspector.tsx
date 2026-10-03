@@ -1,5 +1,8 @@
 import clsx from 'clsx';
-import { ArrowDown, BookOpen, ExternalLink, History, MessageCircle, Plus, Scissors, Search, Trash2 } from 'lucide-react';
+import { ArrowDown, BookOpen, ExternalLink, History, ImagePlus, MessageCircle, Plus, Scissors, Search, Trash2 } from 'lucide-react';
+import { useRef, useState } from 'react';
+import { shrink } from '../../lib/evidence';
+import { SafeImg } from '../board/SafeImg';
 import type { EntityType } from '../../../shared/types';
 import { askAbout, pinItem, startDig } from '../../lib/dig';
 import { cut, openTiePicker } from '../../lib/tie';
@@ -30,6 +33,65 @@ function Swatches({ colors, value, onPick }: { colors: (string | undefined)[]; v
           title={c ?? 'default'}
         />
       ))}
+    </div>
+  );
+}
+
+/** A card's picture: a photo from your device, or a link to one. */
+function PictureField({ image, onChange, field }: { image?: string; onChange: (image: string | undefined) => void; field: string }) {
+  const file = useRef<HTMLInputElement>(null);
+  const [err, setErr] = useState('');
+  const fromDevice = image?.startsWith('data:');
+  const pick = async (f?: File) => {
+    if (!f) return;
+    setErr('');
+    try {
+      onChange(await shrink(f));
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    }
+  };
+  return (
+    <div
+      onDragOver={(e) => e.preventDefault()}
+      onDrop={(e) => {
+        e.preventDefault();
+        void pick([...e.dataTransfer.files].find((f) => f.type.startsWith('image/')));
+      }}
+    >
+      <div className="flex flex-wrap items-center gap-2">
+        {image && <SafeImg src={image} alt="" className="size-14 rounded object-cover shadow" />}
+        <button className="chip" onClick={() => file.current?.click()}>
+          <ImagePlus size={13} /> {image ? 'Change photo' : 'Choose a photo'}
+        </button>
+        {image && (
+          <button className="chip" onClick={() => onChange(undefined)}>
+            Remove
+          </button>
+        )}
+      </div>
+      {!fromDevice && (
+        <input
+          key={image ?? 'none'}
+          defaultValue={image}
+          onBlur={(e) => e.target.value.trim() !== (image ?? '') && onChange(e.target.value.trim() || undefined)}
+          placeholder="…or paste a link to a picture (https://…)"
+          className={clsx(field, 'mt-2')}
+        />
+      )}
+      <div className="mt-1 text-[11.5px] text-ink-soft">From your phone or computer, or drop a picture here or onto the card.</div>
+      {err && <div className="mt-1 text-[12px] text-[#b3261e]">{err}</div>}
+      <input
+        ref={file}
+        type="file"
+        accept="image/*"
+        hidden
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          e.target.value = '';
+          void pick(f);
+        }}
+      />
     </div>
   );
 }
@@ -129,8 +191,8 @@ export function Inspector() {
         </>
       )}
 
-      <Label>Image URL</Label>
-      <input defaultValue={d.image} onBlur={(e) => update({ image: e.target.value || undefined })} placeholder="https://…" className={field} />
+      <Label>Picture</Label>
+      <PictureField image={d.image} onChange={(image) => update({ image })} field={field} />
 
       <Label>{node.type === 'note' ? 'Paper' : 'Card tint'}</Label>
       <Swatches colors={node.type === 'note' ? NOTE_COLORS : CARD_TINTS} value={d.color} onPick={(color) => update({ color })} />

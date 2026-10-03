@@ -13,7 +13,7 @@ import type { Point } from './factory';
 type Opts = { near?: string; at?: Point };
 
 /** Shrinks a photo so a board full of them still saves quickly (longest side 1400px, JPEG). */
-async function shrink(file: File, max = 1400): Promise<string> {
+export async function shrink(file: File, max = 1400): Promise<string> {
   const url = URL.createObjectURL(file);
   try {
     const img = await new Promise<HTMLImageElement>((ok, fail) => {
