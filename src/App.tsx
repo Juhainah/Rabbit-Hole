@@ -53,6 +53,13 @@ function Desk() {
     api.sources().then(setAvailable).catch(() => undefined);
   }, []);
 
+  // Opening the app lands on Case files, the home screen, once there is anything to come back to.
+  useEffect(() => {
+    if (!hydrated) return;
+    const { boards } = useBoards.getState();
+    if (Object.values(boards).some((b) => b.nodes.length > 0)) useUi.getState().set({ caseFilesOpen: true });
+  }, [hydrated]);
+
   useEffect(() => {
     onUndoable((text) => useUi.getState().set({ toast: { text, at: Date.now(), undo: true } }));
   }, []);

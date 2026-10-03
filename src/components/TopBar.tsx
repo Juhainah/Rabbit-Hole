@@ -183,9 +183,9 @@ export function TopBar() {
   const set = useUi((s) => s.set);
   return (
     <header className="top-bar desk relative z-30 flex h-[62px] shrink-0 items-center gap-1.5 border-b md:gap-2.5 min-[1500px]:gap-4 border-black/50 px-3 shadow-[0_8px_20px_-12px_rgba(0,0,0,.9)]">
-      <div className="hidden md:block">
+      <button className="hidden rounded-lg md:block" onClick={() => set({ caseFilesOpen: true })} title="Home: all your case files" aria-label="Home">
         <Logo />
-      </div>
+      </button>
       <span className="hidden h-6 w-px bg-white/10 md:block" />
       <BoardSwitcher />
       <div className="hidden md:block">

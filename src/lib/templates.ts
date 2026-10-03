@@ -73,7 +73,7 @@ export function startFromTemplate(id: string) {
   const t = TEMPLATES.find((x) => x.id === id);
   const c: Point = viewportCenter();
   if (!t) {
-    useUi.getState().set({ addMenuAt: Date.now() });
+    useUi.getState().set({ addMenuAt: Date.now(), building: useBoards.getState().currentId });
     return;
   }
   const nodes: ClueNode[] = [];

@@ -1,4 +1,4 @@
-import { Dices, Hammer } from 'lucide-react';
+import { Dices } from 'lucide-react';
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { api } from '../../lib/api';
 import { startDig } from '../../lib/dig';
@@ -65,7 +65,8 @@ export function EmptyState() {
   };
 
   return (
-    <div ref={box} className="pointer-events-none absolute inset-0 z-10 grid place-items-center overflow-hidden p-10">
+    <div ref={box} className="empty-state absolute inset-0 z-10 overflow-y-auto overscroll-contain">
+      <div className="relative grid min-h-full place-items-center px-4 pt-6 pb-32 md:px-10 md:pt-10">
       {/* scattered suggestion scraps, pinned around the case card where there is room */}
       {scraps.map(({ c, i, x, y }) => {
         return (
@@ -94,44 +95,71 @@ export function EmptyState() {
         <div className="absolute -top-[15px] left-[26px] h-[18px] w-[150px] rounded-t-lg bg-[#e8cf95]" />
         <div className="relative rounded-md bg-[linear-gradient(170deg,#efd9a6,#e3c78a)] p-4 shadow-[0_24px_60px_-20px_rgba(0,0,0,.7)]">
           <div className="absolute left-1/2 -top-2 size-4 -translate-x-1/2 rounded-full bg-[#1f1f1f] shadow-[2px_4px_4px_rgba(0,0,0,.5)]" />
-          <div className="bg-[#fbf7ee] px-7 pt-6 pb-6 shadow-sm">
+          <div className="bg-[#fbf7ee] px-5 pt-5 pb-5 shadow-sm md:px-7 md:pt-6 md:pb-6">
             <div className="font-type text-[11px] tracking-[0.2em] text-ink-soft">CASE FILE Nº 000 · UNOPENED</div>
-            <h1 className="mt-2 font-serif text-[40px] font-bold leading-[1.02] text-ink">
+            <h1 className="mt-2 font-serif text-[30px] font-bold leading-[1.02] text-ink md:text-[40px]">
               What do you want to <span className="italic text-[#b3261e]">fall into?</span>
             </h1>
-            <p className="mt-2 font-hand text-[21px] leading-tight text-ink-soft">
-              Name a mystery, a person, a place, an obsession. We'll pull the files and start stringing it together.
-            </p>
-            <form
-              className="mt-5 flex gap-2"
-              onSubmit={(e) => {
-                e.preventDefault();
-                if (!q.trim()) return;
-                if (/^https?:\/\//.test(q.trim())) void startDig({ query: '', url: q.trim() });
-                else void startDig({ query: q });
-              }}
-            >
-              <input
-                autoFocus
-                value={q}
-                onChange={(e) => setQ(e.target.value)}
-                placeholder="the Dyatlov Pass incident… or paste a link"
-                className="min-w-0 flex-1 border-b-2 border-dashed border-ink/30 bg-transparent px-1 py-2 font-type text-[17px] text-ink outline-none placeholder:text-ink/35 focus:border-[#b3261e]"
-              />
-              <button className="btn-stamp px-5 text-[15px]">DIG ↓</button>
-            </form>
-            <div className="mt-5 flex flex-wrap items-center gap-2">
-              <button onClick={random} className="chip on" title="Pick a strange article from Wikipedia's Unusual Articles list">
-                <Dices size={14} /> Surprise me
-              </button>
-              {inspo?.random.slice(0, 3).map((r) => (
-                <button key={r.title} className="chip" onClick={() => void startDig({ query: r.title })} title={r.snippet}>
-                  {r.title}
+
+            <div className="start-choice mt-4">
+              <div className="start-step">
+                <span>1</span> Dig into a topic
+              </div>
+              <p className="mt-0.5 text-[12.5px] leading-snug text-ink-soft">Type anything: a mystery, a person, a film, a place. We find the sources and pin them for you.</p>
+              <form
+                className="mt-2 flex gap-2"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  if (!q.trim()) return;
+                  if (/^https?:\/\//.test(q.trim())) void startDig({ query: '', url: q.trim() });
+                  else void startDig({ query: q });
+                }}
+              >
+                <input
+                  autoFocus
+                  value={q}
+                  onChange={(e) => setQ(e.target.value)}
+                  placeholder="type a topic… or paste a link"
+                  className="min-w-0 flex-1 border-b-2 border-dashed border-ink/30 bg-transparent px-1 py-2 font-type text-[16px] text-ink outline-none placeholder:text-ink/35 focus:border-[#b3261e] md:text-[17px]"
+                  aria-label="Topic to dig into"
+                />
+                <button className="btn-stamp shrink-0 px-4 text-[15px] md:px-5">DIG ↓</button>
+              </form>
+              <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+                <button onClick={random} className="chip on" title="Pick a strange article from Wikipedia's Unusual Articles list">
+                  <Dices size={14} /> Surprise me
                 </button>
-              ))}
+                {inspo?.random.slice(0, 2).map((r) => (
+                  <button key={r.title} className="chip" onClick={() => void startDig({ query: r.title })} title={r.snippet}>
+                    {r.title}
+                  </button>
+                ))}
+              </div>
             </div>
+
+            <div className="start-or">or</div>
+
+            <div className="start-choice">
+              <div className="start-step">
+                <span>2</span> Build a board yourself
+              </div>
+              <p className="mt-0.5 text-[12.5px] leading-snug text-ink-soft">Pick a layout, then add your own cards, photos, PDFs and notes with the red + button.</p>
+              <div className="start-layouts mt-2">
+                <button className="start-layout" onClick={() => startFromTemplate('blank')}>
+                  <b>Blank board</b>
+                  <span>Start empty</span>
+                </button>
+                {TEMPLATES.map((t) => (
+                  <button key={t.id} className="start-layout" onClick={() => startFromTemplate(t.id)}>
+                    <b>{t.name}</b>
+                    <span>{t.blurb}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
             {tucked.length > 0 && (
-              <div className="mt-3">
+              <div className="mt-5">
                 <div className="text-[11.5px] font-medium text-ink-soft">Classic rabbit holes</div>
                 <div className="mt-1.5 flex flex-wrap gap-1.5">
                   {tucked.map((c) => (
@@ -142,21 +170,6 @@ export function EmptyState() {
                 </div>
               </div>
             )}
-            <div className="mt-4 border-t border-dashed border-ink/20 pt-3">
-              <div className="flex items-center gap-1.5 text-[11.5px] font-medium text-ink-soft">
-                <Hammer size={13} /> Or build your own board
-              </div>
-              <div className="mt-1.5 flex flex-wrap gap-1.5">
-                <button className="chip" onClick={() => startFromTemplate('blank')} title="Start empty and add your own cards, photos and files">
-                  Blank board
-                </button>
-                {TEMPLATES.map((t) => (
-                  <button key={t.id} className="chip" onClick={() => startFromTemplate(t.id)} title={t.blurb}>
-                    {t.name}
-                  </button>
-                ))}
-              </div>
-            </div>
           </div>
           {inspo?.onThisDay.length ? (
             <div className="mt-3 bg-[#f3eee2] px-5 py-3 shadow-sm rotate-[0.6deg]">
@@ -169,6 +182,7 @@ export function EmptyState() {
             </div>
           ) : null}
         </div>
+      </div>
       </div>
     </div>
   );

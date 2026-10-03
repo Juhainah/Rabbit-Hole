@@ -34,6 +34,8 @@ interface UiState {
   selecting?: boolean;
   /** Set to open the toolbar's Add menu (from the empty board, the phone bar…). */
   addMenuAt?: number;
+  /** The board you chose to build by hand while it is still empty (the start card stays away). */
+  building?: string;
   toast?: { text: string; at: number; undo?: boolean };
   /** Card types picked in "On this board": those stay lit, the rest fade back. */
   spotlight: string[];

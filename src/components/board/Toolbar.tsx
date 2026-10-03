@@ -65,13 +65,13 @@ function Tool({ icon, label, onClick, active, primary }: { icon: ReactNode; labe
 }
 
 const KINDS: { type: EntityType; label: string; emoji: string; ask: string; eg: string }[] = [
-  { type: 'person', label: 'Person', emoji: '🧑', ask: 'Who?', eg: 'Madhuri Dixit' },
-  { type: 'place', label: 'Place', emoji: '📍', ask: 'Where?', eg: 'Lucknow, India' },
-  { type: 'event', label: 'Event', emoji: '📅', ask: 'What happened?', eg: 'Watergate scandal' },
-  { type: 'org', label: 'Organisation', emoji: '🏛', ask: 'Which group?', eg: 'Animoca Brands' },
-  { type: 'work', label: 'Film, book…', emoji: '🎬', ask: 'Which work?', eg: 'Dedh Ishqiya' },
-  { type: 'object', label: 'Object', emoji: '🗝', ask: 'What thing?', eg: 'Voynich manuscript' },
-  { type: 'concept', label: 'Idea', emoji: '💡', ask: 'What idea?', eg: 'Mandela effect' },
+  { type: 'person', label: 'Person', emoji: '🧑', ask: 'Who?', eg: 'Their name' },
+  { type: 'place', label: 'Place', emoji: '📍', ask: 'Where?', eg: 'A city, address or landmark' },
+  { type: 'event', label: 'Event', emoji: '📅', ask: 'What happened?', eg: 'The name of the event' },
+  { type: 'org', label: 'Organisation', emoji: '🏛', ask: 'Which group?', eg: 'The name of the group or company' },
+  { type: 'work', label: 'Film, book…', emoji: '🎬', ask: 'Which work?', eg: 'The title' },
+  { type: 'object', label: 'Object', emoji: '🗝', ask: 'What thing?', eg: 'What it is called' },
+  { type: 'concept', label: 'Idea', emoji: '💡', ask: 'What idea?', eg: 'The idea in a few words' },
 ];
 
 /** Where new cards go: next to the selected card, else an open spot in the middle of the view. */
@@ -125,7 +125,7 @@ function AddPanel({ close }: { close: () => void }) {
           <div className="mt-1 font-hand text-[21px] leading-none">
             {kind.emoji} {kind.ask}
           </div>
-          <input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder={`e.g. ${kind.eg}`} className="add-input" />
+          <input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder={kind.eg} className="add-input" />
           <div className="mt-1.5 text-[11.5px] text-ink-soft">
             {kind.type === 'place' ? 'Found on the map, with its picture when there is one.' : 'Its picture and a line about it are looked up for you. Edit anything afterwards.'}
           </div>

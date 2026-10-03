@@ -17,9 +17,49 @@ function sagPath(sx: number, sy: number, tx: number, ty: number) {
   const cy = (sy + ty) / 2 + sag;
   return {
     d: `M ${sx},${sy} Q ${cx},${cy} ${tx},${ty}`,
+    cx,
+    cy,
     lx: 0.25 * sx + 0.5 * cx + 0.25 * tx,
     ly: 0.25 * sy + 0.5 * cy + 0.25 * ty,
   };
+}
+
+/** A point along the sagging string, 0 at one pin and 1 at the other. */
+const along = (t: number, sx: number, sy: number, cx: number, cy: number, tx: number, ty: number) => ({
+  x: (1 - t) ** 2 * sx + 2 * (1 - t) * t * cx + t ** 2 * tx,
+  y: (1 - t) ** 2 * sy + 2 * (1 - t) * t * cy + t ** 2 * ty,
+});
+
+// Where a label may sit, middle first.
+const SPOTS = [0.5, 0.42, 0.58, 0.34, 0.66, 0.26, 0.74, 0.19, 0.81];
+
+type Lookup = Map<string, { type?: string; hidden?: boolean; measured?: { width?: number; height?: number }; internals: { positionAbsolute: { x: number; y: number } } }>;
+
+/**
+ * The spot on a string where its label can be read: on the string itself, not over a card.
+ * Strings run behind cards, so a label at the middle could float over a card, cut off from
+ * its string. Returns -1 when the whole string is hidden behind cards.
+ */
+function clearSpot(lookup: Lookup, sx: number, sy: number, cx: number, cy: number, tx: number, ty: number): number {
+  const pad = 16;
+  const minX = Math.min(sx, tx, cx) - pad;
+  const maxX = Math.max(sx, tx, cx) + pad;
+  const minY = Math.min(sy, ty, cy) - pad;
+  const maxY = Math.max(sy, ty, cy) + pad;
+  const boxes: [number, number, number, number][] = [];
+  for (const n of lookup.values()) {
+    if (n.hidden || n.type === 'frame') continue;
+    const w = n.measured?.width ?? 0;
+    const h = n.measured?.height ?? 0;
+    const { x, y } = n.internals.positionAbsolute;
+    if (!w || x > maxX || x + w < minX || y > maxY || y + h < minY) continue;
+    boxes.push([x - pad, y - pad, x + w + pad, y + h + pad]);
+  }
+  for (const t of SPOTS) {
+    const p = along(t, sx, sy, cx, cy, tx, ty);
+    if (!boxes.some(([a, b, c, d]) => p.x > a && p.x < c && p.y > b && p.y < d)) return t;
+  }
+  return -1;
 }
 
 /** Keeps controls a readable size however far the board is zoomed out. */
@@ -37,7 +77,13 @@ export function StringEdge({ id, source, target, sourceX, sourceY, targetX, targ
   const lit = useUi((s) => s.selectedNodeId === source || s.selectedNodeId === target);
   const stringMode = useSettings((s) => s.stringMode);
   const kind = data?.kind ?? 'user';
-  const { d, lx, ly } = sagPath(sourceX, sourceY, targetX, targetY);
+  const { d, cx, cy } = sagPath(sourceX, sourceY, targetX, targetY);
+  // Only labelled strings look for a clear spot, and only re-render when that spot changes.
+  const labelled = showLabels && !!data?.label;
+  const spot = useStore((s) => (labelled ? clearSpot(s.nodeLookup as unknown as Lookup, sourceX, sourceY, cx, cy, targetX, targetY) : 0.5));
+  const { x: lx, y: ly } = along(spot < 0 ? 0.5 : spot, sourceX, sourceY, cx, cy, targetX, targetY);
+  // A string hidden behind cards end to end shows its label only when you pick it or its card.
+  const labelVisible = labelled && (spot >= 0 || selected || lit);
   const color = data?.color ?? (stringMode === 'red' && kind !== 'tangent' && kind !== 'evidence' ? 'var(--string)' : KIND_VAR[kind]);
   const width = data?.width ?? (kind === 'evidence' ? 1.5 : kind === 'tangent' ? 2.2 : 2.6);
   const rot = useMemo(() => (hash01(id) * 2 - 1) * 5, [id]);
@@ -54,7 +100,7 @@ export function StringEdge({ id, source, target, sourceX, sourceY, targetX, targ
       <path d={d} fill="none" stroke="transparent" strokeWidth={16} className="react-flow__edge-interaction" />
       <circle cx={sourceX} cy={sourceY} r={selected ? 4 : 2.6} fill={color} />
       <circle cx={targetX} cy={targetY} r={selected ? 4 : 2.6} fill={color} />
-      {(editing || selected || (showLabels && data?.label)) && (
+      {(editing || selected || labelVisible) && (
         <EdgeLabelRenderer>
           <div className="string-ui nodrag nopan" style={{ transform: `translate(-50%, -50%) translate(${lx}px, ${ly}px)` }}>
             {editing ? (
@@ -75,8 +121,7 @@ export function StringEdge({ id, source, target, sourceX, sourceY, targetX, targ
               />
               </Unzoomed>
             ) : (
-              showLabels &&
-              data?.label && (
+              labelVisible && (
                 <div className="string-label" style={{ transform: `rotate(${rot}deg)` }} onDoubleClick={() => useUi.getState().set({ labelEdit: id })} title="Double-click to edit">
                   {data.label}
                 </div>

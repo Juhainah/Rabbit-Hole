@@ -1,5 +1,7 @@
-import { ArrowLeft, FolderPlus, Search, Trash2 } from 'lucide-react';
+import { ArrowLeft, Dices, FolderPlus, Hammer, Search, Trash2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { buildNewCase, digNewCase } from '../lib/home';
+import { TEMPLATES } from '../lib/templates';
 import { useBoards } from '../store/boards';
 import { useUi } from '../store/ui';
 import type { Board } from '../types';
@@ -55,6 +57,8 @@ export function CaseFiles() {
   const boards = useBoards((s) => s.boards);
   const currentId = useBoards((s) => s.currentId);
   const [q, setQ] = useState('');
+  const [topic, setTopic] = useState('');
+  const hasOpenBoard = (boards[currentId]?.nodes.length ?? 0) > 0;
 
   const files = useMemo(() => order.map((id, i) => (boards[id] ? summarize(boards[id], order.length - i) : null)).filter((f): f is FileSummary => !!f), [order, boards]);
   const needle = q.trim().toLowerCase();
@@ -62,14 +66,58 @@ export function CaseFiles() {
 
   return (
     <div className="desk relative min-h-0 flex-1 overflow-y-auto">
-      <div className="mx-auto max-w-[1180px] px-6 pt-8 pb-16">
-        <div className="flex flex-wrap items-end gap-x-6 gap-y-3">
-          <button onClick={() => useUi.getState().set({ caseFilesOpen: false })} className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 font-ui text-[13px] text-paper/70 hover:bg-white/10 hover:text-paper">
-            <ArrowLeft size={15} /> Back to the board
-          </button>
+      <div className="mx-auto max-w-[1180px] px-4 pt-6 pb-28 md:px-6 md:pt-8 md:pb-16">
+        {/* Start something new: dig into a topic, or build a board by hand. */}
+        <section className="home-start">
+          <h1 className="font-serif text-[30px] font-bold leading-[1.05] text-ink md:text-[40px]">
+            What do you want to <span className="italic text-[#b3261e]">fall into?</span>
+          </h1>
+          <form
+            className="mt-4 flex gap-2"
+            onSubmit={(e) => {
+              e.preventDefault();
+              digNewCase(topic);
+            }}
+          >
+            <input
+              value={topic}
+              onChange={(e) => setTopic(e.target.value)}
+              placeholder="a mystery, a person, a film… or paste a link"
+              className="min-w-0 flex-1 border-b-2 border-dashed border-ink/30 bg-transparent px-1 py-2 font-type text-[16px] text-ink outline-none placeholder:text-ink/40 focus:border-[#b3261e]"
+              aria-label="Topic to dig into"
+            />
+            <button className="btn-stamp shrink-0 px-4 text-[15px]">DIG ↓</button>
+          </form>
+          <div className="mt-4 flex flex-wrap items-center gap-1.5">
+            <span className="mr-1 flex items-center gap-1 font-ui text-[12px] font-medium text-ink-soft">
+              <Hammer size={13} /> Or build your own:
+            </span>
+            <button className="chip" onClick={() => buildNewCase('blank')}>
+              Blank board
+            </button>
+            {TEMPLATES.map((t) => (
+              <button key={t.id} className="chip" onClick={() => buildNewCase(t.id)} title={t.blurb}>
+                {t.name}
+              </button>
+            ))}
+            <button
+              className="chip"
+              onClick={() => digNewCase(['The Voynich Manuscript', 'Numbers stations', 'The Tamam Shud case', 'Dancing plague of 1518', 'The Wow! signal', 'Kowloon Walled City', 'Cicada 3301', 'The Mary Celeste'][Math.floor(Math.random() * 8)])}
+            >
+              <Dices size={13} /> Surprise me
+            </button>
+          </div>
+        </section>
+
+        <div className="mt-10 flex flex-wrap items-end gap-x-6 gap-y-3">
+          {hasOpenBoard && (
+            <button onClick={() => useUi.getState().set({ caseFilesOpen: false })} className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 font-ui text-[13px] text-paper/70 hover:bg-white/10 hover:text-paper">
+              <ArrowLeft size={15} /> Back to the board
+            </button>
+          )}
           <div className="min-w-0 flex-1">
-            <h1 className="font-hand text-[46px] leading-none font-bold text-paper">Case files</h1>
-            <p className="mt-1 font-ui text-[14px] text-paper/60">
+            <h2 className="font-hand text-[38px] leading-none font-bold text-paper md:text-[46px]">Case files</h2>
+            <p className="mt-1 font-ui text-[13.5px] text-paper/60">
               {files.length} investigation{files.length === 1 ? '' : 's'} in the drawer. Click a folder to open it; click its sticker to change the icon.
             </p>
           </div>
@@ -84,7 +132,7 @@ export function CaseFiles() {
           </label>
         </div>
 
-        <div className="mt-12 grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-x-10 gap-y-14">
+        <div className="mt-10 grid grid-cols-[repeat(auto-fill,minmax(250px,1fr))] gap-x-8 gap-y-12 md:mt-12 md:gap-x-10 md:gap-y-14">
           {!needle && (
             <button
               onClick={() => {

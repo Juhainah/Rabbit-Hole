@@ -144,16 +144,26 @@ export async function castOf(page: string, signal?: AbortSignal, max = 24): Prom
   // Everyone's photo from their own article.
   const pages = [...new Set(people.map((r) => r.page).filter((p): p is string => !!p))];
   const pics = new Map<string, string>();
+  // No lead picture on the article (often the case for living people)? Their Wikidata photo instead.
+  const wikidataFor = new Map<string, string>();
   for (let i = 0; i < pages.length; i += 50) {
-    const j = await wiki({ action: 'query', titles: pages.slice(i, i + 50).join('|'), prop: 'pageimages', piprop: 'thumbnail', pithumbsize: '320', pilimit: 'max' }, signal).catch(() => null);
+    const j = await wiki({ action: 'query', titles: pages.slice(i, i + 50).join('|'), prop: 'pageimages|pageprops', ppprop: 'wikibase_item', piprop: 'thumbnail', pithumbsize: '330', pilimit: 'max' }, signal).catch(() => null);
     const alias = new Map<string, string>();
     for (const n of [...(j?.query?.normalized ?? []), ...(j?.query?.redirects ?? [])]) alias.set(n.to, n.from);
     for (const p of j?.query?.pages ?? []) {
-      if (!p.thumbnail?.source) continue;
       let key = p.title as string;
       while (alias.has(key)) key = alias.get(key)!;
-      pics.set(key.replace(/_/g, ' '), p.thumbnail.source);
-      pics.set(p.title, p.thumbnail.source);
+      const keys = [key.replace(/_/g, ' '), p.title as string];
+      if (p.thumbnail?.source) for (const k of keys) pics.set(k, p.thumbnail.source);
+      else if (p.pageprops?.wikibase_item) for (const k of keys) wikidataFor.set(k, p.pageprops.wikibase_item);
+    }
+  }
+  const missing = [...new Set(wikidataFor.values())].slice(0, 50);
+  if (missing.length) {
+    const d = await getJson<any>(`https://www.wikidata.org/w/api.php?${new URLSearchParams({ action: 'wbgetentities', ids: missing.join('|'), props: 'claims', format: 'json' })}`, { headers: { 'User-Agent': UA }, timeout: 9000, signal }).catch(() => null);
+    for (const [k, qid] of wikidataFor) {
+      const file = d?.entities?.[qid]?.claims?.P18?.[0]?.mainsnak?.datavalue?.value;
+      if (file) pics.set(k, `https://commons.wikimedia.org/wiki/Special:FilePath/${encodeURIComponent(String(file).replace(/ /g, '_'))}?width=330`);
     }
   }
   const isCrew = new Set(crew.map((c) => c.actor));

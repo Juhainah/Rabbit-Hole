@@ -11,6 +11,7 @@ import { useSettings } from '../../store/settings';
 import { useUi } from '../../store/ui';
 import type { ClueData, ClueNode } from '../../types';
 import { Glyph, SourceBadge } from '../SourceBadge';
+import { SafeImg } from './SafeImg';
 import { StaticMap } from './StaticMap';
 
 type P = NodeProps<ClueNode>;
@@ -135,7 +136,7 @@ export function TopicNode({ id, data, selected }: P) {
           </div>
           {data.image && (
             <div className="shrink-0 bg-white p-1 pb-3 shadow-md rotate-[4deg] w-[98px]">
-              <img src={data.image} alt="" className="w-full aspect-square object-cover" draggable={false} />
+              <SafeImg src={data.image} alt="" className="w-full aspect-square object-cover" draggable={false} />
             </div>
           )}
         </div>
@@ -205,14 +206,14 @@ export function EntityNode({ id, data, selected }: P) {
   return (
     <Card id={id} data={data} selected={selected} className="clue-entity" pin={color}>
       <span
-        className="tape washi !left-[62px] !w-[96px] !translate-x-0 grid place-items-center font-type text-[9.5px] tracking-[0.2em] uppercase text-white"
+        className="tape washi type-tape !left-[12px] !w-auto !translate-x-0 grid place-items-center px-2.5 font-type text-[9.5px] tracking-[0.14em] uppercase text-white"
         style={{ '--w': color } as CSSProperties}
       >
         {ENTITY_LABEL[type]}
       </span>
       {data.image && (
         <div className="photo-clip">
-          <img src={data.image} alt="" draggable={false} />
+          <SafeImg src={data.image} alt="" draggable={false} />
         </div>
       )}
       <h3 className="clue-title text-[19px] mt-1">{data.title}</h3>
@@ -291,7 +292,7 @@ export function GalleryNode({ id, data, selected }: P) {
               if (p.url) read(id, p.url);
             }}
           >
-            {p.image ? <img src={p.image} alt="" draggable={false} loading="lazy" /> : <div className="gallery-noface">{p.title.slice(0, 1)}</div>}
+            <SafeImg src={p.image} alt="" draggable={false} loading="lazy" fallback={<div className="gallery-noface">{p.title.slice(0, 1)}</div>} />
             <span>{p.title}</span>
             {p.role && <em className="gallery-role">{p.role}</em>}
           </button>
@@ -337,7 +338,7 @@ export function ImageNode({ id, data, selected }: P) {
   return (
     <Card id={id} data={data} selected={selected} className="clue-image" tape={tape} pin={data.pin ?? '#1f1f1f'}>
       <div className="frame">
-        {data.image && <img src={data.image} alt={data.title} draggable={false} loading="lazy" />}
+        <SafeImg src={data.image} alt={data.title} draggable={false} loading="lazy" fallback={<div className="photo-missing">no picture</div>} />
         {data.date && <span className="film-date">{prettyDate(data.date)}</span>}
       </div>
       <div className="caption line-clamp-2">{data.title}</div>
@@ -370,7 +371,7 @@ export function ClipNode({ id, data, selected }: P) {
         <SourceBadge id={data.source} className="min-w-0" />
         {data.date && <span className="shrink-0 whitespace-nowrap font-type text-[10.5px] text-ink-soft">{prettyDate(data.date)}</span>}
       </div>
-      {data.image && <img className="thumb" src={data.image} alt="" draggable={false} loading="lazy" />}
+      {data.image && <SafeImg className="thumb" src={data.image} alt="" draggable={false} loading="lazy" />}
       <div className="headline">{data.title}</div>
       {(data.author || site) && <div className="mt-1 font-type text-[10.5px] text-ink-soft truncate">{data.author ?? site}</div>}
       {data.text && <p className="body mt-1.5 line-clamp-6">{data.text}</p>}
@@ -398,7 +399,7 @@ export function PostNode({ id, data, selected }: P) {
   return (
     <Card id={id} data={data} selected={selected} className="clue-post" style={{ '--src': src.color } as CSSProperties} pin={src.color}>
       <div className="bar" />
-      {data.image && <img src={data.image} alt="" className="h-[120px] w-full object-cover" draggable={false} loading="lazy" />}
+      {data.image && <SafeImg src={data.image} alt="" className="h-[120px] w-full object-cover" draggable={false} loading="lazy" />}
       <div className="px-3.5 pt-2.5 pb-3">
         <div className="flex min-w-0 items-center gap-2 text-[11px] text-ink-soft">
           <Glyph id={src.id} />
@@ -440,7 +441,7 @@ export function MediaNode({ id, data, selected }: P) {
           </div>
         ) : (
           <>
-            {data.image && <img src={data.image} alt="" draggable={false} loading="lazy" />}
+            {data.image && <SafeImg src={data.image} alt="" draggable={false} loading="lazy" />}
             {(media || data.url) && (
               <button
                 className="play"

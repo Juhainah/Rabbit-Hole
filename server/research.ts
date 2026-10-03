@@ -158,7 +158,7 @@ async function wikiGallery(wiki: Wiki, title: string, subject: string, signal: A
   const linked: any[] = [];
   let cont: Record<string, string> = {};
   for (let round = 0; round < 4; round++) {
-    const j = await wikiApi(wiki, { action: 'query', generator: 'links', titles: title, gpllimit: 'max', gplnamespace: 0, prop: 'pageimages', piprop: 'thumbnail', pithumbsize: 320, pilimit: 'max', redirects: 1, ...cont }, signal).catch(() => null);
+    const j = await wikiApi(wiki, { action: 'query', generator: 'links', titles: title, gpllimit: 'max', gplnamespace: 0, prop: 'pageimages', piprop: 'thumbnail', pithumbsize: 330, pilimit: 'max', redirects: 1, ...cont }, signal).catch(() => null);
     for (const p of (j?.query?.pages ?? []) as any[]) {
       const had = linked.find((x) => x.pageid === p.pageid);
       if (had) had.thumbnail ??= p.thumbnail;

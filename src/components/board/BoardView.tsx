@@ -122,6 +122,7 @@ function Board() {
   const minimap = useSettings((s) => s.minimap);
   const snap = useSettings((s) => s.snap);
   const selecting = useUi((s) => s.selecting);
+  const building = useUi((s) => s.building);
   const frame = useSettings((s) => s.frame);
   const focusRequest = useUi((s) => s.focusRequest);
   const arranging = useUi((s) => s.arranging);
@@ -321,8 +322,20 @@ function Board() {
         <Controls showInteractive={false} position="bottom-left" style={frame ? CONTROLS_FRAMED : CONTROLS_STYLE} />
       </ReactFlow>
       {frame && <div className="board-frame" />}
-      {board.nodes.length === 0 && <EmptyState />}
-      <Toolbar />
+      {/* An empty board shows the start card; once you start building, the board and its tools. */}
+      {board.nodes.length === 0 && building !== board.id ? (
+        <EmptyState />
+      ) : (
+        <>
+          {board.nodes.length === 0 && (
+            <div className="blank-hint">
+              <b>Your blank board</b>
+              Press the red <span>+</span> below to pin a person, place, photo, PDF or note. Drag cards to arrange them; drag from one pin to another to tie a string.
+            </div>
+          )}
+          <Toolbar />
+        </>
+      )}
       <ActivityTicker />
       <ContextMenu />
       <TiePicker />
