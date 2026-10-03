@@ -2,6 +2,7 @@ import type { ScrapeResult } from '../shared/types';
 import { enc, errMsg, getJson, getText, stripHtml } from './http';
 import { assertPublicUrl, scrape } from './scrape';
 import { decodeGoogleNews, isGoogleNews } from './gnews';
+import { looksLikePdf, readPdf } from './pdf';
 
 // Many sources wall their web pages (logins, bot checks) but publish the same
 // content through open APIs. These readers use the APIs, so a clue opens as real
@@ -251,6 +252,14 @@ async function readViaJina(url: URL): Promise<ScrapeResult | null> {
   return { ...base(url, j?.data?.title || url.hostname), text: text.slice(0, 150000), format: 'markdown', via: 'reader', siteName: url.hostname.replace(/^www\./, '') };
 }
 
+/** Decoded binary (a PDF served without saying so): mostly replacement and control characters. */
+function binaryish(text: string) {
+  const head = text.slice(0, 600);
+  if (head.startsWith('%PDF-')) return true;
+  const odd = head.match(/[�\u0000-\u0008\u000E-\u001F]/g)?.length ?? 0;
+  return head.length > 50 && odd / head.length > 0.08;
+}
+
 export async function readAnything(raw: string): Promise<ScrapeResult> {
   if (isGoogleNews(raw)) {
     const real = await decodeGoogleNews(raw);
@@ -267,10 +276,36 @@ export async function readAnything(raw: string): Promise<ScrapeResult> {
     if (r && (r.text.trim() || r.comments?.length || r.media || r.images?.length)) return r;
   }
 
+  // A PDF is read as a document, not scraped as a web page (that gives binary noise).
+  const asPdf = async (): Promise<ScrapeResult | null> => {
+    const pdf = await readPdf(url.toString()).catch((e) => {
+      console.warn(`[reader] PDF ${host}: ${errMsg(e)}`);
+      return null;
+    });
+    if (!pdf) return null;
+    const name = decodeURIComponent(url.pathname.split('/').pop() ?? '').replace(/\.pdf$/i, '').replace(/[_-]+/g, ' ').trim();
+    const r = base(url, pdf.title || name || host);
+    r.siteName = host;
+    r.byline = pdf.author;
+    r.text = pdf.text.trim() || 'This PDF has no text layer (it is probably a scan). Open the original to see the pages.';
+    r.format = 'text';
+    r.excerpt = `PDF · ${pdf.pages} page${pdf.pages === 1 ? '' : 's'}`;
+    return r;
+  };
+  if (looksLikePdf(url.toString())) {
+    const r = await asPdf();
+    if (r) return r;
+  }
+
   let page: ScrapeResult | null = null;
   let failure = '';
   try {
     page = await scrape(url.toString());
+    // A link that turned out to be a PDF without saying so.
+    if (page && binaryish(page.text)) {
+      const r = await asPdf();
+      if (r) return r;
+    }
   } catch (e) {
     failure = errMsg(e);
   }
