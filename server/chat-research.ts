@@ -60,10 +60,12 @@ export async function chatResearch(
   wanted: string[] | undefined,
   signal: AbortSignal,
   focus?: { url: string; title: string },
-  extra: { searchFor?: string[]; onStatus?: (m: string) => void } = {},
+  extra: { searchFor?: string[]; onStatus?: (m: string) => void; earlier?: string; lastAsked?: string } = {},
 ): Promise<SourceItem[]> {
   const allowed = new Set(availableSources());
-  const { phrase, lead } = chatPhrase(question, hint);
+  // "Where is that article?" says nothing searchable: search with what it refers back to.
+  const refersBack = !!extra.lastAsked && question.split(/\s+/).length <= 9 && /\b(that|this|it|its|those|these|them|they|there|the same|which one)\b/i.test(question);
+  const { phrase, lead } = chatPhrase(refersBack ? `${extra.lastAsked} ${question}` : question, hint);
   const wantsImages = PICTURE.test(question);
   const wantsArchive = ARCHIVE.test(question);
   const wantsAudio = AUDIO.test(question);
@@ -109,9 +111,9 @@ export async function chatResearch(
     let qs = own;
     let names: string[] = [];
     // Questions ("Is the Begum's marriage portrayed as a sham…?") are researched, not answered from memory.
-    if (!qs.length && (FINDING.test(question) || ASKING.test(question.trim()) || question.split(/\s+/).length >= 6)) {
+    if (!qs.length && (refersBack || FINDING.test(question) || ASKING.test(question.trim()) || question.split(/\s+/).length >= 6)) {
       extra.onStatus?.('Planning the searches…');
-      const plan = await understand(question, await googleTask, signal, hint);
+      const plan = await understand(question, await googleTask, signal, hint, extra.earlier);
       if (plan) {
         qs = plan.searches.slice(0, 3);
         names = [plan.subject, ...plan.aliases];

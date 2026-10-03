@@ -154,6 +154,8 @@ export type ChatEvent =
   | { type: 'status'; message: string }
   | { type: 'sources'; items: SourceItem[] }
   | { type: 'delta'; text: string }
+  /** The answer so far is dropped: another brain is answering from the start. */
+  | { type: 'reset' }
   | { type: 'error'; message: string }
   | { type: 'ping' }
   | { type: 'done' };

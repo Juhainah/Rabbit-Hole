@@ -412,7 +412,15 @@ function settle(node: ClueNode, nearId?: string) {
   node.position = { x: Math.round(c.x - s.w / 2), y: Math.round(c.y - s.h / 2) };
 }
 
-export function pinItem(item: SourceItem, opts: { near?: string; at?: Point } = {}) {
+/** A string label short enough to read on the board, cut at a word. */
+export function shortLabel(label?: string) {
+  const t = label?.trim().replace(/[."“”]+$/, '');
+  if (!t) return undefined;
+  if (t.length <= 34) return t;
+  return t.slice(0, 34).replace(/\s+\S*$/, '') + '…';
+}
+
+export function pinItem(item: SourceItem, opts: { near?: string; at?: Point; label?: string } = {}) {
   const board = currentBoard();
   // Already on the board? Fly to it rather than pinning a duplicate.
   const existing = item.url ? board.nodes.find((n) => n.data.url === item.url) : undefined;
@@ -426,7 +434,7 @@ export function pinItem(item: SourceItem, opts: { near?: string; at?: Point } = 
   if (!opts.at) settle(node, opts.near);
   const s = useBoards.getState();
   s.addNodes([node]);
-  if (near) s.addEdges([makeEdge(near.id, node.id, { kind: 'evidence' })]);
+  if (near) s.addEdges([makeEdge(near.id, node.id, { kind: 'evidence', label: shortLabel(opts.label) })]);
   play('pin');
   useUi.getState().select(node.id);
   return node.id;

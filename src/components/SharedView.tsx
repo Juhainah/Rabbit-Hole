@@ -309,7 +309,7 @@ function ReportModal({ sid, onClose }: { sid: string; onClose: () => void }) {
     }
   };
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4 backdrop-blur-[2px]" onClick={onClose}>
+    <div className="modal-overlay fixed inset-0 z-50 grid place-items-center bg-black/60 p-4 backdrop-blur-[2px]" onClick={onClose}>
       <div onClick={(e) => e.stopPropagation()} className="paper-panel animate-rise relative w-[min(440px,100%)] rounded-xl px-6 pb-6 pt-5 font-ui text-ink">
         <button onClick={onClose} className="absolute right-3 top-3 rounded-lg p-1.5 hover:bg-ink/10" aria-label="Close">
           <X size={18} />

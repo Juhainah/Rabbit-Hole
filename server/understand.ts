@@ -52,12 +52,15 @@ export function isName(alias: string, subject: string): boolean {
 }
 
 /** Asks the AI to read the search against the first results. Null if no AI answers in time. */
-export async function understand(asked: string, firstResults: SourceItem[], signal: AbortSignal, inCase?: string): Promise<Understanding | null> {
+/** `earlier`: the conversation so far, so "where is that article?" knows which article. */
+export async function understand(asked: string, firstResults: SourceItem[], signal: AbortSignal, inCase?: string, earlier?: string): Promise<Understanding | null> {
   const results = firstResults
     .slice(0, 8)
     .map((r, i) => `${i + 1}. ${r.title} — ${(r.snippet ?? '').slice(0, 220)}`)
     .join('\n');
-  const user = [`TYPED: ${asked}`, inCase ? `INSIDE THE CASE: ${inCase}. The subject is what they TYPED (a person, place or thing within that case), never the case itself; the searches look for the typed subject's part in the case.` : '', `FIRST RESULTS:\n${results || '(none)'}`].filter(Boolean).join('\n');
+  const user = [
+    earlier ? `EARLIER IN THE CONVERSATION (the typed message may refer back to it: "that article", "it", "them"; resolve those words from here):\n${earlier.slice(0, 1500)}` : '',
+    `TYPED: ${asked}`, inCase ? `INSIDE THE CASE: ${inCase}. The subject is what they TYPED (a person, place or thing within that case), never the case itself; the searches look for the typed subject's part in the case.` : '', `FIRST RESULTS:\n${results || '(none)'}`].filter(Boolean).join('\n');
   const task = completeWithFallback(
     resolveProviders(),
     { messages: [{ role: 'system', content: SYSTEM }, { role: 'user', content: user }], temperature: 0.2, maxTokens: 700, signal, timeoutMs: 9000 },

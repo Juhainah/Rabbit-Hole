@@ -24,6 +24,8 @@ export interface LlmCall {
   maxTokens?: number;
   signal?: AbortSignal;
   timeoutMs?: number;
+  /** A complete reply matches this (a chat answer ends with its TANGENTS line); a stream that stops short of it is retried. */
+  expectEnd?: RegExp;
 }
 
 export type OnProviderFail = (provider: ProviderInfo, error: string) => void;
@@ -292,7 +294,7 @@ async function* readStream(res: Response, idleMs: number): AsyncGenerator<string
   }
 }
 
-export type StreamPiece = { type: 'meta'; provider: ProviderInfo } | { type: 'delta'; text: string };
+export type StreamPiece = { type: 'meta'; provider: ProviderInfo } | { type: 'delta'; text: string } | { type: 'reset' };
 
 export async function* streamWithFallback(
   providers: ResolvedProvider[],
@@ -303,24 +305,30 @@ export async function* streamWithFallback(
   const errors: string[] = [];
   for (const p of plan(providers)) {
     let started = false;
+    let said = '';
     const ctrl = new AbortController();
-    const firstByte = setTimeout(() => ctrl.abort(new Error('no response in 45s')), 45000);
+    // A brain that says nothing for 25 seconds, or goes quiet mid-answer for 15, hands over to the next.
+    const firstByte = setTimeout(() => ctrl.abort(new Error('no response in 25s')), 25000);
     const signal = call.signal ? AbortSignal.any([call.signal, ctrl.signal]) : ctrl.signal;
     try {
       const res = await withModelRecovery(p, (model) => postChat(p, model, call, true, signal));
-      for await (const text of readStream(res, 45000)) {
+      for await (const text of readStream(res, 15000)) {
         if (!started) {
           started = true;
           clearTimeout(firstByte);
           yield { type: 'meta', provider: info(p) };
         }
+        said += text;
         yield { type: 'delta', text };
       }
+      // Ended after a few words with no proper close: cut short (it spent its budget thinking).
+      if (started && call.expectEnd && !call.expectEnd.test(said) && said.trim().length < 400) throw new Error('reply cut short');
       if (started) return;
       throw new Error('empty reply');
     } catch (e) {
       if (call.signal?.aborted) throw e;
-      if (started) throw new Error(`${p.name} stopped mid-answer: ${errMsg(e)}`);
+      // Stopped mid-answer: wipe what it said and let the next brain answer in full.
+      if (started) yield { type: 'reset' };
       rest(p, e);
       const m = errMsg(e);
       errors.push(`${p.name}: ${m}`);

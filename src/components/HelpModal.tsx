@@ -54,7 +54,7 @@ export function HelpModal() {
     if (dig) setTimeout(() => document.getElementById('dig-input')?.focus(), 50);
   };
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-5 backdrop-blur-[2px]" onClick={() => close()}>
+    <div className="modal-overlay fixed inset-0 z-50 grid place-items-center bg-black/60 p-5 backdrop-blur-[2px]" onClick={() => close()}>
       <div onClick={(e) => e.stopPropagation()} className="paper-panel animate-rise relative max-h-[90vh] w-[min(820px,96vw)] overflow-y-auto rounded-xl px-8 pt-7 pb-7 rotate-[-0.3deg]">
         <button onClick={() => close()} className="absolute right-4 top-4 rounded-lg p-1.5 hover:bg-ink/10" aria-label="Close">
           <X size={18} />

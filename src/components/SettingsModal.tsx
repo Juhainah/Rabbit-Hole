@@ -224,7 +224,7 @@ export function SettingsModal() {
   if (!open) return null;
   const Active = (TABS.find((t) => t.id === tab) ?? TABS[0]).el;
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/55 p-6 backdrop-blur-[2px]" onClick={() => set({ settingsOpen: false })}>
+    <div className="modal-overlay fixed inset-0 z-50 grid place-items-center bg-black/55 p-6 backdrop-blur-[2px]" onClick={() => set({ settingsOpen: false })}>
       <div onClick={(e) => e.stopPropagation()} className="paper-panel animate-rise flex max-h-[86vh] w-[min(760px,96vw)] flex-col overflow-hidden rounded-xl rotate-[-0.3deg]">
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-ink/10 px-4 pt-4 pb-3 md:px-6 md:pt-5">
           <div className="font-hand text-[30px] leading-none">Customize</div>

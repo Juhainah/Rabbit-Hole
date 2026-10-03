@@ -60,6 +60,7 @@ export function ContextMenu() {
   if (!menu || (!node && !edge)) return null;
   const s = useBoards.getState();
   const ui = useUi.getState();
+  const phone = window.innerWidth < 768;
   const left = Math.max(8, Math.min(menu.x, window.innerWidth - 240));
   // The menu starts at the click, but never runs off the screen: it scrolls instead.
   const top = Math.max(8, Math.min(menu.y, window.innerHeight - 320));
@@ -67,7 +68,7 @@ export function ContextMenu() {
   return (
     <>
       <div className="fixed inset-0 z-40" onClick={dismiss} onContextMenu={(e) => { e.preventDefault(); dismiss(); }} />
-      <div className="paper-panel animate-rise fixed z-50 w-[232px] overflow-y-auto overscroll-contain rounded-xl p-1.5" style={{ left, top, maxHeight: `calc(100dvh - ${top + 8}px)` }}>
+      <div className="paper-panel animate-rise fixed z-50 w-[232px] overflow-y-auto overscroll-contain rounded-xl p-1.5" style={phone ? { left: 8, right: 8, bottom: 'calc(64px + env(safe-area-inset-bottom, 0px))', width: 'auto', maxHeight: '62dvh' } : { left, top, maxHeight: `calc(100dvh - ${top + 8}px)` }}>
         {node?.type === 'frame' && (
           <>
             <div className="px-2.5 pt-1 pb-1.5 font-hand text-[18px] leading-tight truncate">{node.data.title || 'Theory frame'}</div>

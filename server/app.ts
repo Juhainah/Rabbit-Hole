@@ -165,17 +165,24 @@ app.post('/api/chat', async (c) => {
         const found = await chatResearch(question, body.hint?.trim().slice(0, 120), body.sources, signal, body.focus, {
           searchFor: body.searchFor?.map((q) => String(q).slice(0, 120)),
           onStatus: (message) => emit({ type: 'status', message }),
+          // The last few turns, so a follow-up ("where is that article?") searches for the right thing.
+          earlier: body.messages
+            .slice(-5, -1)
+            .map((m) => `${m.role === 'user' ? 'User' : 'Partner'}: ${m.content.replace(/\s+/g, ' ').slice(0, 400)}`)
+            .join('\n'),
+          lastAsked: [...body.messages].reverse().filter((m) => m.role === 'user')[1]?.content.slice(0, 200),
         });
         const seen = new Set<string>();
         sources = [...carried, ...found].filter((s) => !seen.has(s.image ?? s.url ?? s.id) && seen.add(s.image ?? s.url ?? s.id)).slice(0, 20);
       }
       if (sources.length) emit({ type: 'sources', items: sources });
       const messages = chatMessages(body.messages, body.context, sources);
-      for await (const piece of streamWithFallback(resolveProviders(), { messages, temperature: 0.7, maxTokens: 3000, signal }, (p, err) => {
+      for await (const piece of streamWithFallback(resolveProviders(), { messages, temperature: 0.7, maxTokens: 3000, signal, expectEnd: /TANGENTS\s*:/i }, (p, err) => {
         console.warn(`[ai] ${p.name} (${p.model}) failed during chat: ${err}`);
         emit({ type: 'status', message: 'Backup brain taking over…' });
       })) {
         if (piece.type === 'delta') emit({ type: 'delta', text: piece.text });
+        else if (piece.type === 'reset') emit({ type: 'reset' });
         else console.log(`[ai] chat answered by ${piece.provider.name} / ${piece.provider.model}`);
       }
       emit({ type: 'done' });

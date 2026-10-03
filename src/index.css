@@ -1541,7 +1541,7 @@ button {
     translate: none !important;
     width: auto;
     min-width: 0 !important;
-    max-height: 60dvh;
+    max-height: calc(100dvh - 210px);
     overflow-y: auto;
   }
   .tool-tip {
@@ -1821,6 +1821,27 @@ button {
   }
   .board-toolbar > .toolbar-row {
     width: 100%;
+  }
+  .modal-overlay {
+    z-index: 80 !important;
+    padding: 10px !important;
+  }
+  .modal-overlay > div {
+    max-height: calc(100dvh - 20px) !important;
+  }
+  /* The toolbar fits a small phone without cutting off its last button. */
+  .toolbar-row {
+    gap: 0 !important;
+    padding-left: 4px !important;
+    padding-right: 4px !important;
+  }
+  .toolbar-row > button {
+    width: 36px !important;
+    height: 36px !important;
+  }
+  .toolbar-row > span {
+    margin-left: 2px !important;
+    margin-right: 2px !important;
   }
   /* Above the board toolbar, which sits above the bottom bar. */
   .toast {
@@ -2295,4 +2316,28 @@ button {
   min-height: 110px;
   font: 400 18px/1 var(--font-hand);
   color: rgba(255, 255, 255, 0.5);
+}
+
+/* The board knows its own width: a narrow board (side panels open) keeps its toolbar inside it. */
+.board {
+  container-type: inline-size;
+  container-name: board;
+}
+.board-toolbar {
+  max-width: calc(100% - 24px);
+}
+.board-toolbar > .toolbar-row {
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.board-toolbar > .toolbar-row::-webkit-scrollbar {
+  display: none;
+}
+@container board (max-width: 720px) {
+  .react-flow__minimap {
+    display: none;
+  }
+  .toolbar-panel {
+    max-width: calc(100cqw - 24px);
+  }
 }

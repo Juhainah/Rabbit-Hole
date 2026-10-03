@@ -6,7 +6,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { api } from '../../lib/api';
 import { boardContext } from '../../lib/context';
-import { addClue, caseName, pinItem, startDig, topicOf } from '../../lib/dig';
+import { addClue, caseName, pinItem, shortLabel, startDig, topicOf } from '../../lib/dig';
 import { currentBoard, onBoard, useBoards } from '../../store/boards';
 import { useSettings } from '../../store/settings';
 import { useUi } from '../../store/ui';
@@ -179,6 +179,10 @@ const READ_ONLY = /^search\s/i;
 function runActions(actions: string[], sources: SourceItem[]): string[] {
   const done: string[] = [];
   const near = anchorId();
+  /** You picked a card before asking: new finds belong with it. */
+  const picked = !!useUi.getState().selectedNodeId;
+  /** Cards this answer put on the board (or found already there), shown when it is done. */
+  const made: string[] = [];
   // New cards first, so connect/add lines in the same answer can find them.
   const kinds = /^(person|place|event|org|organization|object|thing|concept)$/i;
   const created: string[] = [];
@@ -215,14 +219,27 @@ function runActions(actions: string[], sources: SourceItem[]): string[] {
       }
       continue;
     }
-    const pin = a.match(/^pin\s+([#\d,\s]+)/i);
+    // "pin 3 -> [[Card]] : what it shows" ties the new card to the one it is evidence for.
+    const pin = a.match(/^pin\s+([#\d,\s]+?)\s*(?:(?:->|→|to|on|onto)\s*\[\[(.+?)\]\](?:\s*:\s*(.+))?)?$/i);
     if (pin) {
+      const named = pin[2] ? findCard(pin[2]) : undefined;
       for (const n of pin[1].split(/[,\s#]+/).filter(Boolean).map(Number)) {
         const src = sources[n - 1];
         if (!src) continue;
-        const already = !!src.url && currentBoard().nodes.some((n) => n.data.url === src.url);
-        pinItem(src, { near: homeFor(src, near) });
-        done.push(`${already ? 'Already on the board:' : 'Pinned'} “${src.title.slice(0, 60)}”`);
+        const existing = src.url ? currentBoard().nodes.find((x) => x.data.url === src.url) : undefined;
+        // Tied to the card the answer names, else the card you are asking about, else the case it belongs to.
+        const to = named?.id ?? (picked ? near : homeFor(src, near));
+        const toTitle = currentBoard().nodes.find((x) => x.id === to)?.data.title;
+        if (existing) {
+          if (to && to !== existing.id && !currentBoard().edges.some((e) => (e.source === to && e.target === existing.id) || (e.source === existing.id && e.target === to))) {
+            useBoards.getState().addEdges([makeEdge(to, existing.id, { kind: 'evidence', label: shortLabel(pin[3]) })]);
+            done.push(`Already on the board: “${src.title.slice(0, 50)}”; tied it to “${toTitle}”`);
+          } else done.push(`Already on the board: “${src.title.slice(0, 60)}”`);
+          made.push(existing.id);
+          continue;
+        }
+        made.push(pinItem(src, { near: to, label: pin[3] }));
+        done.push(`Pinned “${src.title.slice(0, 60)}”${toTitle ? ` and tied it to “${toTitle}”` : ''}`);
       }
       continue;
     }
@@ -242,7 +259,7 @@ function runActions(actions: string[], sources: SourceItem[]): string[] {
       if (from && !to) to = make(tie[2]);
       else if (to && !from) from = make(tie[1]);
       if (from && to && from.id !== to.id) {
-        useBoards.getState().addEdges([makeEdge(from.id, to.id, { kind: 'user', label: tie[3]?.trim().slice(0, 40) })]);
+        useBoards.getState().addEdges([makeEdge(from.id, to.id, { kind: 'user', label: shortLabel(tie[3]) })]);
         done.push(`Tied “${from.data.title}” to “${to.data.title}”`);
       }
       continue;
@@ -372,6 +389,15 @@ function runActions(actions: string[], sources: SourceItem[]): string[] {
   const edges = currentBoard().edges;
   const loose = near ? created.filter((id) => !edges.some((e) => e.source === id || e.target === id)) : [];
   if (loose.length) useBoards.getState().addEdges(loose.map((id) => makeEdge(near!, id, { kind: 'user' })));
+  const nearTitle = currentBoard().nodes.find((x) => x.id === near)?.data.title;
+  for (const id of loose) {
+    const t = currentBoard().nodes.find((x) => x.id === id)?.data.title;
+    const i = done.indexOf(`Added a card for “${t}”`);
+    if (i >= 0 && nearTitle) done[i] = `Added a card for “${t}” and tied it to “${nearTitle}”`;
+  }
+  made.push(...created);
+  // Show what was just added, so you can see it landed and where it is tied.
+  if (made.length) setTimeout(() => useUi.getState().focusNodes([...new Set([...made, ...(near ? [near] : [])])], true), 350);
   if (removals.size) {
     // Never empty the board by accident: the first case stays unless it was named on its own.
     useBoards.getState().removeNodes([...removals], `Cleaned up ${removals.size} card${removals.size === 1 ? '' : 's'}`);
@@ -552,6 +578,7 @@ export function ChatPanel() {
           if (ev.type === 'status') u(id, { status: ev.message });
           else if (ev.type === 'sources') u(id, { sources: ev.items });
           else if (ev.type === 'delta') u(id, (c) => ({ content: c.content + ev.text }));
+          else if (ev.type === 'reset') u(id, { content: '', status: 'A backup brain is finishing the answer' });
           else if (ev.type === 'error') u(id, (c) => ({ content: c.content || ev.message, error: !c.content }));
         },
         abort.current.signal,
