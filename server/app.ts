@@ -8,6 +8,7 @@ import { chatResearch } from './chat-research';
 import { galleryFromUrl } from './research';
 import { imageProxy } from './imageproxy';
 import { castOf } from './sources/cast';
+import { suggestLinks, type WeaveCard } from './weave';
 import { runDig } from './dig';
 import { errMsg } from './http';
 import { resolveProviders, streamWithFallback } from './llm';
@@ -193,6 +194,19 @@ app.get('/api/scrape', async (c) => {
     return c.json(await readAnything(url));
   } catch (e) {
     return c.json({ error: errMsg(e) }, 502);
+  }
+});
+
+// "Weave this": strings the AI suggests between cards already on a board.
+app.post('/api/weave', async (c) => {
+  const body = await c.req.json<{ cards?: WeaveCard[]; tied?: [string, string][] }>().catch(() => null);
+  if (!body?.cards?.length) return c.json({ error: 'Bad request' }, 400);
+  if (limited(c, 'chat', 80, 10 * 60_000)) return c.json({ error: 'Too many requests. Try again soon.' }, 429);
+  try {
+    const links = await suggestLinks(body.cards, body.tied ?? [], AbortSignal.timeout(90_000));
+    return c.json({ links });
+  } catch (e) {
+    return c.json({ error: 'Every AI brain is busy right now. Try again in a minute.', detail: errMsg(e) }, 502);
   }
 });
 

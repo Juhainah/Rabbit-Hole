@@ -99,6 +99,13 @@ export const api = {
     return res.json();
   },
 
+  /** Strings the AI suggests between cards on a board. */
+  async weave(cards: { id: string; title: string; text?: string; kind?: string }[], tied: [string, string][]): Promise<{ a: string; b: string; label: string; why: string }[]> {
+    const res = await call('/api/weave', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ cards, tied }) });
+    if (!res.ok) throw new Error(await readError(res));
+    return ((await res.json()) as { links: { a: string; b: string; label: string; why: string }[] }).links;
+  },
+
   /** Who is in a film or series and who they play, from its Wikipedia article. */
   async cast(title: string): Promise<{ title: string; url: string; director: string[]; items: { title: string; image?: string; url?: string; role?: string }[] }> {
     const res = await call(`/api/cast?title=${encodeURIComponent(title)}`);

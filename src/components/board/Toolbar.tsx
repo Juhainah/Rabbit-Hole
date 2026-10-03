@@ -1,5 +1,6 @@
 import clsx from 'clsx';
-import { BoxSelect, CircleHelp, LayoutGrid, Link2, Maximize, Palette, Plus, Search, StickyNote, Tag } from 'lucide-react';
+import { BoxSelect, CircleHelp, LayoutGrid, Link2, Maximize, Palette, Plus, Search, Sparkles, StickyNote, Tag } from 'lucide-react';
+import { WeavePanel } from './WeavePanel';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { EntityType } from '../../../shared/types';
 import { addClue, pinUrl } from '../../lib/dig';
@@ -217,7 +218,7 @@ function AddPanel({ close }: { close: () => void }) {
 }
 
 export function Toolbar() {
-  const [open, setOpen] = useState<'add' | 'link' | 'arrange' | 'theme' | 'find' | null>(null);
+  const [open, setOpen] = useState<'add' | 'link' | 'arrange' | 'theme' | 'find' | 'weave' | null>(null);
   const [link, setLink] = useState('');
   const [find, setFind] = useState('');
   const matches =
@@ -244,6 +245,7 @@ export function Toolbar() {
           <div className="fixed inset-0 z-0" onClick={() => setOpen(null)} />
           <div className="toolbar-panel paper-panel animate-rise absolute bottom-[62px] left-1/2 z-10 min-w-[260px] -translate-x-1/2 rounded-xl p-3">
             {open === 'add' && <AddPanel close={() => setOpen(null)} />}
+            {open === 'weave' && <WeavePanel close={() => setOpen(null)} />}
             {open === 'link' && (
               <form
                 onSubmit={(e) => {
@@ -352,6 +354,7 @@ export function Toolbar() {
         <Tool icon={<CircleHelp size={19} />} label="Question" onClick={() => addClue('question', { title: 'Why…?' }, { near: selected })} />
         <Tool icon={<Link2 size={19} />} label="Pin a link" onClick={() => toggle('link')} active={open === 'link'} />
         <span className="mx-1 h-6 w-px shrink-0 bg-ink/15" />
+        <Tool icon={<Sparkles size={19} />} label="Weave this: suggest strings" onClick={() => toggle('weave')} active={open === 'weave'} />
         <Tool icon={<BoxSelect size={19} />} label={selecting ? 'Select many: on (drag a box)' : 'Select many'} onClick={() => useUi.getState().set({ selecting: !selecting })} active={!!selecting} />
         <Tool icon={<Search size={18} />} label="Find on board" onClick={() => toggle('find')} active={open === 'find'} />
         <Tool icon={<LayoutGrid size={19} />} label="Arrange" onClick={() => toggle('arrange')} active={open === 'arrange'} />

@@ -1608,6 +1608,36 @@ button {
   color: var(--color-ink);
 }
 
+.weave-panel {
+  width: min(460px, calc(100vw - 32px));
+}
+.weave-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 8px;
+  border-radius: 8px;
+  background: rgba(255, 253, 247, 0.9);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+}
+.weave-yes,
+.weave-no {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+}
+.weave-yes {
+  background: #2f7a3d;
+  color: #fff;
+}
+.weave-no {
+  background: rgba(31, 27, 22, 0.08);
+  color: #6b5d4f;
+}
+
 /* The start card: dig, or build your own. */
 .start-choice {
   padding: 12px 14px 14px;
