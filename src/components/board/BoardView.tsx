@@ -203,8 +203,12 @@ function Board() {
   }, []);
   const onConnectString = useCallback<OnConnect>(
     (c) => {
+      const before = new Set(useBoards.getState().boards[useBoards.getState().currentId]?.edges.map((e) => e.id));
       onConnect(c);
       play('string');
+      // The string you just drew asks for its label ("romantic partner", "paid by"…); Enter skips it.
+      const made = currentBoard().edges.find((e) => !before.has(e.id));
+      if (made) useUi.getState().set({ labelEdit: made.id, selectedEdgeId: made.id });
     },
     [onConnect],
   );

@@ -23,7 +23,7 @@ export function tie(a: string, b: string, label?: string) {
   useBoards.getState().snapshot(`Tied “${titleOf(a)}” to “${titleOf(b)}”`);
   useBoards.getState().addEdges([edge]);
   play('string');
-  useUi.getState().set({ toast: { text: `Tied to “${titleOf(b)}”. Click the string to label it.`, at: Date.now(), undo: true } });
+  useUi.getState().set({ toast: { text: `Tied to “${titleOf(b)}”. Type a label for the string, or press Enter to skip.`, at: Date.now(), undo: true }, labelEdit: edge.id, selectedEdgeId: edge.id });
   return edge.id;
 }
 

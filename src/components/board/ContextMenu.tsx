@@ -127,6 +127,14 @@ export function ContextMenu() {
                   {st.label}
                 </button>
               ))}
+              {node.data.stamp && (
+                <button
+                  onClick={() => { s.snapshot(`Removed the stamp from “${node.data.title}”`); s.updateNode(node.id, { stamp: undefined }); }}
+                  className="chip !px-2 !py-0.5 !text-[11px]"
+                >
+                  ✕ Remove stamp
+                </button>
+              )}
             </div>
             <Heading>Colour band</Heading>
             <div className="flex items-center gap-1.5 px-2.5 pb-2">

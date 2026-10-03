@@ -2,6 +2,7 @@ import clsx from 'clsx';
 import { BoxSelect, CircleHelp, LayoutGrid, Link2, Maximize, Palette, Plus, Search, Sparkles, StickyNote, Tag } from 'lucide-react';
 import { WeavePanel } from './WeavePanel';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { openTiePicker } from '../../lib/tie';
 import type { EntityType } from '../../../shared/types';
 import { addClue, pinUrl } from '../../lib/dig';
 import { addFiles, addNamedCard, addPlace } from '../../lib/evidence';
@@ -162,6 +163,19 @@ function AddPanel({ close }: { close: () => void }) {
             <button className="add-tile" onClick={simple(() => addClue('question', { title: 'Why…?' }, spot()))}>
               <span className="text-[19px]">❓</span>Question
             </button>
+            <button
+              className="add-tile"
+              onClick={simple(() => {
+                const from = useUi.getState().selectedNodeId;
+                if (from) openTiePicker(from);
+                else useUi.getState().set({ toast: { text: 'Pick the card the string starts from, then press String again. Or drag from one card\'s pin to another.', at: Date.now() } });
+              })}
+            >
+              <span className="text-[19px]">🧶</span>String
+            </button>
+            <button className="add-tile" onClick={simple(() => addClue('label', { title: '' }, spot()))}>
+              <span className="text-[19px]">🏷</span>Label
+            </button>
             <button className="add-tile" onClick={simple(() => addClue('note', { color: '#f7de6b' }, spot()))}>
               <span className="text-[19px]">🗒</span>Sticky note
             </button>
@@ -237,12 +251,28 @@ export function Toolbar() {
   useEffect(() => {
     if (addMenuAt) setOpen('add');
   }, [addMenuAt]);
+  const bar = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const away = (e: PointerEvent) => {
+      const t = e.target as Element | null;
+      // A file picker or the card menu opened from the panel is still "inside".
+      if (!t || bar.current?.contains(t) || t.closest('.paper-panel.fixed')) return;
+      setOpen(null);
+    };
+    const esc = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(null);
+    document.addEventListener('pointerdown', away, true);
+    window.addEventListener('keydown', esc);
+    return () => {
+      document.removeEventListener('pointerdown', away, true);
+      window.removeEventListener('keydown', esc);
+    };
+  }, [open]);
 
   return (
-    <div className="board-toolbar absolute bottom-7 left-1/2 z-20 -translate-x-1/2">
+    <div ref={bar} className="board-toolbar absolute bottom-7 left-1/2 z-20 -translate-x-1/2">
       {open && (
         <>
-          <div className="fixed inset-0 z-0" onClick={() => setOpen(null)} />
           <div className="toolbar-panel paper-panel animate-rise absolute bottom-[62px] left-1/2 z-10 min-w-[260px] -translate-x-1/2 rounded-xl p-3">
             {open === 'add' && <AddPanel close={() => setOpen(null)} />}
             {open === 'weave' && <WeavePanel close={() => setOpen(null)} />}
