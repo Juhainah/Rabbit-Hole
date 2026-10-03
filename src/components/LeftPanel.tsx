@@ -1,5 +1,5 @@
 import clsx from 'clsx';
-import { ChevronsLeft, ChevronsRight, CircleHelp, FolderOpen, Plus, Trash2 } from 'lucide-react';
+import { ChevronsLeft, ChevronsRight, CircleHelp, FolderOpen, Plus, Trash2, Pin as PinIcon } from 'lucide-react';
 import { useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { TYPE_COLORS, TYPE_LABEL } from '../lib/utils';
@@ -8,6 +8,7 @@ import { useSettings } from '../store/settings';
 import { useUi } from '../store/ui';
 import type { ClueType, TrailStep } from '../types';
 import { openEmojiPicker } from './EmojiPicker';
+import { confirmAsk } from './Dialog';
 import { ResizeHandle } from './ResizeHandle';
 
 const NO_TRAIL: TrailStep[] = [];
@@ -23,10 +24,14 @@ function Boards() {
   // One short string per board, so this list ignores card drags and dig updates.
   const rows = useBoards(
     useShallow((s) =>
-      s.order.map((id) => {
-        const b = s.boards[id];
-        return b ? `${id}\u0000${b.emoji}\u0000${b.name}\u0000${b.nodes.length}\u0000${b.trail.length}` : '';
-      }),
+      // Pinned boards first, then the one you worked on most recently.
+      [...s.order]
+        .filter((id) => s.boards[id])
+        .sort((a, b) => Number(!!s.boards[b].pinned) - Number(!!s.boards[a].pinned) || s.boards[b].updatedAt - s.boards[a].updatedAt)
+        .map((id) => {
+          const b = s.boards[id];
+          return `${id}\u0000${b.emoji}\u0000${b.name}\u0000${b.nodes.length}\u0000${b.trail.length}\u0000${b.pinned ? 1 : ''}`;
+        }),
     ),
   );
   const currentId = useBoards((s) => s.currentId);
@@ -46,7 +51,7 @@ function Boards() {
       </div>
       <div className="mt-2 grid grid-cols-1 gap-1">
         {rows.map((row) => {
-          const [id, emoji, name, clues, digs] = row.split('\u0000');
+          const [id, emoji, name, clues, digs, pinned] = row.split('\u0000');
           if (!id) return null;
           const on = id === currentId;
           return (
@@ -96,7 +101,18 @@ function Boards() {
               <button
                 onClick={(e) => {
                   e.stopPropagation();
-                  if (confirm(`Delete the board “${name}”? This can't be undone.`)) deleteBoard(id);
+                  useBoards.getState().togglePinBoard(id);
+                }}
+                className={clsx('rounded p-1 transition hover:bg-ink/10', pinned ? 'text-[#c8322f] opacity-100' : 'text-ink-soft opacity-0 group-hover:opacity-100')}
+                title={pinned ? 'Unpin' : 'Pin to the top'}
+                aria-label={pinned ? 'Unpin board' : 'Pin board'}
+              >
+                <PinIcon size={13} fill={pinned ? 'currentColor' : 'none'} />
+              </button>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void confirmAsk(`Delete “${name}”?`, 'The board and everything on it will be gone. This can\'t be undone.', { ok: 'Delete', danger: true }).then((ok) => ok && deleteBoard(id));
                 }}
                 className="rounded p-1 text-ink-soft opacity-0 transition hover:bg-ink/10 hover:text-[#b3261e] group-hover:opacity-100"
                 title="Delete board"

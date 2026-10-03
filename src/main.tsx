@@ -5,11 +5,17 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import './index.css';
 import './lib/errors';
 import { installTextures } from './lib/textures';
+import { reloadForUpdate } from './lib/stale';
 import { useBoards } from './store/boards';
 import { useSettings } from './store/settings';
 import { useUi } from './store/ui';
 
 installTextures();
+
+// A new version went live while this tab was open: load it rather than break.
+window.addEventListener('vite:preloadError', (e) => {
+  if (reloadForUpdate()) e.preventDefault();
+});
 
 // Dev-only handle for automated checks (never in production builds).
 if (import.meta.env.DEV) Object.assign(window, { __rh: { useBoards, useUi, useSettings } });

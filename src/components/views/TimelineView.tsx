@@ -147,7 +147,7 @@ export function TimelineView() {
               {withSources ? 'Hide' : 'Show'} when sources came out ({hiddenSources})
             </button>
           )}
-          {cases.length > 0 && (
+          {(
             <button className={clsx('chip', adding && 'on')} onClick={() => setAdding((v) => !v)} title="Add something that happened">
               <Plus size={12} /> Add a moment
             </button>
@@ -226,11 +226,12 @@ export function TimelineView() {
 function AddMoment({ cases, defaultCase, onDone }: { cases: { id: string; title: string }[]; defaultCase?: string; onDone: () => void }) {
   const [date, setDate] = useState('');
   const [event, setEvent] = useState('');
-  const [clusterId, setClusterId] = useState(defaultCase ?? cases[0]?.id);
-  const valid = yearOf(date) != null && event.trim().length > 2 && !!clusterId;
+  // A board built by hand has no case files: its moments belong to the board itself.
+  const [clusterId, setClusterId] = useState(defaultCase ?? cases[0]?.id ?? '');
+  const valid = yearOf(date) != null && event.trim().length > 2;
   const save = () => {
     if (!valid) return;
-    useBoards.getState().addTimeline([{ id: nanoid(6), date: date.trim(), event: event.trim().slice(0, 200), clusterId: clusterId! }]);
+    useBoards.getState().addTimeline([{ id: nanoid(6), date: date.trim(), event: event.trim().slice(0, 200), clusterId }]);
     setDate('');
     setEvent('');
     onDone();

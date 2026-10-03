@@ -48,14 +48,15 @@ function move(positions: Map<string, { x: number; y: number }>, label: string) {
   }, 750);
 }
 
-function Tool({ icon, label, onClick, active, primary }: { icon: ReactNode; label: string; onClick: () => void; active?: boolean; primary?: boolean }) {
+function Tool({ icon, label, onClick, active, primary, wide }: { icon: ReactNode; label: string; onClick: () => void; active?: boolean; primary?: boolean; /** Only on wider screens (phones reach it through the + menu). */ wide?: boolean }) {
   return (
     <button
       onClick={onClick}
       title={label}
       aria-label={label}
       className={clsx(
-        'group relative grid size-10 shrink-0 place-items-center rounded-xl transition hover:-translate-y-1 hover:rotate-[-4deg]',
+        'group relative size-10 shrink-0 place-items-center rounded-xl transition hover:-translate-y-1 hover:rotate-[-4deg]',
+        wide ? 'hidden md:grid' : 'grid',
         primary ? 'bg-[#c8322f] text-white shadow-md hover:bg-[#b02a27]' : 'text-ink hover:bg-paper-2',
         active && !primary && 'bg-paper-2',
       )}
@@ -378,10 +379,10 @@ export function Toolbar() {
       )}
       <div className="toolbar-row paper-panel relative z-10 flex items-center gap-0.5 rounded-2xl px-2 py-1.5">
         <Tool icon={<Plus size={20} />} label="Add a card, photo or file" onClick={() => toggle('add')} active={open === 'add'} primary />
-        <span className="mx-1 h-6 w-px shrink-0 bg-ink/15" />
-        <Tool icon={<StickyNote size={19} />} label="Sticky note" onClick={() => addClue('note', { color: '#f7de6b' }, { near: selected })} />
-        <Tool icon={<Tag size={19} />} label="Scrap label" onClick={() => addClue('label', { title: '' }, { near: selected })} />
-        <Tool icon={<CircleHelp size={19} />} label="Question" onClick={() => addClue('question', { title: 'Why…?' }, { near: selected })} />
+        <span className="mx-1 hidden h-6 w-px shrink-0 bg-ink/15 md:block" />
+        <Tool icon={<StickyNote size={19} />} label="Sticky note" wide onClick={() => addClue('note', { color: '#f7de6b' }, { near: selected })} />
+        <Tool icon={<Tag size={19} />} label="Scrap label" wide onClick={() => addClue('label', { title: '' }, { near: selected })} />
+        <Tool icon={<CircleHelp size={19} />} label="Question" wide onClick={() => addClue('question', { title: 'Why…?' }, { near: selected })} />
         <Tool icon={<Link2 size={19} />} label="Pin a link" onClick={() => toggle('link')} active={open === 'link'} />
         <span className="mx-1 h-6 w-px shrink-0 bg-ink/15" />
         <Tool icon={<Sparkles size={19} />} label="Weave this: suggest strings" onClick={() => toggle('weave')} active={open === 'weave'} />

@@ -132,4 +132,6 @@ export interface Board {
   trail: TrailStep[];
   chat: ChatEntry[];
   caseCounter: number;
+  /** Kept at the top of your boards. */
+  pinned?: boolean;
 }

@@ -131,8 +131,8 @@ export function GraphView() {
         onNodeClick={(n) => {
           const id = String(n.id);
           const now = Date.now();
-          if (lastClick.current?.id === id && now - lastClick.current.at < 350) useUi.getState().focusNodes([id]);
-          else useUi.getState().select(id);
+          // A click opens the card on the board, zoomed in.
+          useUi.getState().focusNodes([id]);
           lastClick.current = { id, at: now };
         }}
         onBackgroundClick={() => useUi.getState().select()}
@@ -145,7 +145,7 @@ export function GraphView() {
             {ENTITY_LABEL[t]}
           </div>
         ))}
-        <div className="mt-1.5 text-white/40">click to inspect · double-click to open on board</div>
+        <div className="mt-1.5 text-white/40">click a dot to see that card on the board</div>
       </div>
       {!board.nodes.length && <div className="absolute inset-0 grid place-items-center font-hand text-[26px] text-white/50">Nothing connected yet. Start a dig.</div>}
     </div>

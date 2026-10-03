@@ -87,7 +87,7 @@ function useTouchHold(id: string) {
   };
 }
 
-/** A card's text you can write on: double-click it, or press "Add details" on an empty card. */
+/** A card's text you can write on: "Edit" when the card is picked, or "Add details" on an empty card. */
 function CardText({ id, text, className }: { id: string; text?: string; className: string }) {
   const [editing, setEditing] = useState(false);
   const update = useBoards((s) => s.updateNode);
@@ -124,9 +124,19 @@ function CardText({ id, text, className }: { id: string; text?: string; classNam
     );
   }
   return (
-    <p className={className} onDoubleClick={(e) => { e.stopPropagation(); setEditing(true); }} title="Double-click to edit">
-      {text}
-    </p>
+    <div className="card-text-wrap">
+      <p className={className}>{text}</p>
+      <button
+        className="card-edit nodrag"
+        title="Edit this text"
+        onClick={(e) => {
+          e.stopPropagation();
+          setEditing(true);
+        }}
+      >
+        ✎ Edit
+      </button>
+    </div>
   );
 }
 

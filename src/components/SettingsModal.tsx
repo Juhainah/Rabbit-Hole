@@ -9,6 +9,7 @@ import { useUi } from '../store/ui';
 import type { Board } from '../types';
 import { THEMES } from './board/Toolbar';
 import { Glyph } from './SourceBadge';
+import { confirmAsk, tell } from './Dialog';
 import { signOut, useAuth } from '../lib/auth';
 
 function Toggle({ on, onChange, label, hint }: { on: boolean; onChange: (v: boolean) => void; label: string; hint?: string }) {
@@ -169,7 +170,7 @@ function DataTab() {
                 useBoards.getState().importBoard(b);
                 useUi.getState().set({ settingsOpen: false });
               } catch {
-                alert('That file is not a Rabbit Hole board.');
+                void tell('That file isn\'t a board', 'Choose a .json file saved from Rabbit Hole with Export.');
               }
             }}
           />
@@ -178,7 +179,7 @@ function DataTab() {
       </Section>
       <Section title="Start over">
         <button
-          onClick={() => confirm(`Clear every clue from “${board.name}”?`) && useBoards.getState().clearBoard()}
+          onClick={() => void confirmAsk(`Clear “${board.name}”?`, 'Every card, string and moment on this board is taken off. Ctrl+Z brings them back.', { ok: 'Clear the board', danger: true }).then((ok) => ok && useBoards.getState().clearBoard())}
           className="rounded-md px-3 py-1.5 text-[13px] text-[#b3261e] ring-1 ring-[#b3261e]/30 hover:bg-[#b3261e]/10"
         >
           Clear this board
@@ -225,11 +226,11 @@ export function SettingsModal() {
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/55 p-6 backdrop-blur-[2px]" onClick={() => set({ settingsOpen: false })}>
       <div onClick={(e) => e.stopPropagation()} className="paper-panel animate-rise flex max-h-[86vh] w-[min(760px,96vw)] flex-col overflow-hidden rounded-xl rotate-[-0.3deg]">
-        <div className="flex items-center gap-4 border-b border-ink/10 px-6 pt-5 pb-3">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-ink/10 px-4 pt-4 pb-3 md:px-6 md:pt-5">
           <div className="font-hand text-[30px] leading-none">Customize</div>
-          <div className="flex gap-1">
+          <div className="order-3 flex w-full gap-1 overflow-x-auto md:order-none md:w-auto">
             {TABS.map((t) => (
-              <button key={t.id} onClick={() => set({ settingsTab: t.id as typeof tab })} className={clsx('chip', (tab === t.id || (tab === 'ai' && t.id === 'board')) && 'on')}>
+              <button key={t.id} onClick={() => set({ settingsTab: t.id as typeof tab })} className={clsx('chip shrink-0 whitespace-nowrap', (tab === t.id || (tab === 'ai' && t.id === 'board')) && 'on')}>
                 {t.label}
               </button>
             ))}
@@ -239,7 +240,7 @@ export function SettingsModal() {
             <X size={18} />
           </button>
         </div>
-        <div className="overflow-y-auto px-6 py-5">
+        <div className="overflow-y-auto px-4 py-4 md:px-6 md:py-5">
           <Active />
         </div>
       </div>

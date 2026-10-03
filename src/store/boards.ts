@@ -76,6 +76,7 @@ interface BoardsState {
   deleteBoard: (id: string) => void;
   renameBoard: (id: string, name: string) => void;
   setEmoji: (id: string, emoji: string) => void;
+  togglePinBoard: (id: string) => void;
   setCurrent: (id: string) => void;
   importBoard: (board: Board) => void;
   clearBoard: () => void;
@@ -117,6 +118,9 @@ export function settleBoard(b: Board): Board {
   const ids = new Set((b.nodes ?? []).map((n) => n.id));
   return {
     ...b,
+    // A board saved without its name (an old sync bug) still shows as a board.
+    name: b.name || 'Untitled board',
+    emoji: b.emoji || '🗂️',
     chat: (b.chat ?? []).map((c) =>
       c.pending ? { ...c, pending: false, error: !c.content, content: c.content || 'Interrupted before it finished. Try again.' } : c,
     ),
@@ -204,6 +208,7 @@ export const useBoards = create<BoardsState>()(
           }),
         renameBoard: (id, name) =>
           set((s) => (s.boards[id] ? { boards: { ...s.boards, [id]: { ...s.boards[id], name, updatedAt: Date.now() } } } : s)),
+        togglePinBoard: (id) => set((s) => (s.boards[id] ? { boards: { ...s.boards, [id]: { ...s.boards[id], pinned: !s.boards[id].pinned, updatedAt: Date.now() } } } : s)),
         setEmoji: (id, emoji) => set((s) => (s.boards[id] ? { boards: { ...s.boards, [id]: { ...s.boards[id], emoji, updatedAt: Date.now() } } } : s)),
         setCurrent: (id) => set({ currentId: id }),
         importBoard: (board) =>
@@ -316,8 +321,19 @@ export const useBoards = create<BoardsState>()(
       onRehydrateStorage: () => (state) => {
         if (state) {
           const boards: Record<string, Board> = {};
-          for (const [id, b] of Object.entries(state.boards)) boards[id] = settleBoard(b);
-          useBoards.setState({ boards, hydrated: true });
+          for (const [id, b] of Object.entries(state.boards)) {
+            // Leftovers of deleted boards (no name, nothing on them) are dropped.
+            if (!b || (!b.name && !b.nodes?.length)) continue;
+            boards[id] = settleBoard(b);
+          }
+          const order = state.order.filter((id) => boards[id]);
+          for (const id of Object.keys(boards)) if (!order.includes(id)) order.push(id);
+          if (!order.length) {
+            const b = newBoard('My first rabbit hole');
+            boards[b.id] = b;
+            order.push(b.id);
+          }
+          useBoards.setState({ boards, order, currentId: boards[state.currentId] ? state.currentId : order[0], hydrated: true });
           return;
         }
         useBoards.setState({ hydrated: true });

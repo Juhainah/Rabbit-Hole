@@ -73,7 +73,7 @@ export function startFromTemplate(id: string) {
   const t = TEMPLATES.find((x) => x.id === id);
   const c: Point = viewportCenter();
   if (!t) {
-    useUi.getState().set({ addMenuAt: Date.now(), building: useBoards.getState().currentId });
+    useUi.getState().set({ building: useBoards.getState().currentId });
     return;
   }
   const nodes: ClueNode[] = [];
@@ -90,6 +90,5 @@ export function startFromTemplate(id: string) {
   store.addNodes(nodes);
   setTimeout(() => {
     void flow()?.fitView({ duration: 600, padding: 0.12 });
-    useUi.getState().set({ addMenuAt: Date.now() });
   }, 120);
 }

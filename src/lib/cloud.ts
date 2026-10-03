@@ -96,9 +96,14 @@ function pull(): Promise<void> {
     const want = [...remote.values()].filter((r) => !r.deleted && (!local[r.id] || r.updated_at > local[r.id].updatedAt)).map((r) => r.id);
     const fetched: Board[] = [];
     for (let i = 0; i < want.length; i += 15) {
-      const { data, error: e } = await sb.from('boards').select('id,data').in('id', want.slice(i, i + 15));
+      const { data, error: e } = await sb.from('boards').select('id,data,deleted,name,emoji').in('id', want.slice(i, i + 15));
       if (e) return failed(e);
-      for (const row of data) fetched.push(settleBoard({ ...(row.data as Board), id: row.id as string }));
+      for (const row of data) {
+        const b = row.data as Board | null;
+        // Deleted meanwhile (its row now holds an empty marker): not a board to bring back.
+        if (row.deleted || !b || !Array.isArray(b.nodes)) continue;
+        fetched.push(settleBoard({ ...b, name: b.name || (row.name as string), emoji: b.emoji || (row.emoji as string), id: row.id as string }));
+      }
     }
     const gone = [...remote.values()].filter((r) => r.deleted && local[r.id] && owners[r.id] === uid && local[r.id].updatedAt <= r.updated_at).map((r) => r.id);
 

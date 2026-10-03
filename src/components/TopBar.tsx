@@ -6,6 +6,8 @@ import { useShallow } from 'zustand/react/shallow';
 import { useBoards } from '../store/boards';
 import { useUi, type View } from '../store/ui';
 import { newBoard } from './LeftPanel';
+import { askText } from './Dialog';
+import { ProfileButton } from './ProfileButton';
 import { CloudStatus } from './ShareModal';
 
 export function Logo() {
@@ -163,9 +165,8 @@ function BoardSwitcher() {
             <div className="my-1 h-px bg-ink/10" />
             <button
               onClick={() => {
-                const name = prompt('Rename this board', current[2]);
-                if (name?.trim()) useBoards.getState().renameBoard(currentId, name.trim());
                 setOpen(false);
+                void askText('Rename this board', current[2]).then((name) => name?.trim() && useBoards.getState().renameBoard(currentId, name.trim()));
               }}
               className="w-full rounded-md px-2.5 py-1.5 text-left text-[13px] text-ink-soft hover:bg-paper-2"
             >
@@ -216,6 +217,7 @@ export function TopBar() {
       <button onClick={() => set({ settingsOpen: true })} className="rounded-lg p-2 text-paper/60 hover:bg-white/5 hover:text-paper" title="Customize">
         <Settings2 size={18} />
       </button>
+      <ProfileButton />
     </header>
   );
 }

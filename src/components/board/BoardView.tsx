@@ -150,7 +150,18 @@ function Board() {
   // Fly the camera to whatever a dig or the sidebar asked to see.
   useEffect(() => {
     if (!focusRequest?.ids.length) return;
-    const t = setTimeout(() => {
+    // Coming from another view the board has just mounted: wait until the cards are measured.
+    let tries = 0;
+    let t: ReturnType<typeof setTimeout>;
+    const ready = () => focusRequest.ids.every((id) => rf.getInternalNode(id)?.measured?.width);
+    const go = () => {
+      if (!ready() && tries++ < 20) {
+        t = setTimeout(go, 60);
+        return;
+      }
+      fly();
+    };
+    const fly = () => {
       // A soft focus (the spotlight) leaves the camera alone when everything is already in view.
       if (focusRequest.soft && wrap.current) {
         const b = rf.getNodesBounds(focusRequest.ids);
@@ -160,13 +171,18 @@ function Board() {
         if (b.x >= tl.x && b.y >= tl.y && b.x + b.width <= br.x && b.y + b.height <= br.y) return;
       }
       void rf.fitView({ nodes: focusRequest.ids.map((id) => ({ id })), duration: 520, padding: 0.18, maxZoom: 0.95 });
-    }, 40);
+      if (focusRequest.ids.length === 1 && !focusRequest.soft) useUi.getState().select(focusRequest.ids[0]);
+    };
+    t = setTimeout(go, 40);
     return () => clearTimeout(t);
   }, [focusRequest, rf]);
 
   // A different board: frame whatever is on it instead of keeping the old camera.
   const currentId = useBoards((s) => s.currentId);
   useEffect(() => {
+    // Arriving here to look at one card (from the Web, Timeline or Map view): that card wins.
+    const asked = useUi.getState().focusRequest;
+    if (asked && Date.now() - asked.at < 1500) return;
     const t = setTimeout(() => void rf.fitView({ padding: 0.15, duration: 500, maxZoom: 0.9 }), 120);
     return () => clearTimeout(t);
   }, [currentId, rf]);
@@ -315,8 +331,6 @@ function Board() {
         onMoveEnd={onMoveEnd}
         minZoom={0.04}
         maxZoom={2.5}
-        fitView
-        fitViewOptions={FIT_OPTIONS}
         deleteKeyCode={DELETE_KEYS}
         elevateNodesOnSelect
         proOptions={PRO_OPTIONS}

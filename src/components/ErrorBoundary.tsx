@@ -1,6 +1,7 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
 import { reportError } from '../lib/errors';
 import { useBoards } from '../store/boards';
+import { isStaleChunk, reloadForUpdate } from '../lib/stale';
 import { useUi } from '../store/ui';
 
 /** If part of the page crashes, say so and offer a way back, instead of a blank screen. */
@@ -12,6 +13,8 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, { error: E
   }
 
   componentDidCatch(error: Error, info: ErrorInfo) {
+    // The app was updated while this tab was open: load the new version instead of showing an error.
+    if (isStaleChunk(error.message) && reloadForUpdate()) return;
     reportError(error.message, `${error.stack ?? ''}\n--- component ---${info.componentStack ?? ''}`);
   }
 

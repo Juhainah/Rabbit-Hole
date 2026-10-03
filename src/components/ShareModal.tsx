@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom';
 import { shareBoard, sharedLink, stopSharing, useCloud } from '../lib/cloud';
 import { downloadBoardPicture } from '../lib/snapshot';
 import { useBoards } from '../store/boards';
+import { askText } from './Dialog';
 import { useUi } from '../store/ui';
 
 const NOTES = {
@@ -99,7 +100,7 @@ function ShareModal({ onClose }: { onClose: () => void }) {
     try {
       await navigator.clipboard.writeText(link);
     } catch {
-      prompt('Copy this link', link);
+      void askText('Copy this link', link, 'Done');
     }
     setCopied(true);
     useUi.getState().set({ toast: { text: 'Link copied', at: Date.now() } });

@@ -1595,6 +1595,27 @@ button {
   resize: vertical;
   outline: none;
 }
+.card-text-wrap {
+  position: relative;
+}
+.card-edit {
+  position: absolute;
+  right: -4px;
+  bottom: -6px;
+  padding: 1px 7px;
+  border-radius: 6px;
+  background: rgba(255, 253, 247, 0.95);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  font: 500 11px/1.5 var(--font-ui);
+  color: #6b5d4f;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s;
+}
+.clue.is-selected .card-edit {
+  opacity: 1;
+  pointer-events: auto;
+}
 .card-add-details {
   margin-top: 10px;
   padding: 4px 10px;
@@ -1801,8 +1822,18 @@ button {
   .board-toolbar > .toolbar-row {
     width: 100%;
   }
+  /* Above the board toolbar, which sits above the bottom bar. */
   .toast {
-    bottom: 84px;
+    bottom: calc(132px + env(safe-area-inset-bottom, 0px));
+  }
+  .weave-panel {
+    width: 100%;
+  }
+  /* Phones zoom into any text box under 16px when you tap it; 16px keeps the page still. */
+  input:not([type=checkbox]):not([type=radio]):not([type=range]),
+  textarea,
+  select {
+    font-size: 16px !important;
   }
   .board-toolbar > .paper-panel {
     overflow-x: auto;

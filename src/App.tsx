@@ -21,6 +21,7 @@ const MapView = lazy(() => import('./components/views/MapView').then((m) => ({ d
 const TimelineView = lazy(() => import('./components/views/TimelineView').then((m) => ({ default: m.TimelineView })));
 import { addClue } from './lib/dig';
 import { useBoards } from './store/boards';
+import { Dialog } from './components/Dialog';
 import { useUi } from './store/ui';
 
 const typing = (el: EventTarget | null) => el instanceof HTMLElement && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName));
@@ -121,6 +122,7 @@ function Desk() {
       )}
       {phone && <MobileNav />}
       <SettingsModal />
+      <Dialog />
       <HelpModal />
       <Toast />
       <EmojiPicker />

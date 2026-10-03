@@ -1,4 +1,5 @@
-import { ArrowLeft, Dices, FolderPlus, Hammer, Search, Trash2 } from 'lucide-react';
+import clsx from 'clsx';
+import { ArrowLeft, Dices, FolderPlus, Hammer, Pin, Search, Trash2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { buildNewCase, digNewCase } from '../lib/home';
 import { TEMPLATES } from '../lib/templates';
@@ -18,6 +19,7 @@ interface FileSummary {
   photo?: string;
   depth: number;
   updatedAt: number;
+  pinned?: boolean;
 }
 
 function summarize(b: Board, no: number): FileSummary {
@@ -33,6 +35,7 @@ function summarize(b: Board, no: number): FileSummary {
     photo,
     depth: Math.max(0, ...topics.map((t) => t.data.depth ?? 0)),
     updatedAt: b.updatedAt,
+    pinned: b.pinned,
   };
 }
 
@@ -60,7 +63,14 @@ export function CaseFiles() {
   const [topic, setTopic] = useState('');
   const hasOpenBoard = (boards[currentId]?.nodes.length ?? 0) > 0;
 
-  const files = useMemo(() => order.map((id, i) => (boards[id] ? summarize(boards[id], order.length - i) : null)).filter((f): f is FileSummary => !!f), [order, boards]);
+  const files = useMemo(
+    () =>
+      order
+        .map((id, i) => (boards[id] ? summarize(boards[id], order.length - i) : null))
+        .filter((f): f is FileSummary => !!f)
+        .sort((a, b) => Number(!!b.pinned) - Number(!!a.pinned) || b.updatedAt - a.updatedAt),
+    [order, boards],
+  );
   const needle = q.trim().toLowerCase();
   const shown = needle ? files.filter((f) => [f.name, ...f.cases].some((s) => s.toLowerCase().includes(needle))) : files;
 
@@ -230,6 +240,17 @@ function Folder({ f, current }: { f: FileSummary; current: boolean }) {
           {/* The shred button lives on the meta line, so it never lands on the label or stamp. */}
           <span className="flex items-center gap-1.5">
             {ago(f.updatedAt)}
+            <button
+              className={clsx('cfile-trash', f.pinned && '!text-[#c8322f] !opacity-100')}
+              title={f.pinned ? 'Unpin' : 'Pin to the top'}
+              aria-label={f.pinned ? `Unpin ${f.name}` : `Pin ${f.name}`}
+              onClick={(e) => {
+                e.stopPropagation();
+                useBoards.getState().togglePinBoard(f.id);
+              }}
+            >
+              <Pin size={14} fill={f.pinned ? 'currentColor' : 'none'} />
+            </button>
             <button
               className="cfile-trash"
               title="Shred this file"
