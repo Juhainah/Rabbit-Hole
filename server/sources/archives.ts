@@ -92,15 +92,26 @@ const periodLabel = (p: string) => (p.length === 6 ? `${MONTHS[Number(p.slice(4)
  * Pictures the Wayback Machine saved from a site. Asked for a month with none,
  * it widens to the year, then to any time, and says which period it found.
  */
-export async function waybackImages(site: string, period: string | undefined, limit: number, signal?: AbortSignal): Promise<SourceItem[]> {
+/**
+ * Pictures the Wayback Machine saved from a site. With `words` ("war", "military"), pictures filed
+ * under matching paths come first (a site's war section, not its front page).
+ */
+export async function waybackImages(site: string, period: string | undefined, limit: number, signal?: AbortSignal, words: string[] = []): Promise<SourceItem[]> {
+  const topic = [...new Set(words.map((w) => w.toLowerCase().replace(/[^a-z0-9]/g, '')).filter((w) => w.length >= 3))].slice(0, 6);
+  // Whole words in the path ("/war/", "-war-"), not inside others ("warhol").
+  const pathFilter = topic.length ? `&filter=original:(?i).*[^a-z](${topic.join('|')})[^a-z].*` : '';
   // A month with nothing widens to its year; a year you asked for is never swapped for another.
   const periods = period ? [period, ...(period.length === 6 ? [period.slice(0, 4)] : [])] : [''];
   for (const p of [...new Set(periods)]) {
     const range = p ? `&from=${p}&to=${p}` : '';
-    const rows = await getJson<string[][]>(
-      `https://web.archive.org/cdx/search/cdx?url=${enc(site)}&matchType=domain${range}&output=json&fl=timestamp,original,length&filter=statuscode:200&filter=mimetype:image/.*&collapse=urlkey&limit=300`,
-      { signal, timeout: 25000 },
-    ).catch(() => [] as string[][]);
+    const cdx = (extra: string) =>
+      getJson<string[][]>(
+        `https://web.archive.org/cdx/search/cdx?url=${enc(site)}&matchType=domain${range}&output=json&fl=timestamp,original,length&filter=statuscode:200&filter=mimetype:image/.*${extra}&collapse=urlkey&limit=300`,
+        { signal, timeout: 25000 },
+      ).catch(() => [] as string[][]);
+    // The topic's own pages first; the whole site only if none match.
+    let rows = pathFilter ? await cdx(pathFilter) : [];
+    if (rows.length < 2) rows = await cdx('');
     // Skip spacers, buttons and icons: real pictures are a few kilobytes at least.
     const pics = rows.slice(1).filter(([, original, length]) => Number(length) > 6000 && !/(spacer|pixel|blank|button|icon|logo|banner|bullet|arrow|counter)/i.test(original));
     if (!pics.length) continue;

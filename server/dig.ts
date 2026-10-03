@@ -13,6 +13,7 @@ import { archiveMedia, siteIn, waybackImages } from './sources/archives';
 import { nameMatcher, norm as nameKey, tokenize } from '../shared/names';
 import { enrichEntities, wikiPrimary } from './sources/knowledge';
 import { castOf, isScreenWork } from './sources/cast';
+import { needsLooking, vetPictures } from './vision';
 
 export type Emit = (ev: DigEvent) => void;
 
@@ -171,6 +172,23 @@ export async function runDig(req: DigRequest, emit: Emit, signal: AbortSignal) {
     u = await understand(asked, scout, signal, caseQuery);
     if (process.env.RH_DEBUG) console.log('[understand]', JSON.stringify(u));
   }
+  if (u && caseQuery) {
+    // The card's name with the spelling fixed, word by word.
+    const fixed = asked
+      .split(/\s+/)
+      .map((w) => u!.fixes[w] ?? u!.fixes[w.toLowerCase()] ?? w)
+      .join(' ');
+    // The AI's spelling only when it keeps every typed word: "carbon dating" never shrinks back to the case.
+    const card = namesSubject(fixed, u.subject) ? u.subject : fixed;
+    u = {
+      ...u,
+      subject: card,
+      query: card,
+      aliases: u.aliases.filter((a) => namesSubject(card, a) || namesSubject(a, card)),
+      // Searches for the card in the case: each must name the card.
+      searches: u.searches.filter((s) => namesSubject(card, s)),
+    };
+  }
   if (u) {
     for (const [typo, word] of Object.entries(u.fixes)) notes.push(`Read “${typo}” as “${word}”.`);
     if (u.doubt) notes.push(u.doubt);
@@ -257,6 +275,8 @@ export async function runDig(req: DigRequest, emit: Emit, signal: AbortSignal) {
     });
 
   const evidence: SourceItem[] = [];
+  /** Archive pictures being looked at before they are pinned. */
+  let lookTask: Promise<void> = Promise.resolve();
   /** Photos and recordings pinned outside the main evidence (their titles still count as read). */
   const sideItems: SourceItem[] = [];
   let dropped = 0;
@@ -297,9 +317,9 @@ export async function runDig(req: DigRequest, emit: Emit, signal: AbortSignal) {
     const site = siteIn(query);
     const batches = await Promise.allSettled([
       ...ids.map((id) => searchSource(id, phrase, { limit: id === 'commons' ? 8 : 5, signal })),
-      ...(site ? [waybackImages(site, undefined, 6, signal)] : []),
+      ...(site ? [waybackImages(site, undefined, 8, signal, [...(u?.focus ?? []).flatMap(terms), ...terms(query)].filter((w) => !terms(site).includes(w)))] : []),
       // Google Images: the posters, stills, screenshots and faces the archives rarely hold.
-      serperImages(u?.subject ?? phrase, 8, signal).then((r) => r.filter((it) => !/fandom\.com|pinterest\.|instagram\.com/i.test(it.url ?? '') && namesSubject(subject, `${it.title} ${it.meta?.site ?? ''}`)).slice(0, 4)),
+      serperImages(u?.query ?? phrase, 8, signal).then((r) => r.filter((it) => !/fandom\.com|pinterest\.|instagram\.com|spotify\.com|apple\.com\/.*music|gettyimages|shutterstock|alamy|istockphoto|dreamstime/i.test(it.url ?? '') && namesSubject(subject, `${it.title} ${it.meta?.site ?? ''}`)).slice(0, 4)),
     ]);
     const items = rankRelevant(keep(batches.flatMap((b) => (b.status === 'fulfilled' ? b.value : [])).filter((it) => it.image)), { ...topicOf, phrasings: [phrase, titleHelps] });
     return venue ? [] : framedPick(items, 8, 1);
@@ -336,9 +356,24 @@ export async function runDig(req: DigRequest, emit: Emit, signal: AbortSignal) {
   {
     const fromArchives = await Promise.race([photoTask, sleep(4000).then(() => [] as SourceItem[])]);
     const seenPhotos = new Set<string>();
-    const photos = [...(research?.photos ?? []), ...fromArchives].filter((p) => p.image && !seenPhotos.has(p.image) && seenPhotos.add(p.image)).slice(0, 6);
+    const all = [...(research?.photos ?? []), ...fromArchives].filter((p) => p.image && !seenPhotos.has(p.image) && seenPhotos.add(p.image));
+    // Pictures whose names say what they show go up now; nameless ones (archive file numbers) are
+    // looked at first by an AI that can see, and pinned only if they show what this dig is about.
+    const photos = all.filter((p) => !needsLooking(p)).slice(0, 6);
+    const unsure = all.filter(needsLooking).slice(0, 12);
     sideItems.push(...photos);
     if (photos.length && !signal.aborted) emit({ type: 'photos', items: photos });
+    if (unsure.length && photos.length < 6) {
+      const about = [u?.query ?? query, framed].filter(Boolean).join(' — ');
+      emit({ type: 'status', message: `Looking at ${unsure.length} picture${unsure.length === 1 ? '' : 's'} before pinning them…` });
+      lookTask = vetPictures(unsure, about, signal, { keepUnseen: () => false, ms: 25_000 }).then((ok) => {
+        const pin = ok.slice(0, 6 - photos.length);
+        sideItems.push(...pin);
+        if (pin.length && !signal.aborted) emit({ type: 'photos', items: pin });
+        const left = unsure.length - ok.length;
+        if (left > 0 && !signal.aborted) emit({ type: 'status', message: `Looked at ${unsure.length} picture${unsure.length === 1 ? '' : 's'} and left off ${left} that didn't show what you searched for` });
+      });
+    }
   }
   if (research) {
     // The research finds go on the board like any other evidence, grouped by where they came from.
@@ -353,10 +388,11 @@ export async function runDig(req: DigRequest, emit: Emit, signal: AbortSignal) {
     const vocabulary = new Set(research.vocabulary);
     if (vocabulary.size >= 5 && !venue) {
       const strict = relevanceFilter({ ...topicOf, strict: true });
-      const own = new Set([...vocabulary, ...aliases.flatMap(terms), ...terms(query).filter((w) => !terms(subject).includes(w))]);
+      const own = new Set([...vocabulary, ...aliases.flatMap(terms), ...(framed ? terms(framed) : []), ...terms(query).filter((w) => !terms(subject).includes(w))]);
       const home = subject.replace(/\s+/g, '').toLowerCase();
       const namesakes = evidence.filter((it) =>
         it.source === 'fandom' ? false
+        : framed && !mentionsCase(it) ? !touches(it, own)
         : it.kind === 'post' ? !touches(it, own) && !String(it.meta?.sub ?? '').toLowerCase().includes(home)
         : !strict(it) && !touches(it, vocabulary),
       );
@@ -553,6 +589,6 @@ export async function runDig(req: DigRequest, emit: Emit, signal: AbortSignal) {
     console.error(`[ai] dig failed: ${errMsg(e)}`);
     emit({ type: 'error', message: 'The AI is overwhelmed right now. Your evidence is pinned; try digging again in a minute.' });
   }
-  await Promise.allSettled([...tasks, photoTask, mediaTask, thumbTask]);
+  await Promise.allSettled([...tasks, photoTask, mediaTask, thumbTask, lookTask]);
   emit({ type: 'done' });
 }

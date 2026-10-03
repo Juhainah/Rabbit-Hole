@@ -182,13 +182,14 @@ function BoardSwitcher() {
 export function TopBar() {
   const view = useUi((s) => s.view);
   const set = useUi((s) => s.set);
+  const home = useUi((s) => s.caseFilesOpen);
   return (
     <header className="top-bar desk relative z-30 flex h-[62px] shrink-0 items-center gap-1.5 border-b md:gap-2.5 min-[1500px]:gap-4 border-black/50 px-3 shadow-[0_8px_20px_-12px_rgba(0,0,0,.9)]">
       <button className="hidden rounded-lg md:block" onClick={() => set({ caseFilesOpen: true })} title="Home: all your case files" aria-label="Home">
         <Logo />
       </button>
       <span className="hidden h-6 w-px bg-white/10 md:block" />
-      <BoardSwitcher />
+      {!home && <BoardSwitcher />}
       <div className="hidden md:block">
         <CaseFilesButton />
       </div>
@@ -199,7 +200,7 @@ export function TopBar() {
       <div className="flex min-w-0 flex-1 justify-center px-1 md:min-w-[320px]">
         <DigBar />
       </div>
-      <nav className="hidden shrink-0 items-end gap-1 self-end md:flex">
+      <nav className={clsx('hidden shrink-0 items-end gap-1 self-end', !home && 'md:flex')}>
         {VIEWS.map((v) => (
           <button key={v.id} onClick={() => set({ view: v.id, caseFilesOpen: false })} title={v.label} aria-label={v.label} className={clsx('index-tab flex items-center gap-1.5', view === v.id && 'on')}>
             <v.icon size={14} />
@@ -207,10 +208,14 @@ export function TopBar() {
           </button>
         ))}
       </nav>
-      <DepthMeter />
-      <div className="flex shrink-0 items-center whitespace-nowrap">
-        <CloudStatus />
-      </div>
+      {!home && (
+        <>
+          <DepthMeter />
+          <div className="flex shrink-0 items-center whitespace-nowrap">
+            <CloudStatus />
+          </div>
+        </>
+      )}
       <button onClick={() => set({ helpOpen: true })} className="hidden rounded-lg p-2 text-paper/60 hover:bg-white/5 hover:text-paper md:block" title="How it works">
         <CircleHelp size={18} />
       </button>

@@ -5,6 +5,7 @@ import { archiveMedia, periodIn, siteIn, waybackImages } from './sources/archive
 import { wikiPrimary } from './sources/knowledge';
 import { readAnything } from './reader';
 import { understand } from './understand';
+import { vetPictures } from './vision';
 import { castOf, isScreenWork } from './sources/cast';
 import { serper, serperImages, webSearch } from './sources/web';
 
@@ -91,7 +92,14 @@ export async function chatResearch(
     16_000,
     [] as SourceItem[],
   );
-  const waybackTask = archived ? within(waybackImages(site, periodIn(question), 8, slow), 16_000, [] as SourceItem[]) : Promise.resolve([] as SourceItem[]);
+  // Archived pictures have file numbers for names: an AI that can see checks each one shows what was asked for.
+  const waybackTask = archived
+    ? within(
+        waybackImages(site, periodIn(question), 10, slow, terms(question)).then((imgs) => vetPictures(imgs, [hint, question].filter(Boolean).join(' — '), signal, { keepUnseen: () => false, ms: 14_000 })),
+        24_000,
+        [] as SourceItem[],
+      )
+    : Promise.resolve([] as SourceItem[]);
   // Google finds the page that answers a question; Google Images finds the pictures asked for.
   const googleTask = within(serper(phrase, 6, deadline).catch(() => webSearch(phrase, 5, deadline)), 13_000, [] as SourceItem[]);
   // Like a researcher: read the question against the first results, plan better searches, run them.
