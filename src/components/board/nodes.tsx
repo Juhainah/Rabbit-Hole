@@ -330,7 +330,7 @@ export function GalleryNode({ id, data, selected }: P) {
   return (
     <Card id={id} data={data} selected={selected} className="clue-gallery" pin={data.pin ?? '#c8322f'}>
       <div className="gallery-head">
-        <span className="label-caps">Who's who</span>
+        <span className="label-caps">{data.listLabel || "Who's who"}</span>
         <h3 className="clue-title">{data.title}</h3>
         {data.text && <div className="gallery-note">{data.text}</div>}
       </div>

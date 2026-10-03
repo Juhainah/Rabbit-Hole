@@ -94,6 +94,9 @@ export const SOURCES: SourceMeta[] = [
   { id: 'podcasts', name: 'Podcasts', group: 'Media', glyph: '🎙', color: '#a855f7', description: 'Podcast episodes (Apple directory)', dig: false },
   { id: 'openverse', name: 'Openverse', group: 'Media', glyph: 'OV', color: '#c026d3', description: 'Openly licensed images', dig: false },
   { id: 'nasa', name: 'NASA Images', group: 'Media', glyph: 'NASA', color: '#0b3d91', description: 'NASA photo and video library', dig: false },
+  { id: 'anilist', name: 'AniList', group: 'Media', glyph: 'AL', color: '#02a9ff', description: 'Anime and manga, with their main characters', dig: false },
+  { id: 'deviantart', name: 'DeviantArt', group: 'Media', glyph: 'DA', color: '#05cc47', description: 'Fan art and illustration', dig: false },
+  { id: 'design', name: 'Pinterest & design', group: 'Media', glyph: 'PIN', color: '#e60023', description: 'Pinterest, Behance, ArtStation and Dribbble', dig: false },
   { id: 'tvmaze', name: 'TV Maze', group: 'Media', glyph: 'TV', color: '#3c948b', description: 'TV shows and documentaries', dig: false },
   { id: 'musicbrainz', name: 'MusicBrainz', group: 'Media', glyph: 'MB', color: '#ba478f', description: 'Artists and bands', dig: false },
 

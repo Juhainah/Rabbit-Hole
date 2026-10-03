@@ -24,6 +24,8 @@ export interface MapPoint {
   label: string;
   nodeId?: string;
   mark?: 'circle' | 'x';
+  /** Where the point came from: the case's main article, a card in the case, or a search result. */
+  from?: 'primary' | 'entity' | 'evidence';
 }
 
 export type ClueData = {
@@ -61,6 +63,8 @@ export type ClueData = {
   items?: { title: string; image?: string; url?: string; role?: string }[];
   /** Good finds that didn't make the case's hand-picked board, one click from being pinned. */
   extras?: SourceItem[];
+  /** What a list card holds ("Who's who", "The keys", "Weapons"). */
+  listLabel?: string;
   /** A who's-who card that already holds its list's every member. */
   listComplete?: boolean;
   /** A rubber stamp on the card: what you have decided about this piece of evidence. */

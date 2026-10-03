@@ -5,7 +5,7 @@ import { stream } from 'hono/streaming';
 import { authProject, onGuestList, verifyVisitor, type Visitor } from './auth';
 import type { ChatEvent, ChatRequest, DigEvent, DigRequest, SourceItem } from '../shared/types';
 import { chatResearch } from './chat-research';
-import { galleryFromUrl } from './research';
+import { findList, galleryFromUrl } from './research';
 import { imageProxy } from './imageproxy';
 import { castOf } from './sources/cast';
 import { suggestLinks, type WeaveCard } from './weave';
@@ -227,6 +227,16 @@ app.get('/api/cast', async (c) => {
   try {
     const cast = await castOf(c.req.query('title') ?? '', AbortSignal.timeout(20_000));
     return cast ? c.json({ title: cast.title, url: cast.url, director: cast.director, items: cast.items.map((p) => ({ title: p.title, image: p.image, url: p.url, role: p.meta?.role })) }) : c.json({ error: 'No cast list on that page' }, 404);
+  } catch (e) {
+    return c.json({ error: errMsg(e) }, 502);
+  }
+});
+
+app.get('/api/find-list', async (c) => {
+  if (limited(c, 'scrape', 120, 10 * 60_000)) return c.json({ error: 'Slow down a little.' }, 429);
+  try {
+    const g = await findList(c.req.query('subject') ?? '', c.req.query('what') ?? '', AbortSignal.timeout(30_000));
+    return g ? c.json({ title: g.title, label: g.label, url: g.url, wiki: g.wiki, items: g.items.map((p) => ({ title: p.title, image: p.image, url: p.url, role: p.meta?.role ? String(p.meta.role) : undefined })) }) : c.json({ error: 'No pictured list like that on a fan wiki' }, 404);
   } catch (e) {
     return c.json({ error: errMsg(e) }, 502);
   }

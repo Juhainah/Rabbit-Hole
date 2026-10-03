@@ -99,6 +99,13 @@ export const api = {
     return res.json();
   },
 
+  /** A list (characters, objects, items) from the subject's fan wiki, with pictures. */
+  async findList(subject: string, what: string): Promise<{ title: string; label: string; url: string; wiki: string; items: { title: string; image?: string; url?: string; role?: string }[] }> {
+    const res = await call(`/api/find-list?subject=${encodeURIComponent(subject)}&what=${encodeURIComponent(what)}`);
+    if (!res.ok) throw new Error(await readError(res));
+    return res.json();
+  },
+
   /** Strings the AI suggests between cards on a board. */
   async weave(cards: { id: string; title: string; text?: string; kind?: string }[], tied: [string, string][]): Promise<{ a: string; b: string; label: string; why: string }[]> {
     const res = await call('/api/weave', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ cards, tied }) });

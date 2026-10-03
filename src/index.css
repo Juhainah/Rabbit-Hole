@@ -1074,10 +1074,32 @@ button {
 .clue-question {
   width: 224px;
   padding: 16px 16px 14px 56px;
-  background: var(--paper-noise), #fbe6df;
-  clip-path: polygon(0 3%, 6% 0, 40% 2%, 72% 0, 100% 3%, 98% 50%, 100% 97%, 60% 100%, 30% 98%, 2% 100%, 0 60%);
   font: 700 19px/1.15 var(--f-note);
   color: #7a1d17;
+}
+/* Torn-edge scraps: the tear is cut on a backing layer, so the pin, tape and stamps on top are never clipped,
+   and the shadow follows the torn edge instead of a box. */
+.clue-question,
+.clue-label {
+  isolation: isolate;
+  box-shadow: none;
+  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.28));
+}
+.react-flow__node:hover .clue-question,
+.react-flow__node:hover .clue-label,
+.react-flow__node.dragging .clue-question,
+.react-flow__node.dragging .clue-label {
+  box-shadow: none;
+  filter: drop-shadow(0 8px 10px rgba(0, 0, 0, 0.3));
+}
+.clue-question::before,
+.clue-label::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: var(--paper-noise), #fbe6df;
+  clip-path: polygon(0 3%, 6% 0, 40% 2%, 72% 0, 100% 3%, 98% 50%, 100% 97%, 60% 100%, 30% 98%, 2% 100%, 0 60%);
 }
 .clue-question .qmark {
   position: absolute;
@@ -1109,11 +1131,13 @@ button {
 .clue-label {
   min-width: 90px;
   padding: 8px 14px 10px;
-  background: #fffdf7;
   font: 700 26px/1 var(--f-note);
   color: #b3261e;
-  clip-path: polygon(0 8%, 100% 0, 98% 92%, 2% 100%);
   text-align: center;
+}
+.clue-label::before {
+  background: #fffdf7;
+  clip-path: polygon(0 8%, 100% 0, 98% 92%, 2% 100%);
 }
 .clue-label input {
   width: 100%;

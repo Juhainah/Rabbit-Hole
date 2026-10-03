@@ -125,7 +125,7 @@ export async function startDig(opts: { query: string; parentId?: string; url?: s
       itemsById.set(it.id, it);
       nodes.push(node);
       edges.push(makeEdge(topicId, node.id, { kind: 'evidence' }, 'pin', true));
-      if (it.lat != null && it.lon != null) geo.push({ lat: it.lat, lon: it.lon, label: it.title.slice(0, 26), nodeId: node.id });
+      if (it.lat != null && it.lon != null) geo.push({ lat: it.lat, lon: it.lon, label: it.title.slice(0, 26), nodeId: node.id, from: 'evidence' });
     }
     if (!nodes.length) return;
     useBoards.getState().addNodes(nodes);
@@ -215,16 +215,20 @@ export async function startDig(opts: { query: string; parentId?: string; url?: s
       const patch: Partial<ClueData> = { image: e.image, url: e.url, lat: e.lat, lon: e.lon, source: e.url ? 'wikipedia' : undefined };
       if (!node?.data.text && e.extract) patch.text = e.extract;
       s.updateNode(id, patch);
-      if (e.lat != null && e.lon != null) geo.push({ lat: e.lat, lon: e.lon, label: name.slice(0, 26), nodeId: id });
+      if (e.lat != null && e.lon != null) geo.push({ lat: e.lat, lon: e.lon, label: name.slice(0, 26), nodeId: id, from: 'entity' });
     }
     addMap();
   };
 
   const addMap = () => {
-    const points = geo.filter(
-      (p, i) => geo.findIndex((q) => Math.abs(q.lat - p.lat) < 0.01 && Math.abs(q.lon - p.lon) < 0.01) === i,
+    // Only points whose card is still on the board (off-topic results get taken off).
+    const alive = new Set(currentBoard().nodes.map((n) => n.id));
+    const points = geo.filter((p) => !p.nodeId || alive.has(p.nodeId)).filter(
+      (p, i, arr) => arr.findIndex((q) => Math.abs(q.lat - p.lat) < 0.01 && Math.abs(q.lon - p.lon) < 0.01) === i,
     ).slice(0, 12);
-    if (!points.length) return;
+    // A map needs a geographic reason: the case's article or one of its cards has a place, or several finds do.
+    // A game, an app or a song gets none for one search result that happens to have coordinates.
+    if (!points.length || (!points.some((p) => p.from !== 'evidence') && points.length < 3)) return;
     const mapNode = makeNode('map', { x: center.x, y: center.y - RING.map }, { title: `Map: ${primaryTitle ?? query}`, points, clusterId });
     const s = useBoards.getState();
     s.addNodes([mapNode]);
@@ -265,7 +269,7 @@ export async function startDig(opts: { query: string; parentId?: string; url?: s
               lat: p.lat,
               lon: p.lon,
             });
-            if (p.lat != null && p.lon != null) geo.unshift({ lat: p.lat, lon: p.lon, label: p.title.slice(0, 26), nodeId: topicId, mark: 'x' });
+            if (p.lat != null && p.lon != null) geo.unshift({ lat: p.lat, lon: p.lon, label: p.title.slice(0, 26), nodeId: topicId, mark: 'x', from: 'primary' });
             break;
           }
           case 'analysis':
@@ -305,6 +309,7 @@ export async function startDig(opts: { query: string; parentId?: string; url?: s
               clusterId,
               items: g.items.map((p) => ({ title: p.title, image: p.image, url: p.url, role: p.meta?.role ? String(p.meta.role) : undefined })),
               text: g.note,
+              listLabel: g.label,
             });
             useBoards.getState().addNodes([card]);
             useBoards.getState().addEdges([makeEdge(topicId, card.id, { kind: 'evidence' }, 'pin', true)]);

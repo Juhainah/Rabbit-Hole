@@ -294,6 +294,23 @@ function runActions(actions: string[], sources: SourceItem[]): string[] {
       }
       continue;
     }
+    // "list Celestial Spirit keys from Fairy Tail": a pictured list card from that fan wiki.
+    const listOf = a.match(/^list\s+(.+?)\s+(?:from|in|of)\s+(.+?)$/i);
+    if (listOf) {
+      const what = listOf[1].replace(/^["“]|["”]$/g, '').trim();
+      const subject = listOf[2].replace(/^\[\[|\]\]$|^["“]|["”]$/g, '').trim();
+      const anchor = findCard(subject)?.id ?? near;
+      void api
+        .findList(subject, what)
+        .then((g) => {
+          const id = addClue('gallery', { title: `${g.label} (${subject})`, listLabel: g.label, url: g.url, source: 'fandom', items: g.items }, { near: anchor, tie: true });
+          useUi.getState().log(`🗂 ${g.label}: ${g.items.length} from the ${g.wiki} wiki`, 'ok');
+          setTimeout(() => useUi.getState().focusNodes([id]), 300);
+        })
+        .catch((e) => useUi.getState().log(`Couldn't find a pictured list of ${what} for ${subject}: ${e instanceof Error ? e.message : e}`, 'warn'));
+      done.push(`Fetching the list of ${what} from the ${subject} wiki`);
+      continue;
+    }
     const castFor = a.match(/^cast\s+\[\[(.+?)\]\]/i);
     if (castFor) {
       const film = findCard(castFor[1]);

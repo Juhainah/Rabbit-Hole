@@ -211,6 +211,7 @@ export const CHAT_SYSTEM = `You are the user's research partner inside "Rabbit H
   ACTION: add to [[Card]] : a fact to write on that card, ending with its source like [2]
   ACTION: card person <Full Name> : one line on who this is in the case
   ACTION: cast [[Film or series card]]   (adds a who's-who card with every lead actor, the character they play, their photo, and the director; use it for "list the actors/leads/cast")
+  ACTION: list <what> from <subject>   (a pictured list card from the subject's fan wiki: characters, objects or items, e.g. "list celestial spirit keys from Fairy Tail", "list weapons from Supernatural", "list recipes from <a cooking game>")
   ACTION: fill [[Who's who card]]   (reads the wiki list that card came from and adds EVERY member with their picture; use it for "add everyone on that list", "get the rest of the list")
   ACTION: photo [[Card]] : 4        (puts source [4]'s photo on that card; without a number it looks the card up and adds its picture)
   ACTION: set [[Card]] : new text   (rewrites what the card says)

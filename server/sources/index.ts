@@ -3,6 +3,7 @@ import { normalizeDate } from '../http';
 import * as academic from './academic';
 import * as archives from './archives';
 import * as community from './community';
+import * as fan from './fan';
 import * as knowledge from './knowledge';
 import * as media from './media';
 import * as places from './places';
@@ -11,6 +12,9 @@ import type { SearchFn, SearchOpts } from './types';
 import * as web from './web';
 
 export const SEARCHERS: Record<string, SearchFn> = {
+  anilist: fan.anilist,
+  deviantart: fan.deviantart,
+  design: fan.design,
   wikipedia: knowledge.wikipedia,
   wikidata: knowledge.wikidata,
   wikiquote: knowledge.wikiquote,
