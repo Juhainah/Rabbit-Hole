@@ -52,6 +52,13 @@ export function chatPhrase(question: string, hint?: string) {
  */
 // Asking for things to be found or added: worth planning real searches for.
 const ASKING = /\?|^(is|are|was|were|does|did|do|why|how|what|who|whom|when|where|which|could|would|should|has|have|had)\b/i;
+/** Anime and manga: AniList knows the series and their characters. */
+const ANIME = /\b(anime|manga|manhwa|manhua|light novel|isekai|shonen|shounen|shojo|shoujo|seinen|waifu|husbando|crunchyroll|myanimelist|anilist)\b/i;
+/** Fan art and illustration: DeviantArt. */
+const FAN_ART = /\b(fan ?art|fanart|deviantart|drawings?|illustrations?|artworks?|sketch(es)?|doodles?|cosplay)\b/i;
+/** Design boards and inspiration: Pinterest, Behance, ArtStation, Dribbble. */
+const DESIGN = /\b(pinterest|behance|artstation|dribbble|mood ?boards?|aesthetics?|inspo|inspiration|design ideas|concept art|portfolio)\b/i;
+
 const FINDING = /\b(add|find|search|look|fetch|bring|get|pull|show|any|more|other|articles?|sources?|news|coverage|reviews?|interviews?|pictures?|photos?|images?|list|who|which)\b/i;
 
 export async function chatResearch(
@@ -75,12 +82,16 @@ export async function chatResearch(
     ...new Set([
       ...(wanted?.length ? wanted : ['wikipedia', 'web', 'reddit']),
       'web',
+      // Fan and art sources, when the question is about them.
+      ...(ANIME.test(`${question} ${hint ?? ''}`) ? ['anilist'] : []),
+      ...(FAN_ART.test(question) ? ['deviantart'] : []),
+      ...(DESIGN.test(question) ? ['design'] : []),
       ...(wantsForums ? ['reddit', 'forums'] : []),
       ...(wantsImages ? ['commons', 'openverse', 'nasa'] : []),
     ]),
   ]
     .filter((id) => allowed.has(id))
-    .slice(0, 9);
+    .slice(0, 10);
   const deadline = AbortSignal.any([signal, AbortSignal.timeout(12_000)]);
   const site = siteIn(question) ?? siteIn(hint ?? '');
   const archived = site && (periodIn(question) || /\b(archive[ds]?|wayback|snapshot|old|back then|used to|original)\b/i.test(question) || wantsImages);

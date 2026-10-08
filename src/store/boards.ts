@@ -89,6 +89,8 @@ interface BoardsState {
   addEdges: (edges: StringEdge[]) => void;
   updateNode: (id: string, patch: Partial<ClueData>) => void;
   updateNodes: (fn: (n: ClueNode) => ClueNode) => void;
+  /** Puts the whole list of cards in a new order (what is drawn on top of what). */
+  setNodeOrder: (nodes: ClueNode[]) => void;
   updateEdge: (id: string, patch: Partial<StringData>) => void;
   removeNodes: (ids: string[], label?: string) => void;
   /** Takes cards (and their strings) off quietly, with no undo step: for tidying the app does itself, like a dig moving extras into "More finds". */
@@ -263,6 +265,7 @@ export const useBoards = create<BoardsState>()(
         updateNode: (id, data) =>
           patch((b) => ({ nodes: b.nodes.map((n) => (n.id === id ? { ...n, data: { ...n.data, ...data } } : n)) })),
         updateNodes: (fn) => patch((b) => ({ nodes: b.nodes.map(fn) })),
+        setNodeOrder: (nodes) => patch((b) => (nodes.length === b.nodes.length ? { nodes } : {})),
         updateEdge: (id, data) =>
           patch((b) => ({ edges: b.edges.map((e) => (e.id === id ? { ...e, data: { ...e.data, ...data } } : e)) })),
         removeNodes: (ids, label) => {

@@ -1,11 +1,19 @@
 import { useEffect, useRef } from 'react';
 import { nanoid } from 'nanoid';
 import { askAbout, startDig } from '../../lib/dig';
+import { moveLayer, type LayerMove } from '../../lib/layers';
 import { cut, cutAll, openTiePicker } from '../../lib/tie';
 import { FRAME_COLORS, PIN_COLORS, STAMPS, STRING_COLORS, TINTS, TYPE_LABEL } from '../../lib/utils';
 import { useBoards } from '../../store/boards';
 import { useUi } from '../../store/ui';
 import type { ClueType, PinStyle } from '../../types';
+
+const LAYER_MOVES: { id: LayerMove; label: string; tip: string }[] = [
+  { id: 'front', label: '⤒ To front', tip: 'Bring to the front (Ctrl+Shift+])' },
+  { id: 'forward', label: '↑ Forward', tip: 'Bring forward one step (Ctrl+])' },
+  { id: 'backward', label: '↓ Backward', tip: 'Send backward one step (Ctrl+[)' },
+  { id: 'back', label: '⤓ To back', tip: 'Send to the back (Ctrl+Shift+[)' },
+];
 
 const PIN_STYLES: { id: PinStyle; label: string }[] = [
   { id: 'pin', label: 'Pin' },
@@ -102,6 +110,25 @@ export function ContextMenu() {
             <div className="my-1 h-px bg-ink/10" />
             <Item onClick={() => openTiePicker(node.id)}>🧶 Tie to another card…</Item>
             {strings > 0 && <Item onClick={() => cutAll(node.id)}>✂ Cut its strings ({strings})</Item>}
+            <div className="my-1 h-px bg-ink/10" />
+            <div className="px-2.5 py-1 text-[11px] uppercase tracking-wider text-ink-soft">Layer</div>
+            <div className="flex flex-wrap gap-1 px-2 pb-1.5">
+              {LAYER_MOVES.map((m) => (
+                <button
+                  key={m.id}
+                  title={m.tip}
+                  onClick={() => {
+                    const said = moveLayer(node.id, m.id);
+                    // A card sent down shows where it went once it is no longer lifted as the selected one.
+                    if (m.id === 'back' || m.id === 'backward') ui.select();
+                    if (said) ui.set({ toast: { text: said, at: Date.now() }, menu: undefined });
+                  }}
+                  className="chip !px-2 !py-0.5 !text-[11px]"
+                >
+                  {m.label}
+                </button>
+              ))}
+            </div>
             <div className="my-1 h-px bg-ink/10" />
             <div className="px-2.5 py-1 text-[11px] uppercase tracking-wider text-ink-soft">Show as</div>
             <div className="flex flex-wrap gap-1 px-2 pb-1.5">

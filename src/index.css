@@ -2634,3 +2634,46 @@ button {
     bottom: 30px;
   }
 }
+
+/* The ball of thread on a card's edge: drag it onto another card to tie a string. */
+.react-flow__handle.tie-grip {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  right: -13px;
+  border: none;
+  border-radius: 50%;
+  background: var(--color-paper);
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
+  font-size: 14px;
+  line-height: 1;
+  cursor: crosshair;
+  opacity: 0;
+  transition: opacity 0.15s, transform 0.15s;
+  z-index: 11;
+}
+.react-flow__handle.tie-grip span {
+  pointer-events: none;
+}
+.react-flow__node:hover .react-flow__handle.tie-grip,
+.react-flow__node.selected .react-flow__handle.tie-grip,
+.react-flow.connecting .react-flow__handle.tie-grip {
+  opacity: 1;
+}
+.react-flow__handle.tie-grip:hover {
+  transform: translateY(-50%) scale(1.18);
+}
+/* On a touch screen there is no hover: the thread shows on the card you picked. */
+@media (hover: none) {
+  .react-flow__node:hover .react-flow__handle.tie-grip {
+    opacity: 0;
+  }
+  .react-flow__node.selected .react-flow__handle.tie-grip {
+    opacity: 1;
+  }
+}
+.board[data-lod=far] .react-flow__handle.tie-grip,
+.board.moving .react-flow__handle.tie-grip {
+  display: none;
+}

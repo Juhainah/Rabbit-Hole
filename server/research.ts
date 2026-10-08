@@ -611,10 +611,10 @@ async function pickWikiPages(query: string, wikiName: string, excerpt: string, p
     resolveProviders(),
     {
       messages: [
-        { role: 'system', content: 'You pick wiki pages for a researcher. Output only JSON: {"pages": ["exact title"], "list": "exact title or empty", "listLabel": "2-3 words naming what the list holds, e.g. Who\'s who (people), The keys, Weapons, Recipes"}.' },
+        { role: 'system', content: 'You pick wiki pages for a researcher. Output only JSON: {"pages": ["exact title"], "list": "exact title or empty", "listLabel": "2-3 words naming what the list holds, e.g. Who\'s who (people), Spells, Vehicles, Episodes"}.' },
         {
           role: 'user',
-          content: `CASE: ${query}\nWHAT THE SOURCES SAY:\n${excerpt}\n\nPAGES ON ${wikiName}:\n${pool.join(' | ')}\n\nPick up to 3 pages that explain THIS case: the specific feature, person, event or item at the centre of what the sources discuss (for a controversy, the page about the thing that caused it), not editions, versions or spin-offs of the subject. Add the subject's main page last, only if room is left. Then, if one page is a list of characters, members, objects, items or episodes central to the case (the people involved, or the objects the search is about, like a set of magic keys or weapons), give it as "list". Use exact titles from the list above.`,
+          content: `CASE: ${query}\nWHAT THE SOURCES SAY:\n${excerpt}\n\nPAGES ON ${wikiName}:\n${pool.join(' | ')}\n\nPick up to 3 pages that explain THIS case: the specific feature, person, event or item at the centre of what the sources discuss (for a controversy, the page about the thing that caused it), not editions, versions or spin-offs of the subject. Add the subject's main page last, only if room is left. Then, if one page is a list of characters, members, objects, items or episodes central to the case (the people involved, or the objects the search is about, like a set of spells, vehicles or artefacts), give it as "list". Use exact titles from the list above.`,
         },
       ],
       temperature: 0,

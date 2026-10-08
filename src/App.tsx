@@ -20,6 +20,7 @@ const GraphView = lazy(() => import('./components/views/GraphView').then((m) => 
 const MapView = lazy(() => import('./components/views/MapView').then((m) => ({ default: m.MapView })));
 const TimelineView = lazy(() => import('./components/views/TimelineView').then((m) => ({ default: m.TimelineView })));
 import { addClue } from './lib/dig';
+import { moveLayer } from './lib/layers';
 import { useBoards } from './store/boards';
 import { Dialog } from './components/Dialog';
 import { useUi } from './store/ui';
@@ -84,6 +85,14 @@ function Desk() {
       } else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault();
         useUi.getState().openTab('search');
+      } else if ((e.metaKey || e.ctrlKey) && (e.code === 'BracketRight' || e.code === 'BracketLeft') && useUi.getState().selectedNodeId) {
+        // Layers, as in a design tool: Ctrl+] forward, Ctrl+[ backward; with Shift, all the way.
+        e.preventDefault();
+        const up = e.code === 'BracketRight';
+        const said = moveLayer(useUi.getState().selectedNodeId!, up ? (e.shiftKey ? 'front' : 'forward') : e.shiftKey ? 'back' : 'backward');
+        // A card sent down shows where it went once it is no longer lifted as the selected one.
+        if (!up) useUi.getState().select();
+        if (said) useUi.getState().set({ toast: { text: said, at: Date.now() } });
       }
     };
     window.addEventListener('keydown', onKey);

@@ -59,8 +59,18 @@ function Card(props: {
       {props.data.vetting && <span className="vetting-stamp">checking</span>}
       {stamp && <span className="rubber-stamp" style={{ '--stamp': stamp.color } as CSSProperties}>{stamp.label}</span>}
       <Handle type="source" position={Position.Top} id="pin" className={clsx('pin', pinStyle !== 'pin' && `pin-${pinStyle}`)} style={{ '--pin': props.data.pin ?? props.pin ?? '#c8322f' } as CSSProperties} />
+      <TieGrip />
       {props.children}
     </div>
+  );
+}
+
+/** A ball of thread on the card's edge: drag it onto any other card to tie a string between them. */
+function TieGrip() {
+  return (
+    <Handle type="source" position={Position.Right} id="tie" className="tie-grip" title="Drag onto another card to tie a string">
+      <span aria-hidden>🧶</span>
+    </Handle>
   );
 }
 
@@ -814,6 +824,7 @@ export function MapNode({ id, data, selected, width, height }: P) {
         style={{ '--rot': `${messy ? (data.rotation ?? 0) * 0.4 : 0}deg`, width: w + 16, height: h + 16 } as CSSProperties}
       >
         <Handle type="source" position={Position.Top} id="pin" className="pin" style={{ '--pin': '#1f1f1f' } as CSSProperties} />
+        <TieGrip />
         {[
           [4, 4],
           [w + 1, 4],

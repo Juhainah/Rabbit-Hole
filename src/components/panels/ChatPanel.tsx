@@ -16,6 +16,8 @@ import { MicButton } from './MicButton';
 import { centerOf, makeEdge, sizeOf } from '../../lib/factory';
 import { fillGallery } from '../../lib/gallery';
 import { freeSpot, untangle } from '../../lib/layout';
+import { pinPlace } from '../../lib/places';
+import { FRAME_COLORS } from '../../lib/utils';
 import { play } from '../../lib/sound';
 import type { ChatEntry } from '../../types';
 import { Glyph } from '../SourceBadge';
@@ -182,7 +184,7 @@ function kindFrom(description: string): EntityType | undefined {
 
 /** Carries out the partner's board actions. Returns a line per thing done. */
 /** Words that ask for the board to change. A plain question never pins, adds or moves anything. */
-const WANTS_CHANGE = /\b(add|adds|pin|bring|put|show me|find|get|fetch|attach|create|make|connect|link|tie|list|cast|fill|photos?|pictures?|images?|cards?|remove|delete|clean|tidy|rename|move|notes?|write|label|stamp|search|look up|locate|pull|place|organi[sz]e|arrange)\b/i;
+const WANTS_CHANGE = /\b(add|adds|pin|bring|put|show me|find|get|fetch|attach|create|make|draw|connect|link|tie|frame|map it|on the map|timeline|quote card|question card|list|cast|fill|photos?|pictures?|images?|cards?|remove|delete|clean|tidy|rename|move|notes?|write|label|stamp|search|look up|locate|pull|place|organi[sz]e|arrange)\b/i;
 // Actions that only search, allowed with any question.
 const READ_ONLY = /^search\s/i;
 
@@ -206,6 +208,23 @@ function runActions(actions: string[], sources: SourceItem[]): string[] {
       continue;
     }
     const kind = card[1].toLowerCase();
+    // "card question …", "card quote …", "card note …", "card label …": that kind of card, not an index card.
+    const PLAIN: Record<string, 'question' | 'quote' | 'note' | 'label'> = { question: 'question', quote: 'quote', note: 'note', label: 'label', sticky: 'note' };
+    const plain = PLAIN[kind];
+    if (plain) {
+      const line = card[3]?.trim().slice(0, 400);
+      const id =
+        plain === 'question'
+          ? addClue('question', { title: title.replace(/\?*$/, '?') }, { near, tie: true })
+          : plain === 'quote'
+            ? addClue('quote', { title: line || 'Quote', text: `“${title.replace(/^["“]|["”]$/g, '')}”`, author: line || undefined }, { near, tie: true })
+            : plain === 'label'
+              ? addClue('label', { title: title.slice(0, 40) }, { near })
+              : addClue('note', { title: title.slice(0, 60), text: [title, line].filter(Boolean).join('\n'), color: '#fdf6e3' }, { near, tie: true });
+      created.push(id);
+      done.push(`Added a ${plain === 'note' ? 'sticky note' : `${plain} card`}: “${title.slice(0, 60)}”`);
+      continue;
+    }
     const entityType = (kinds.test(kind) ? (kind === 'organization' ? 'org' : kind === 'thing' ? 'object' : kind) : 'concept') as EntityType;
     const id = addClue('entity', { title, entityType, text: card[3]?.trim().slice(0, 400) }, { near });
     created.push(id);
@@ -403,6 +422,108 @@ function runActions(actions: string[], sources: SourceItem[]): string[] {
       continue;
     }
     if (/^search\s/i.test(a)) continue; // run after the answer, as a follow-up
+    // Every other kind of card, by name.
+    const question = a.match(/^question\s+(.+)/i);
+    if (question) {
+      const t = question[1].replace(/^["“]|["”]$/g, '').trim().slice(0, 160);
+      if (t) {
+        made.push(addClue('question', { title: /\?$/.test(t) ? t : `${t}?` }, { near, tie: true }));
+        done.push(`Added a question: “${t.slice(0, 60)}”`);
+      }
+      continue;
+    }
+    const quote = a.match(/^quote\s+["“](.+?)["”]\s*(?:[—–-]+\s*([^[]+?))?\s*(?:\[(\d+)\])?\s*$/i);
+    if (quote) {
+      const src = quote[3] ? sources[Number(quote[3]) - 1] : undefined;
+      const who = quote[2]?.trim();
+      made.push(addClue('quote', { title: who || src?.title || 'Quote', text: `“${quote[1].trim().slice(0, 500)}”`, author: who, url: src?.url, source: src?.source }, { near, tie: true }));
+      done.push(`Added a quote${who ? ` from ${who}` : ''}`);
+      continue;
+    }
+    const label = a.match(/^label\s+(.+)/i);
+    if (label) {
+      const t = label[1].replace(/^["“]|["”]$/g, '').trim().slice(0, 40);
+      if (t) {
+        made.push(addClue('label', { title: t }, { near }));
+        done.push(`Added a label: “${t}”`);
+      }
+      continue;
+    }
+    const frame = a.match(/^frame\s+(.+?)\s*:\s*(.+)$/i);
+    if (frame) {
+      const inside = [...frame[2].matchAll(/\[\[(.+?)\]\]/g)].map((m) => findCard(m[1])).filter((n): n is NonNullable<typeof n> => !!n && n.type !== 'frame');
+      if (inside.length) {
+        // A frame drawn around those cards, with room for its name tab.
+        const boxes = inside.map((n) => ({ ...n.position, ...sizeOf(n) }));
+        const x0 = Math.min(...boxes.map((b) => b.x)) - 40;
+        const y0 = Math.min(...boxes.map((b) => b.y)) - 70;
+        const x1 = Math.max(...boxes.map((b) => b.x + b.w)) + 40;
+        const y1 = Math.max(...boxes.map((b) => b.y + b.h)) + 40;
+        const color = FRAME_COLORS[currentBoard().nodes.filter((n) => n.type === 'frame').length % FRAME_COLORS.length];
+        const id = addClue('frame', { title: frame[1].replace(/^["“]|["”]$/g, '').trim().slice(0, 40), color }, { at: { x: (x0 + x1) / 2, y: (y0 + y1) / 2 } });
+        useBoards.getState().updateNodes((n) => (n.id === id ? { ...n, position: { x: x0, y: y0 }, width: x1 - x0, height: y1 - y0 } : n));
+        made.push(id);
+        done.push(`Drew a “${frame[1].trim().slice(0, 30)}” frame around ${inside.length} card${inside.length === 1 ? '' : 's'}`);
+      }
+      continue;
+    }
+    const placeLine = a.match(/^place\s+(.+?)(?:\s*:\s*(.+))?$/i);
+    if (placeLine) {
+      const name = placeLine[1].replace(/^\[\[|\]\]$|^["“]|["”]$/g, '').trim().slice(0, 120);
+      const line = placeLine[2]?.trim();
+      void api
+        .places(name)
+        .then(({ places }) => {
+          const p = places[0];
+          if (!p) return useUi.getState().log(`Couldn't find “${name}” on the map`, 'warn');
+          const { id, existed } = pinPlace(p, { near }, line ?? '');
+          if (!existed && near) useBoards.getState().addEdges([makeEdge(near, id, { kind: 'user' })]);
+          useUi.getState().log(`📍 ${existed ? 'Already pinned' : 'Pinned'} “${p.name}” on the board and the map`, 'ok');
+          setTimeout(() => useUi.getState().focusNodes([id], true), 300);
+        })
+        .catch((e) => useUi.getState().log(`Map search failed: ${e instanceof Error ? e.message : e}`, 'warn'));
+      done.push(`Finding “${name}” on the map`);
+      continue;
+    }
+    const mapLine = a.match(/^map\s+(.+?)\s*:\s*(.+)$/i);
+    if (mapLine) {
+      // Places are split by ";" (or "|"); a plain comma list of three or more works too, while two comma parts
+      // stay one place ("Paris, France").
+      const parts = mapLine[2].split(/\s*[;|]\s*/);
+      const list = parts.length === 1 && mapLine[2].split(',').length >= 3 ? mapLine[2].split(/\s*,\s*/) : parts;
+      const names = list.map((x) => x.replace(/^\[\[|\]\]$/g, '').trim()).filter(Boolean).slice(0, 12);
+      const title = mapLine[1].replace(/^["“]|["”]$/g, '').trim().slice(0, 60);
+      void Promise.all(names.map((n) => api.places(n).then((r) => r.places[0]).catch(() => undefined)))
+        .then((found) => {
+          const points = found.filter((p): p is NonNullable<typeof p> => !!p).map((p, i) => ({ lat: p.lat, lon: p.lon, label: names[found.indexOf(p)] ?? p.name ?? String(i), from: 'mine' as const }));
+          if (!points.length) return useUi.getState().log(`None of those places were found on the map`, 'warn');
+          const id = addClue('map', { title: `Map: ${title}`, points }, { near, tie: true });
+          useUi.getState().log(`🗺 Map “${title}” with ${points.length} place${points.length === 1 ? '' : 's'}`, 'ok');
+          setTimeout(() => useUi.getState().focusNodes([id], true), 300);
+        });
+      done.push(`Drawing a map of ${names.length} place${names.length === 1 ? '' : 's'}`);
+      continue;
+    }
+    const moment = a.match(/^(?:moment|timeline)\s+(-?\d{1,4}(?:-\d{2}(?:-\d{2})?)?)\s*:\s*(.+)$/i);
+    if (moment) {
+      const cluster = currentBoard().nodes.find((n) => n.id === near)?.data.clusterId ?? currentBoard().nodes.find((n) => n.type === 'topic')?.data.clusterId ?? 'mine';
+      useBoards.getState().snapshot('Added a moment to the timeline');
+      useBoards.getState().addTimeline([{ id: nanoid(8), date: moment[1], event: moment[2].trim().slice(0, 160), clusterId: cluster }]);
+      done.push(`Added ${moment[1]} to the timeline`);
+      continue;
+    }
+    const stampLine = a.match(/^stamp\s+\[\[(.+?)\]\]\s*:\s*(.+)$/i);
+    if (stampLine) {
+      const target = findCard(stampLine[1]);
+      const word = stampLine[2].toLowerCase();
+      const st = (['confirmed', 'disputed', 'debunked', 'theory', 'key', 'lead'] as const).find((x) => word.includes(x));
+      if (target && st) {
+        useBoards.getState().snapshot(`Stamped “${target.data.title}”`);
+        useBoards.getState().updateNode(target.id, { stamp: st });
+        done.push(`Stamped “${target.data.title}” ${st === 'key' ? 'key evidence' : st}`);
+      }
+      continue;
+    }
     const note = a.match(/^note\s+(.+)/i);
     if (note) {
       // Some models copy the instruction wording ("the text of a sticky note: …"); keep only the note.

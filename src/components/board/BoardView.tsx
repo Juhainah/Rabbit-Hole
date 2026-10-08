@@ -9,6 +9,7 @@ import {
   type EdgeMouseHandler,
   type NodeMouseHandler,
   type OnConnect,
+  type OnConnectEnd,
   type OnNodeDrag,
   SelectionMode,
 } from '@xyflow/react';
@@ -218,7 +219,10 @@ function Board() {
     settle.current = setTimeout(() => wrap.current?.classList.remove('moving'), 200);
   }, []);
   const onConnectString = useCallback<OnConnect>(
-    (c) => {
+    (raw) => {
+      // Strings always hang from the pins, whichever grip they were drawn from.
+      const c = { ...raw, sourceHandle: !raw.sourceHandle || raw.sourceHandle === 'tie' ? 'pin' : raw.sourceHandle, targetHandle: !raw.targetHandle || raw.targetHandle === 'tie' ? 'pin' : raw.targetHandle };
+      if (c.source === c.target) return;
       const before = new Set(useBoards.getState().boards[useBoards.getState().currentId]?.edges.map((e) => e.id));
       onConnect(c);
       play('string');
@@ -227,6 +231,21 @@ function Board() {
       if (made) useUi.getState().set({ labelEdit: made.id, selectedEdgeId: made.id });
     },
     [onConnect],
+  );
+  // A thread let go anywhere on another card (not just on its pin) ties to that card.
+  const onConnectEnd = useCallback<OnConnectEnd>(
+    (event, state) => {
+      if (state.isValid || !state.fromNode) return;
+      const pt = 'changedTouches' in event ? event.changedTouches[0] : (event as MouseEvent);
+      if (!pt) return;
+      const under = document
+        .elementsFromPoint(pt.clientX, pt.clientY)
+        .map((el) => el.closest('.react-flow__node'))
+        .find((el): el is HTMLElement => !!el && el.getAttribute('data-id') !== state.fromNode!.id && !el.classList.contains('react-flow__node-frame'));
+      const target = under?.getAttribute('data-id');
+      if (target) onConnectString({ source: state.fromNode.id, sourceHandle: 'pin', target, targetHandle: 'pin' });
+    },
+    [onConnectString],
   );
 
   const onDrop = (e: DragEvent) => {
@@ -303,6 +322,8 @@ function Board() {
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={onConnectString}
+        onConnectEnd={onConnectEnd}
+        connectionRadius={36}
         connectionMode={ConnectionMode.Loose}
         connectionLineComponent={StringConnectionLine}
         defaultEdgeOptions={EDGE_DEFAULTS}

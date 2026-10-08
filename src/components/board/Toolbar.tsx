@@ -232,7 +232,7 @@ function AddPanel({ close }: { close: () => void }) {
               onClick={simple(() => {
                 const from = useUi.getState().selectedNodeId;
                 if (from) openTiePicker(from);
-                else useUi.getState().set({ toast: { text: 'Pick the card the string starts from, then press String again. Or drag from one card\'s pin to another.', at: Date.now() } });
+                else useUi.getState().set({ toast: { text: 'Drag the 🧶 on the side of a card onto another card to tie them. Or pick the card the string starts from and press String again to choose from a list.', at: Date.now() } });
               })}
             >
               <span className="text-[19px]">🧶</span>String
