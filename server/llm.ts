@@ -323,7 +323,8 @@ export async function* streamWithFallback(
       }
       // Ended after a few words with no proper close: cut short (it spent its budget thinking).
       if (started && call.expectEnd && !call.expectEnd.test(said) && said.trim().length < 400) throw new Error('reply cut short');
-      if (started) return;
+      // Only spaces or line breaks (a model that spent everything on hidden thinking) is no answer: next brain.
+      if (started && said.trim()) return;
       throw new Error('empty reply');
     } catch (e) {
       if (call.signal?.aborted) throw e;

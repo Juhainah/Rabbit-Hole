@@ -11,12 +11,15 @@ import { ogImage, primaryFromUrl } from './scrape';
 import { availableSources, searchSource } from './sources';
 import { archiveMedia, siteIn, waybackImages } from './sources/archives';
 import { nameMatcher, norm as nameKey, tokenize } from '../shared/names';
-import { enrichEntities, wikiPrimary } from './sources/knowledge';
+import { enrichEntities, wikiArticleImages, wikiPrimary } from './sources/knowledge';
 import { castOf, isGroup, isScreenWork, type Cast } from './sources/cast';
 import { keyDates, type KeyDate } from './sources/keydates';
 import { needsLooking, vetPictures } from './vision';
 
 export type Emit = (ev: DigEvent) => void;
+
+/** Websites and stores where evidence is found, not people or groups in a story. */
+const PLATFORM = /^(the )?(youtube|reddit|r\/\w+|wikipedia|wikimedia|fandom|.+ wiki|wikia|twitter|x|x \(twitter\)|tiktok|instagram|facebook|tumblr|discord|twitch|google|google play( store)?|app store|apple app store|steam|imdb|internet archive|wayback machine|archive\.org|knowyourmeme|know your meme|quora|medium|substack|github|spotify|patreon|deviantart|pinterest)$/i;
 
 // Sources whose pages rarely carry a useful share image (or can't be fetched).
 const NO_PAGE_IMAGES = new Set([
@@ -294,7 +297,7 @@ export async function runDig(req: DigRequest, emit: Emit, signal: AbortSignal) {
     ? Promise.resolve(null)
     : (async () => {
         const sc = scout.length ? scout : await Promise.race([webSearch(researchTopic, 6, signal).catch(() => [] as SourceItem[]), sleep(6000).then(() => [] as SourceItem[])]);
-        return deepResearch(researchTopic, sc, isRelevant, signal, (message) => emit({ type: 'status', message }), u ? { subject: u.subject, queries: u.searches, sites: u.sites, focus: u.focus } : undefined);
+        return deepResearch(researchTopic, sc, isRelevant, signal, (message) => emit({ type: 'status', message }), u ? { subject: u.subject, queries: u.searches, sites: u.sites, focus: u.focus, kind: u.kind } : undefined);
       })().catch((e) => {
         console.warn(`[research] ${errMsg(e)}`);
         return null;
@@ -362,6 +365,9 @@ export async function runDig(req: DigRequest, emit: Emit, signal: AbortSignal) {
     const ids = ['commons', 'openverse'].filter((id) => allowed.has(id));
     // A website as the subject: its own pictures, as the Wayback Machine saved them.
     const site = siteIn(query);
+    // The pictures in the case's own Wikipedia article (the people, the place, the poster, the scene): they
+    // belong to the case by where they are, so they skip the name check every other picture must pass.
+    const fromArticle = primary && !framed && !venue ? wikiArticleImages(primary.title, 6, signal).catch(() => [] as SourceItem[]) : Promise.resolve([] as SourceItem[]);
     const batches = await Promise.allSettled([
       ...ids.map((id) => searchSource(id, phrase, { limit: id === 'commons' ? 8 : 5, signal })),
       ...(site ? [waybackImages(site, undefined, 8, signal, [...(u?.focus ?? []).flatMap(terms), ...terms(query)].filter((w) => !terms(site).includes(w)))] : []),
@@ -369,7 +375,8 @@ export async function runDig(req: DigRequest, emit: Emit, signal: AbortSignal) {
       serperImages(u?.query ?? phrase, 8, signal).then((r) => r.filter((it) => !/fandom\.com|pinterest\.|instagram\.com|spotify\.com|apple\.com\/.*music|gettyimages|shutterstock|alamy|istockphoto|dreamstime/i.test(it.url ?? '') && namesSubject(subject, `${it.title} ${it.meta?.site ?? ''}`)).slice(0, 4)),
     ]);
     const items = rankRelevant(keep(batches.flatMap((b) => (b.status === 'fulfilled' ? b.value : [])).filter((it) => it.image)), { ...topicOf, phrasings: [phrase, titleHelps] });
-    return venue ? [] : framedPick(items, 8, 0);
+    const article = await fromArticle;
+    return venue ? [] : [...article, ...framedPick(items, 8, 0)].slice(0, 10);
   })().catch(() => []);
 
   // And a pass for things to listen to and watch: old broadcasts, oral histories, newsreels, podcasts.
@@ -602,6 +609,14 @@ export async function runDig(req: DigRequest, emit: Emit, signal: AbortSignal) {
       ...(research?.reading ?? []).map((r) => `${r.title} ${r.text}`),
       ...[...(research?.photos ?? []), ...(research?.gallery?.items ?? []), ...sideItems].map((p) => `${p.title} ${p.snippet ?? ''}`),
     ].join(' \n ');
+    // Where the sources were found (YouTube, Reddit, a wiki, an app store) is not part of the case.
+    const hosts = analysis.entities
+      .filter((e) => (PLATFORM.test(e.name.trim()) || /^[\w.-]+\.(com|net|org|io|co|app|gg|tv|me|info|biz|blog|wiki|uk|in)$/i.test(e.name.trim())) && !namesSubject(e.name, subject))
+      .map((e) => e.name.toLowerCase());
+    if (hosts.length) {
+      analysis.entities = analysis.entities.filter((e) => !hosts.includes(e.name.toLowerCase()));
+      analysis.relations = analysis.relations.filter((r) => !hosts.includes(r.from.toLowerCase()) && !hosts.includes(r.to.toLowerCase()));
+    }
     const ungrounded = groundEntities(analysis, primary, evidence, readInFull);
     if (ungrounded.length) {
       emit({ type: 'status', message: `Left off ${ungrounded.length} name${ungrounded.length === 1 ? '' : 's'} the sources never mention: ${ungrounded.slice(0, 4).join(', ')}`, level: 'warn' });
@@ -659,11 +674,13 @@ export async function runDig(req: DigRequest, emit: Emit, signal: AbortSignal) {
     const entities = await enrichEntities(analysis.entities, signal, subject);
     // Characters, invented places and things from the story: their pictures from its fan wiki.
     if (research?.wikiBase) {
-      const want = analysis.entities.filter((e) => e.fictional || !entities[e.name]?.image).map((e) => e.name);
+      const want = analysis.entities.filter((e) => e.fictional).map((e) => e.name);
       const fromWiki = await Promise.race([wikiPictures(research.wikiBase, want, signal).catch(() => ({})), sleep(8000).then(() => ({}))]) as Awaited<ReturnType<typeof wikiPictures>>;
       for (const [name, w] of Object.entries(fromWiki)) {
         const e = analysis.entities.find((x) => x.name === name);
-        if (!e || (!w.image && !e.fictional)) continue;
+        // Only the story's own characters, places and things: a real company or website's page on a fan wiki
+        // carries whatever picture an editor put there.
+        if (!e || !e.fictional) continue;
         entities[name] = { ...(e.fictional ? {} : entities[name]), image: w.image ?? entities[name]?.image, url: w.url };
       }
     }

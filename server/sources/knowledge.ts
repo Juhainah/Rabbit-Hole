@@ -414,3 +414,44 @@ export async function inspiration() {
     })),
   };
 }
+
+/**
+ * The pictures in a Wikipedia article (the crime scene, the people, the poster, the place), with what
+ * each shows from its description: real, checked photos of the case, without any image search.
+ */
+/** Decoration and data graphics, not pictures of the case. */
+const JUNK_PICTURE = /\b(icon|logo|flag|symbol|signature|stub|question book|commons logo|padlock|portal|ambox|crystal|nuvola|disambig|map of|location map|locator|blank|chart|graph|diagram|viewership|ratings|statistics|size comparison|comparison of|timeline of|coat of arms|anser|species)\b/i;
+
+export async function wikiArticleImages(title: string, limit: number, signal?: AbortSignal): Promise<SourceItem[]> {
+  const j = await getJson(
+    mw(WP, { action: 'query', generator: 'images', titles: title, gimlimit: 40, prop: 'imageinfo', iiprop: 'url|size|mime|extmetadata', iiurlwidth: 640, iiextmetadatafilter: 'ImageDescription|ObjectName|DateTimeOriginal', redirects: 1 }),
+    { signal, timeout: 12000 },
+  ).catch(() => null);
+  const pages = (j?.query?.pages ? Object.values(j.query.pages) : []) as any[];
+  return pages
+    .map((p) => ({ p, ii: p.imageinfo?.[0] }))
+    .filter(({ p, ii }) => {
+      if (!ii?.thumburl || !/^image\/(jpeg|png|webp)/.test(ii.mime ?? '')) return false;
+      if ((ii.width ?? 0) < 240 || (ii.height ?? 0) < 180) return false;
+      // Icons, flags, logos, maps of whole regions, charts and signatures are decoration, not evidence.
+      const said = String(p.imageinfo?.[0]?.extmetadata?.ImageDescription?.value ?? '');
+      return !JUNK_PICTURE.test(`${String(p.title).replace(/[_-]/g, ' ')} ${stripHtml(said, 300)}`);
+    })
+    .slice(0, limit)
+    .map(({ p, ii }) => {
+      const meta = ii.extmetadata ?? {};
+      const said = stripHtml(String(meta.ImageDescription?.value ?? meta.ObjectName?.value ?? ''), 200);
+      const name = String(p.title).replace(/^File:/, '').replace(/\.\w+$/, '').replace(/[_-]+/g, ' ');
+      const date = String(meta.DateTimeOriginal?.value ?? '').match(/\b(1[5-9]\d\d|20\d\d)\b/)?.[1];
+      return {
+        id: `wp-img:${p.title}`,
+        source: 'commons',
+        kind: 'image' as const,
+        title: said && said.length <= 90 ? said : name,
+        snippet: said || `A picture from the Wikipedia article on ${title}`,
+        url: ii.descriptionurl ?? `https://commons.wikimedia.org/wiki/${encodeURIComponent(String(p.title))}`,
+        image: ii.thumburl,
+        date,
+      };
+    });
+}

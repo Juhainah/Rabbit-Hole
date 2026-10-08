@@ -2,6 +2,7 @@ import type { SourceItem } from '../shared/types';
 import { sleep } from './http';
 import { parseJsonLoose } from './json';
 import { completeWithFallback, resolveProviders } from './llm';
+import { KINDS, type TopicKind } from './playbook';
 
 // Before digging, read the search the way a librarian would: what is it really about, how is
 // that spelled in the world, and where would a good researcher look? One spelling slip
@@ -54,17 +55,20 @@ export interface Understanding {
   fixes: Record<string, string>;
   /** A link the search assumes that no result supports (a wrong company…). */
   doubt?: string;
+  /** What kind of topic it is: decides where research looks first. */
+  kind?: TopicKind;
 }
 
 const SYSTEM = `You plan research for a detective-board research app, like an expert librarian. The user typed a search (it may have typos, or put a word like "history" or "controversy" before the name). Use the FIRST RESULTS as evidence of what exists and how it is spelled. Output ONLY JSON:
 {"subject": "the specific person, work, event, product, place or phenomenon at the centre, spelled exactly as the results spell it (the name as the results print it, not as typed); for a broad theme, its short core name",
  "aliases": ["up to 4 other names the results use for the same subject: short forms, other spellings"],
- "focus": ["up to 6 words or short phrases for WHAT ABOUT the subject the user wants, including the synonyms articles use (e.g. for a search about a band's break-up: break-up, split, left the band); [] if they want the subject in general"],
+ "focus": ["up to 6 words or short phrases for WHAT ABOUT the subject the user wants, including the synonyms articles use (e.g. for a search about a band's break-up: break-up, split, left the band). Only angles the typed search or the results name: never guessed ones (no 'privacy', 'monetization', 'loot boxes' unless typed or in the results). [] if they want the subject in general"],
  "query": "the search, spelling corrected, at most 6 words, subject first",
  "fixes": {"typed word": "corrected word"},
  "searches": ["6 web searches of 3-9 words, each containing the subject or an alias: the focus angle first; news coverage from when it happened (add a year only if the results show it; never guess one); who made, owns or runs it; first-hand accounts and discussions; the disputed or strange part; a later look-back or analysis. If the user names a related work, person or source (e.g. a story it was based on), one search for that link"],
  "sites": ["up to 4 domains or subreddits where THIS kind of topic is really documented or discussed (a film: imdb.com, its wiki, film critics; a game: its fandom wiki, r/<game>; a crime: court or local news; internet lore: knowyourmeme.com)"],
- "doubt": "one sentence if the typed search links things the results never connect (a wrong company, a connection no result shows), else empty"}
+ "doubt": "one sentence if the typed search links things the results never connect (a wrong company, a connection no result shows), else empty",
+ "kind": "one of: screen (a film, series, anime or its characters), game (a video or mobile game, an app), book, music (a song, album, band, singer), crime (a murder, disappearance, heist, trial), mystery (an unexplained event, a conspiracy theory, a hoax), lore (internet lore, lost media, a meme, a creepypasta), person, event (a historical or news event), science (a scientific idea, a study, a concept), place, other"}
 Use only names that appear in the typed search or the results. Never invent facts.`;
 
 // Words that describe rather than name: "British singer" or "One Direction singer" would let in
@@ -131,6 +135,7 @@ export async function understand(asked: string, firstResults: SourceItem[], sign
           .filter((x) => /^(r\/\w+|[\w.-]+\.[a-z]{2,})/i.test(x)),
         fixes,
         doubt: str(j.doubt, 300) || undefined,
+        kind: KINDS.includes(str(j.kind, 20).toLowerCase() as TopicKind) ? (str(j.kind, 20).toLowerCase() as TopicKind) : undefined,
       } satisfies Understanding;
     },
   ).then((r) => r.value);

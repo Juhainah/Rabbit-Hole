@@ -200,14 +200,21 @@ app.post('/api/chat', async (c) => {
           .join('\n');
       }
       const messages = chatMessages(body.messages, context, sources);
+      // Whatever happens, the answer never ends empty: no words after the last hand-over is an error to show.
+      let said = 0;
       for await (const piece of streamWithFallback(resolveProviders(), { messages, temperature: 0.7, maxTokens: 3000, signal, expectEnd: /TANGENTS\s*:/i }, (p, err) => {
         console.warn(`[ai] ${p.name} (${p.model}) failed during chat: ${err}`);
         emit({ type: 'status', message: 'Backup brain taking over…' });
       })) {
-        if (piece.type === 'delta') emit({ type: 'delta', text: piece.text });
-        else if (piece.type === 'reset') emit({ type: 'reset' });
-        else console.log(`[ai] chat answered by ${piece.provider.name} / ${piece.provider.model}`);
+        if (piece.type === 'delta') {
+          said += piece.text.trim().length;
+          emit({ type: 'delta', text: piece.text });
+        } else if (piece.type === 'reset') {
+          said = 0;
+          emit({ type: 'reset' });
+        } else console.log(`[ai] chat answered by ${piece.provider.name} / ${piece.provider.model}`);
       }
+      if (!said && !signal.aborted) emit({ type: 'error', message: 'The partner lost its train of thought before answering. Ask again: it will pick up the same sources.' });
       emit({ type: 'done' });
     },
     (m) => {

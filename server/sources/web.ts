@@ -110,11 +110,15 @@ async function tavily(q: string, limit: number, signal?: AbortSignal): Promise<S
 async function langsearch(q: string, limit: number, signal?: AbortSignal): Promise<SourceItem[]> {
   const key = process.env.LANGSEARCH_API_KEY?.trim();
   if (!key) return [];
+  // It reads "site:" as a word: say the site's name instead ("websleuths", "reddit"), and ask for more,
+  // since the pages from elsewhere are left out afterwards.
+  const sites = [...q.matchAll(/\bsite:([\w.-]+\.[a-z]{2,})/gi)].map((m) => m[1].replace(/^www\./, '').split('.').slice(-2, -1)[0]);
+  const query = sites.length ? `${q.replace(/\s*\bsite:[\w.-]+/gi, '').trim()} ${sites.join(' ')}` : q;
   const j = await getJson('https://api.langsearch.com/v1/web-search', {
     method: 'POST',
     signal,
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
-    body: JSON.stringify({ query: q, count: Math.min(limit, 20), freshness: 'noLimit', summary: true }),
+    body: JSON.stringify({ query, count: Math.min(sites.length ? limit * 3 : limit, 30), freshness: 'noLimit', summary: true }),
   });
   if (j?.code && j.code !== 200) throw new Error(`LangSearch ${j.code}: ${j.msg ?? 'refused'}`);
   return (j?.data?.webPages?.value ?? []).map((r: any) => {

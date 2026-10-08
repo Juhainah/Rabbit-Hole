@@ -7,6 +7,7 @@ import { readAnything } from './reader';
 import { youtubeId } from './scrape';
 import { youtubeTranscript } from './sources/media';
 import { googleSearch, webSearch } from './sources/web';
+import { sitesFor, type TopicKind } from './playbook';
 
 // Deep research: what a good researcher does after the first search. Plan a few
 // targeted searches, find the subject's fan wiki, read the best pages in full
@@ -882,12 +883,12 @@ export async function deepResearch(
   signal: AbortSignal,
   onStatus: (m: string) => void,
   /** The search already understood (subject, planned searches, places): no second planning round. */
-  given?: { subject: string; queries: string[]; sites: string[]; focus: string[] },
+  given?: { subject: string; queries: string[]; sites: string[]; focus: string[]; kind?: TopicKind },
 ): Promise<Research> {
   const subject = given?.subject ?? subjectName(query);
   const clues = scout.map((s) => `- ${s.title}: ${s.snippet ?? ''}`).join('\n');
   const planned = given?.queries.length
-    ? Promise.resolve({ queries: [...new Set(given.queries.map((q) => (namesSubject(subject, q) ? q : `${subject} ${q}`)))].slice(0, 4), sites: given.sites })
+    ? Promise.resolve({ queries: [...new Set(given.queries.map((q) => (namesSubject(subject, q) ? q : `${subject} ${q}`)))].slice(0, 4), sites: sitesFor(given.kind, given.sites) })
     : planQueries(query, subject, clues, signal);
   const [plan, found] = await Promise.all([planned, timeout(findWiki(subject, signal, `${query} ${(given?.focus ?? []).join(' ')}`), 15000, undefined)]);
   // A wiki that merely shares the name (a role-play wiki called "Game of Life" for the board game) is not used:
@@ -897,10 +898,15 @@ export async function deepResearch(
   const queries = plan.queries;
   // The places this topic lives: searched for the subject, inside each one.
   // Two places at most: each search spends from a small free allowance.
+  // The places this kind of topic is documented: a subreddit as a site search on reddit.com, so engines that
+  // honour "site:" keep to it and others still get the name in the words.
   const siteSearches = plan.sites
     .filter((x) => !(wiki && x.includes(new URL(wiki.base).hostname)))
-    .slice(0, 2)
-    .map((x) => (x.startsWith('r/') ? `${subject} reddit ${x}` : `${subject} site:${x}`));
+    .slice(0, 3)
+    .map((x) => {
+      const sub = x.match(/^(?:reddit\.com\/)?r\/(\w+)/i)?.[1];
+      return sub ? `${subject} r/${sub} site:reddit.com` : `${subject} site:${x}`;
+    });
   const places = [...plan.sites, ...(wiki ? [wiki.name] : [])];
   onStatus(`Researching ${queries.length} angles${places.length ? ` and ${places.slice(0, 4).join(', ')}` : ''}…`);
   const keywords = [...new Set([...terms(subject), ...(given?.focus ?? []).flatMap(terms), ...queries.flatMap(terms)])].filter((w) => w.length >= 4);

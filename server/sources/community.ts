@@ -86,7 +86,12 @@ export const reddit: SearchFn = async (q, { limit, signal, subject, context }) =
           .catch(() => [] as any[]),
       ),
     );
-    const found = byText.flat().sort((a: any, b: any) => (b.score ?? 0) + (b.num_comments ?? 0) - ((a.score ?? 0) + (a.num_comments ?? 0)));
+    // Text search pulls in adult posts that only share a word; those never reach the board.
+    const adult = /\b(nsfw|onlyfans|of @|nude|nudes|porn|cock|dick|clit|pussy|tits|boobs|horny|fuck|fucked|xxx|18\+|sexting|escort|gonewild|girlcock)\b/i;
+    const found = byText
+      .flat()
+      .filter((d: any) => !adult.test(`${d.title} ${d.subreddit} ${String(d.selftext ?? '').slice(0, 300)}`) && !/^u_/.test(String(d.subreddit)))
+      .sort((a: any, b: any) => (b.score ?? 0) + (b.num_comments ?? 0) - ((a.score ?? 0) + (a.num_comments ?? 0)));
     archived.unshift(...found);
   }
   // The threads Google ranks best for this search come first, then the archive's most discussed.
