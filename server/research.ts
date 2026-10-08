@@ -232,11 +232,63 @@ async function wikiGallery(wiki: Wiki, title: string, subject: string, signal: A
  * `subject` is the case it belongs to, so the subject's own pages are not counted as members.
  */
 export async function galleryFromUrl(url: string, subject: string, signal: AbortSignal): Promise<Research['gallery']> {
-  const u = new URL(url);
-  if (!/\.fandom\.com$/.test(u.hostname)) throw new Error('Not a Fandom wiki page');
-  const title = decodeURIComponent(u.pathname.replace(/^\/wiki\//, '')).replace(/_/g, ' ');
-  const wiki: Wiki = { name: u.hostname.split('.')[0], base: `${u.protocol}//${u.hostname}` };
-  return wikiGallery(wiki, title, subject, signal, 0, 120);
+  const g = await listFromUrl(url, subject, signal);
+  if (!g) throw new Error('No list on that page');
+  return g;
+}
+
+/** A wiki page from its link: Fandom, Wikipedia, or any MediaWiki site with /wiki/ links. */
+async function wikiFromUrl(url: string, signal: AbortSignal): Promise<{ wiki: Wiki; title: string } | null> {
+  let u: URL;
+  try {
+    u = new URL(url);
+  } catch {
+    return null;
+  }
+  const m = u.pathname.match(/^\/(?:[a-z-]+\/)?wiki\/(.+)$/);
+  if (!/^https?:$/.test(u.protocol) || !m) return null;
+  const title = decodeURIComponent(m[1]).replace(/_/g, ' ');
+  const lang = u.pathname.match(/^\/([a-z-]+)\/wiki\//)?.[1];
+  const base = /wikipedia\.org$/.test(u.hostname) ? `${u.protocol}//${u.hostname}/w` : `${u.protocol}//${u.hostname}${lang ? `/${lang}` : ''}`;
+  const probe: Wiki = { name: u.hostname.split('.')[0], base };
+  const site = await wikiApi(probe, { action: 'query', meta: 'siteinfo', siprop: 'general' }, signal).catch(() => null);
+  if (!site?.query?.general) return null;
+  return { wiki: { ...probe, name: String(site.query.general.sitename ?? probe.name) }, title };
+}
+
+/**
+ * The list on a page someone links to: its table (name, details, pictures), else the pages it links
+ * with pictures, else, for a category page, its members. Any other web page is read and its list copied out.
+ */
+export async function listFromUrl(url: string, subject: string, signal: AbortSignal, what = ''): Promise<(Research['gallery'] & { label: string; wiki: string; source: string }) | undefined> {
+  const found = await wikiFromUrl(url, signal);
+  if (found) {
+    const { wiki, title } = found;
+    const source = /wikipedia/.test(wiki.base) ? 'wikipedia' : 'fandom';
+    const clean = title.replace(/^List of /i, '').replace(/\s*\(.*\)\s*$/, '');
+    if (/^Category:/i.test(title)) {
+      const g = await categoryList(wiki, title, subject, clean.replace(/^Category:/i, ''), signal, true);
+      if (g) return { ...g, source };
+    }
+    const fromTable = await timeout(tableList(wiki, title, subject, signal), 15000, undefined);
+    if (fromTable) return { ...fromTable, wiki: wiki.name, source };
+    const g = await timeout(wikiGallery(wiki, title, subject, signal, 0, 120), 15000, undefined);
+    if (g) return { ...g, label: clean, wiki: wiki.name, source };
+    return undefined;
+  }
+  const page = await timeout(readAnything(url), 15000, null);
+  if (!page?.text) return undefined;
+  const got = await timeout(listFromPage(subject || page.title, what || 'the things this page lists', page.text, signal), 20000, null);
+  if (!got || got.items.length < 3) return undefined;
+  const site = new URL(url).hostname.replace(/^www\./, '');
+  return {
+    title: page.title || site,
+    url,
+    label: got.label,
+    wiki: site,
+    source: 'web',
+    items: got.items.map((it, i) => ({ id: `list:${url}:${i}`, source: 'web', kind: 'entity' as const, title: it.name, snippet: it.detail || it.name, url, meta: it.detail ? { role: it.detail.slice(0, 70) } : undefined })),
+  };
 }
 
 /**
@@ -245,6 +297,17 @@ export async function galleryFromUrl(url: string, subject: string, signal: Abort
  * one whose members are mostly pictured becomes a gallery, labelled with what it is.
  */
 export async function findList(subject: string, what: string, signal: AbortSignal): Promise<(Research['gallery'] & { label: string; wiki: string; source: string }) | undefined> {
+  // A link given with the request is the list itself.
+  const link = `${subject} ${what}`.match(/https?:\/\/[^\s<>"')\]]+/)?.[0];
+  if (link) {
+    const strip = (t: string) => t.replace(link, '').replace(/\s+/g, ' ').trim();
+    const g = await listFromUrl(link, strip(subject), signal, strip(what));
+    // Labelled the way it was asked for ("gate keys" → "Gate Keys"), else by the page.
+    const asked = strip(what).replace(/^(a |the )?(full |whole |complete )?(list|card|gallery)( of)?\s*/i, '');
+    if (g) return { ...g, label: asked ? asked.replace(/\b\p{L}/gu, (c) => c.toUpperCase()).slice(0, 30) : g.label };
+    subject = strip(subject) || subject;
+    what = strip(what) || what;
+  }
   const wiki = await findWiki(subject, signal, `${subject} ${what}`);
   if (wiki) {
     const g = await wikiList(wiki, subject, what, signal);
@@ -307,6 +370,11 @@ async function pageList(subject: string, what: string, signal: AbortSignal): Pro
     return !NOT_READABLE.test(h) && namesSubject(subject, `${r.title} ${r.snippet ?? ''} ${r.url}`);
   });
   for (const r of readable.slice(0, 3)) {
+    // A wiki page among the results is read through the wiki itself: its table keeps the pictures.
+    if (/\/wiki\//.test(new URL(r.url!).pathname)) {
+      const g = await timeout(listFromUrl(r.url!, subject, signal, what), 20000, undefined);
+      if (g && g.source !== 'web' && g.items.length >= 4) return g;
+    }
     const page = await timeout(readAnything(r.url!), 12000, null);
     if (!page?.text || page.text.length < 300) continue;
     const got = await timeout(listFromPage(subject, what, page.text, signal), 20000, null);
@@ -370,7 +438,8 @@ async function tableList(wiki: Wiki, title: string, subject: string, signal: Abo
   const j = await wikiApi(wiki, { action: 'parse', page: title, prop: 'text', redirects: 1 }, signal).catch(() => null);
   const html = String(j?.parse?.text ?? '');
   const page = String(j?.parse?.title ?? title);
-  const cellsOf = (r: string) => (r.match(/<t[hd][^>]*>[\s\S]*?<\/t[hd]>/gi) ?? []).map((c) => stripHtml(c, 120).replace(/\s+/g, ' ').trim());
+  // Footnote marks ("[a]", "[12]") are not part of a name.
+  const cellsOf = (r: string) => (r.match(/<t[hd][^>]*>[\s\S]*?<\/t[hd]>/gi) ?? []).map((c) => stripHtml(c.replace(/<sup[\s\S]*?<\/sup>/gi, ''), 120).replace(/\s*\[\s*[\w\s]{1,4}\s*\]/g, '').replace(/\s+/g, ' ').trim());
   // A list split over several tables of the same shape ("Gold keys", "Silver keys") is read as one.
   const groups = new Map<string, SourceItem[]>();
   for (const table of html.match(/<table[\s\S]*?<\/table>/gi) ?? []) {
@@ -423,7 +492,8 @@ async function tableList(wiki: Wiki, title: string, subject: string, signal: Abo
     }
     groups.set(key, items);
   }
-  const best = [...groups.values()].sort((a, b) => b.length - a.length)[0];
+  // A page opens with its main list; later tables are side lists (other work, credits, references).
+  const best = [...groups.values()].find((g) => g.length >= 5);
   if (!best || best.length < 5) return undefined;
   const label = page.replace(/^List of /i, '').replace(/\s*\(.*\)\s*$/, '');
   return { title: page, url: wikiUrl(wiki, page), label: label.slice(0, 40), items: best.slice(0, 80) };
@@ -860,6 +930,15 @@ export async function deepResearch(
     const onPoint = (t: string) => terms(t).some((w) => asked.has(w) || asked.has(w.replace(/s$/, '')) || asked.has(`${w}s`));
     const aiList = gallery;
     if (aiList && named.length && !onPoint(aiList.title)) gallery = undefined;
+    // The page the case is about can be the list itself ("… Gate Keys": a table of every key with its picture).
+    const own = named.length ? topWiki.find((t) => terms(t).filter((w) => asked.has(w) || asked.has(w.replace(/s$/, '')) || asked.has(`${w}s`)).length >= Math.min(2, asked.size)) : undefined;
+    if (own) {
+      const table = await timeout(tableList(wiki, own, subject, signal), 10000, undefined);
+      if (table) {
+        if (aiList && aiList.title !== table.title) more.push(aiList);
+        gallery = { title: table.title, url: table.url, items: table.items.slice(0, 40), label: table.label, about: own };
+      }
+    }
     // The wiki may word them differently from the search: the AI matches the search to the wiki's categories
     // by meaning, alongside the word match below.
     const byMeaning = !gallery && named.length ? timeout(askedCategory(wiki, subject, query, signal), 16000, { wants: false, gallery: undefined }) : undefined;
@@ -883,7 +962,7 @@ export async function deepResearch(
     // From more than one angle: the list the search asks for, and beside it the wiki's list the case leans on.
     if (!missing) {
       if (!gallery) gallery = aiList;
-      else if (aiList && aiList.title !== gallery.title) more.push(aiList);
+      else if (aiList && aiList.title !== gallery.title && !more.includes(aiList)) more.push(aiList);
     }
     if (gallery) {
       const bare = (t: string) => t.replace(/\s*\(.*\)\s*$/, '');

@@ -1,7 +1,8 @@
 import clsx from 'clsx';
 import { Dices, Search } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ALL_EMOJIS, EMOJI_GROUPS } from '../lib/emojis';
+import { ALL_EMOJIS, EMOJI_GROUPS, type EmojiGroup } from '../lib/emojis';
+import { loadAllEmojis } from '../lib/emojiAll';
 import { useBoards } from '../store/boards';
 import { useUi } from '../store/ui';
 
@@ -23,6 +24,9 @@ export function EmojiPicker() {
   const current = useBoards((s) => (target ? s.boards[target.boardId]?.emoji : undefined));
   const [q, setQ] = useState('');
   const [group, setGroup] = useState(EMOJI_GROUPS[0].name);
+  // Every other emoji, loaded the first time the picker opens.
+  const [more, setMore] = useState<EmojiGroup[]>([]);
+  const groups = useMemo(() => [...EMOJI_GROUPS, ...more], [more]);
   const box = useRef<HTMLDivElement>(null);
 
   const close = () => useUi.getState().set({ emojiFor: undefined });
@@ -30,6 +34,7 @@ export function EmojiPicker() {
   useEffect(() => {
     if (!target) return;
     setQ('');
+    loadAllEmojis().then(setMore, () => {});
     const onDown = (e: MouseEvent) => !box.current?.contains(e.target as Node) && close();
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && close();
     window.addEventListener('mousedown', onDown);
@@ -43,8 +48,15 @@ export function EmojiPicker() {
   const results = useMemo(() => {
     const words = q.trim().toLowerCase().split(/\s+/).filter(Boolean);
     if (!words.length) return null;
-    return ALL_EMOJIS.filter(([e, w]) => e === q.trim() || words.every((word) => w.split(' ').some((x) => x.startsWith(word))));
-  }, [q]);
+    // The hand-picked ones first, then every other emoji with a matching word; each emoji once.
+    const seen = new Set<string>();
+    const hits = [...ALL_EMOJIS, ...more.flatMap((g) => g.items)].filter(
+      ([e, w]) => (e === q.trim() || words.every((word) => w.split(' ').some((x) => x.startsWith(word)))) && !seen.has(e) && !!seen.add(e),
+    );
+    // Ones named by the word ("dog face") before ones merely tagged with it (a bone).
+    const named = ([, w]: [string, string]) => (w.split(' ')[0].startsWith(words[0]) ? 0 : 1);
+    return hits.map((h, i) => ({ h, i })).sort((a, b) => named(a.h) - named(b.h) || a.i - b.i).map((x) => x.h);
+  }, [q, more]);
 
   if (!target) return null;
 
@@ -59,7 +71,7 @@ export function EmojiPicker() {
   };
 
   const recent = readRecent();
-  const shown = results ?? EMOJI_GROUPS.find((g) => g.name === group)!.items;
+  const shown = results ?? (groups.find((g) => g.name === group) ?? groups[0]).items;
   const left = Math.min(Math.max(8, target.x - 20), window.innerWidth - W - 8);
   const top = target.y + H + 12 > window.innerHeight ? Math.max(8, target.y - H - 12) : target.y + 12;
 
@@ -73,7 +85,7 @@ export function EmojiPicker() {
             value={q}
             onChange={(e) => setQ(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && results?.[0] && pick(results[0][0])}
-            placeholder="Search: ghost, space, crime…"
+            placeholder="Search any emoji: a word like ghost, food, dog…"
             className="min-w-0 flex-1 bg-transparent font-ui text-[13.5px] text-ink outline-none placeholder:text-ink/40"
           />
         </label>
@@ -88,7 +100,7 @@ export function EmojiPicker() {
 
       {!results && (
         <div className="flex gap-1 overflow-x-auto border-b border-ink/10 px-2.5 py-2 [scrollbar-width:none]">
-          {EMOJI_GROUPS.map((g) => (
+          {groups.map((g) => (
             <button key={g.name} onClick={() => setGroup(g.name)} className={clsx('chip shrink-0 !px-2 !py-0.5 !text-[12px]', g.name === group && 'on')} title={g.name}>
               {g.items[0][0]} {g.name}
             </button>

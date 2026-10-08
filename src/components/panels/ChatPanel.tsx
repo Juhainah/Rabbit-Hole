@@ -322,8 +322,10 @@ function runActions(actions: string[], sources: SourceItem[]): string[] {
       void api
         .findList(subject, what)
         .then((g) => {
-          const id = addClue('gallery', { title: `${subject}: ${g.title}`, listLabel: g.label, url: g.url, source: g.source ?? 'fandom', items: g.items }, { near: anchor, tie: true });
-          useUi.getState().log(`🗂 ${g.label}: ${g.items.length} from ${g.source === 'fandom' || !g.source ? `the ${g.wiki} wiki` : g.wiki}`, 'ok');
+          // A link is not a name: the card is titled by the page, with the subject in front when it is a real name.
+          const named = !/^https?:\/\//i.test(subject) && !g.title.toLowerCase().includes(subject.toLowerCase());
+          const id = addClue('gallery', { title: named ? `${subject}: ${g.title}` : g.title, listLabel: g.label, url: g.url, source: g.source ?? 'fandom', items: g.items }, { near: anchor, tie: true });
+          useUi.getState().log(`🗂 ${g.label}: ${g.items.length} from ${g.source === 'fandom' || !g.source ? (/wiki$/i.test(g.wiki) ? `the ${g.wiki}` : `the ${g.wiki} wiki`) : g.wiki}`, 'ok');
           setTimeout(() => useUi.getState().focusNodes([id]), 300);
         })
         .catch((e) => useUi.getState().log(`Couldn't find a list of ${what} for ${subject}: ${e instanceof Error ? e.message : e}`, 'warn'));

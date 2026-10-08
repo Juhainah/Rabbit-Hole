@@ -472,7 +472,7 @@ export async function runDig(req: DigRequest, emit: Emit, signal: AbortSignal) {
     completeWithFallback(
       providers,
       {
-        messages: digMessages(venue ? `${framed} on ${venue.name}` : query, trail, primary, listed(compact), compact, framed, notes.length ? `The user typed “${asked}”. ${notes.join(' ')}` : undefined, venue?.name, [...castReading, ...(research?.reading ?? [])], research?.gallery),
+        messages: digMessages(venue ? `${framed} on ${venue.name}` : query, trail, primary, listed(compact), compact, framed, notes.length ? `The user typed “${asked}”. ${notes.join(' ')}` : undefined, venue?.name, [...castReading, ...(research?.reading ?? [])], research?.gallery, subject),
         temperature: 0.6,
         maxTokens: compact ? 4000 : 8000,
         signal,
@@ -563,7 +563,7 @@ export async function runDig(req: DigRequest, emit: Emit, signal: AbortSignal) {
       emit({ type: 'status', message: 'Looking for the next rabbit holes…' });
       const extra = await completeWithFallback(
         providers,
-        { messages: tangentMessages(query, analysis.summary, primary?.related ?? []), temperature: 0.8, maxTokens: 1500, signal, timeoutMs: 60000 },
+        { messages: tangentMessages(query, analysis.summary, primary?.related ?? [], subject), temperature: 0.8, maxTokens: 1500, signal, timeoutMs: 60000 },
         (text) => {
           const t = normalizeTangents(parseJsonLoose(text));
           if (!t.length) throw new Error('no tangents');
@@ -571,7 +571,8 @@ export async function runDig(req: DigRequest, emit: Emit, signal: AbortSignal) {
         },
       ).catch(() => null);
       const have = new Set(analysis.tangents.map((t) => t.title.toLowerCase()));
-      const fromWiki = (primary?.related ?? []).map((r) => ({ title: r, hook: 'Filed right next to this case. Worth a look.', query: r }));
+      // Wikipedia's "more like this" titles only when they are about the subject itself (not a neighbouring article).
+      const fromWiki = (primary?.related ?? []).filter((r) => namesSubject(subject, r)).map((r) => ({ title: r, hook: 'Filed right next to this case. Worth a look.', query: r }));
       for (const t of [...(extra?.value ?? []), ...fromWiki]) {
         if (analysis.tangents.length >= 6) break;
         if (have.has(t.title.toLowerCase()) || t.title.toLowerCase() === query.toLowerCase()) continue;
@@ -598,6 +599,8 @@ export async function runDig(req: DigRequest, emit: Emit, signal: AbortSignal) {
     };
     const before = analysis.tangents.length + analysis.questions.length;
     analysis.tangents = analysis.tangents.filter((t) => grounded(`${t.title} ${t.hook} ${t.query}`));
+    // Falling into a rabbit hole searches with the subject in it, so it stays inside this case.
+    for (const t of analysis.tangents) if (!namesSubject(subject, `${t.query} ${t.title}`)) t.query = `${subject} ${t.query}`.slice(0, 120);
     analysis.questions = analysis.questions.filter(grounded);
     const cut = before - analysis.tangents.length - analysis.questions.length;
     if (cut) console.log(`[dig] dropped ${cut} tangent/question idea(s) that don't touch the case`);
@@ -610,6 +613,14 @@ export async function runDig(req: DigRequest, emit: Emit, signal: AbortSignal) {
     if (signal.aborted) return;
     console.error(`[ai] dig failed: ${errMsg(e)}`);
     emit({ type: 'error', message: 'The AI is overwhelmed right now. Your evidence is pinned; try digging again in a minute.' });
+  }
+  // Research that ran past the board's deadline still brings its lists (the wiki's keys, characters…).
+  if (!research && !signal.aborted) {
+    const late = await Promise.race([researchTask, sleep(40000).then(() => null)]);
+    if (late && !signal.aborted) {
+      if (late.gallery) emit({ type: 'gallery', gallery: { ...late.gallery, source: 'fandom' } });
+      for (const g of late.more ?? []) emit({ type: 'gallery', gallery: { ...g, source: 'fandom' } });
+    }
   }
   await Promise.allSettled([...tasks, photoTask, mediaTask, thumbTask, lookTask]);
   emit({ type: 'done' });

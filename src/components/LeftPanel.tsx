@@ -39,7 +39,8 @@ function Boards() {
   const { setCurrent, renameBoard, deleteBoard } = useBoards.getState();
 
   return (
-    <section>
+    // The board list scrolls by itself, so what is on the current board stays in view below it.
+    <section className="flex min-h-[150px] flex-1 flex-col">
       <button onClick={newBoard} className="btn-stamp flex w-full items-center justify-center gap-2 py-2 text-[13px] tracking-wider">
         <Plus size={15} /> NEW BOARD
       </button>
@@ -49,7 +50,7 @@ function Boards() {
           <FolderOpen size={13} /> Case files
         </button>
       </div>
-      <div className="mt-2 grid grid-cols-1 gap-1">
+      <div className="boards-list mt-2 -mr-2 grid min-h-0 flex-1 grid-cols-1 content-start gap-1 overflow-y-auto pr-2">
         {rows.map((row) => {
           const [id, emoji, name, clues, digs, pinned] = row.split('\u0000');
           if (!id) return null;
@@ -131,7 +132,7 @@ function Trail() {
   const trail = useBoards((s) => s.boards[s.currentId]?.trail ?? NO_TRAIL);
   if (!trail.length) return null;
   return (
-    <section className="mt-6">
+    <section className="mt-3">
       <h3 className="label-caps text-ink-soft">Your path down</h3>
       <div className="relative mt-2 pl-1">
         {trail.map((t, i) => (
@@ -169,7 +170,7 @@ function Inventory() {
     if (next.length) useUi.getState().focusNodes(currentBoard().nodes.filter((n) => next.includes(String(n.type))).map((n) => n.id), true);
   };
   return (
-    <section className="mt-6">
+    <section className="mt-3">
       <div className="flex items-center justify-between gap-2">
         <h3 className="label-caps text-ink-soft">On this board</h3>
         {spotlight.length > 0 && (
@@ -201,7 +202,7 @@ export function LeftPanel() {
   return (
     <aside className="side-left paper-panel ruled relative z-20 flex shrink-0 flex-col" style={{ width }}>
       <ResizeHandle edge="right" width={width} min={210} max={420} initial={260} onResize={(leftWidth) => set({ leftWidth })} onCollapse={() => useUi.getState().set({ leftOpen: false })} />
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-4 pt-3 pb-4">
+      <div className="flex min-h-0 flex-1 flex-col px-4 pt-3 pb-3">
       <div className="mb-3 flex items-center justify-between">
         <span className="label-caps text-ink-soft">Investigations</span>
         <button onClick={() => useUi.getState().set({ leftOpen: false })} className="rounded-md p-1 text-ink-soft hover:bg-ink/10 hover:text-ink" title="Collapse sidebar">
@@ -209,9 +210,12 @@ export function LeftPanel() {
         </button>
       </div>
       <Boards />
-      <Trail />
-      <Inventory />
-      <button onClick={() => useUi.getState().set({ helpOpen: true })} className="mt-auto pt-6 text-left text-[12.5px] leading-snug text-ink-soft hover:text-[#b3261e]">
+      {/* Always in view at the bottom: the way down this board, and what is on it. */}
+      <div className="board-sections -mr-2 mt-2 max-h-[48%] shrink-0 overflow-y-auto border-t border-ink/10 pr-2">
+        <Trail />
+        <Inventory />
+      </div>
+      <button onClick={() => useUi.getState().set({ helpOpen: true })} className="shrink-0 pt-3 text-left text-[12.5px] leading-snug text-ink-soft hover:text-[#b3261e]">
         new here? <u>how Rabbit Hole works →</u>
       </button>
       </div>

@@ -53,6 +53,13 @@ export function boardContext(): string {
     }
     // Your own documents are read in full (a PDF's text, your notes); other cards in brief.
     if (sel.data.text) lines.push(sel.data.text.slice(0, sel.data.source === 'mine' ? 6000 : 1500));
+    // A map card: its places, and which ones the user added by hand (those may be unrelated to the case).
+    if (sel.data.points?.length) {
+      const own = sel.data.points.filter((p) => p.from === 'mine').map((p) => p.label);
+      const found = sel.data.points.filter((p) => p.from !== 'mine').map((p) => p.label);
+      if (found.length) lines.push(`Places the case's sources put on this map: ${found.join('; ')}`);
+      if (own.length) lines.push(`Places the USER added to this map by hand (no source ties them to the case): ${own.join('; ')}`);
+    }
     if (sel.data.date) lines.push(`Date: ${sel.data.date}`);
     if (sel.data.url) lines.push(`Source: ${sel.data.url}`);
     const links = board.edges

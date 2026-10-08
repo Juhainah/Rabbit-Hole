@@ -22,9 +22,9 @@ const SCHEMA = `{
   "entities": [{"name": "", "type": "person|place|org|event|concept|object|work", "description": "1-2 specific sentences", "date": "YYYY or YYYY-MM-DD (omit if none)", "place": "for places/events: geocodable location, e.g. 'Lake Bled, Slovenia' (omit otherwise)"}],
   "relations": [{"from": "entity name or TOPIC", "to": "entity name", "label": "2-4 word verb phrase"}],
   "timeline": [{"date": "YYYY[-MM[-DD]] (negative year for BC)", "event": "short line", "evidence": number of the evidence it comes from (omit if it comes from a page read in full)}],
-  "tangents": [{"title": "", "hook": "one sentence on why it's a rabbit hole", "query": "best search query for it"}],
-  (tangents must connect through substance: the same people, events, places, phenomena or mechanisms; never through a shared word or name, like another person who happens to be called the same. Each tangent and each question must name someone or something in this case.)
-  "questions": ["open question"],
+  "tangents": [{"title": "", "hook": "one sentence on why it's a rabbit hole, naming what in the evidence points to it", "query": "a web search that would answer it, starting with the subject's name"}],
+  (Rabbit holes go DEEPER INTO THE SUBJECT, not away from it: its hidden or removed content, how it really worked, odd details and changes over time, disputes, lore or theories its own community argues about, the people and events at the centre of it. The maker, owner or a person's wider career only where the evidence ties them to something specific about the subject. Never the wider industry, other companies or products, or general topics. Each must be something the evidence hints at but does not settle, so a search can actually turn up an answer; prefer the niche and surprising over the obvious. Never connect through a shared word or name. Each title names the subject or something inside this case.)
+  "questions": ["an open question the evidence raises but does not answer, specific enough to search (names, versions, dates), about the subject itself"],
   "cites": [{"evidence": 3, "entity": "exact entity name from entities", "label": "2-5 words: what this source shows about it"}],
   "keep": [the 10-14 evidence numbers that best tell this case, best first: what actually happened (reporting from the time AND later look-backs or explainers), first-hand accounts and forum threads, official statements or documents; one of any near-duplicates; minor or generic items left out],
   "offtopic": [evidence numbers that are NOT really about this topic: lists or posts that only mention it in passing, and NAMESAKES (a different app, game, film, band or person that only shares the name, e.g. another app also called the same)],
@@ -44,8 +44,10 @@ export function digMessages(
   venue?: string,
   reading: { title: string; url: string; text: string; date?: string }[] = [],
   gallery?: { title: string; about?: string },
+  subject?: string,
 ): ChatMessage[] {
   const lines: string[] = [`TOPIC: ${topic}`];
+  if (subject && subject.toLowerCase() !== topic.toLowerCase()) lines.push(`THE SUBJECT (rabbit holes and questions stay inside it): ${subject}`);
   if (premiseNote) lines.push(`PREMISE CHECK: ${premiseNote} Build the case only from what the evidence shows, and say this plainly in "premise".`);
   if (venue && fromCase) {
     lines.push(`THIS DIG COLLECTS WHAT PEOPLE ON ${venue.toUpperCase()} SAY ABOUT "${fromCase}". Summarise those discussions: the claims, who made them, what was debunked. Do not describe ${venue} itself.`);
@@ -95,14 +97,14 @@ export function digMessages(
 }
 
 /** Small follow-up call when a model forgot the rabbit holes, which are the whole point. */
-export function tangentMessages(topic: string, summary: string, related: string[]): ChatMessage[] {
+export function tangentMessages(topic: string, summary: string, related: string[], subject = topic): ChatMessage[] {
   return [
     { role: 'system', content: 'You suggest fascinating rabbit holes. Output ONLY JSON.' },
     {
       role: 'user',
-      content: `TOPIC: ${topic}\n${summary.slice(0, 600)}\n${related.length ? `Related articles: ${related.slice(0, 12).join('; ')}\n` : ''}
-Suggest 6 adjacent rabbit holes a curious person would click next. Specific, strange, irresistible. Not the topic itself.
-Return: {"tangents":[{"title":"","hook":"one sentence on why it's a rabbit hole","query":"search query"}]}`,
+      content: `TOPIC: ${topic}\nSUBJECT: ${subject}\n${summary.slice(0, 600)}\n${related.length ? `Related articles: ${related.slice(0, 12).join('; ')}\n` : ''}
+Suggest 6 rabbit holes that go deeper into ${subject} itself: its hidden details, how it really worked, changes over time, disputes, lore, the people and events at its centre. Not other companies, products or general topics. Each must be answerable by a web search and more surprising than obvious.
+Return: {"tangents":[{"title":"","hook":"one sentence on why it's a rabbit hole","query":"a web search starting with ${subject}"}]}`,
     },
   ];
 }
@@ -187,7 +189,8 @@ export function normalizeAnalysis(raw: any, topic: string): Analysis {
 export const CHAT_SYSTEM = `You are the user's research partner inside "Rabbit Hole", a visual evidence board for falling down rabbit holes. You are curious, precise and a little bit obsessive, with the tone of a great documentary narrator, but rigorous about evidence.
 
 - You are Rabbit Hole's research partner. Never name the AI model, lab or company behind you (no GPT, OpenAI, Gemini, Google, Llama, Meta, Groq, Claude or any other); if asked, say you're Rabbit Hole's research partner, built on several AI services.
-- Cards marked "added by the user" are the user's OWN evidence: their photos, notes, files and private items. Never search for them, never say a web result is the same person, place or thing, and never guess who is in a personal photo. You cannot see pictures: describe a photo only from its name and the user's notes. Help the user organise it, connect it to their other cards, and work out what to find out next.
+- Cards marked "added by the user" are the user's OWN evidence: their photos, notes, files and private items. Never search for them, never say a web result is the same person, place or thing, and never guess who is in a personal photo. When the BOARD CONTEXT describes what a picture shows (an AI looked at it), use that; otherwise describe a photo only from its name and the user's notes. Help the user organise it and work out what to find out next.
+- Something the user added themselves (a card, a photo, a place on a map) may have NOTHING to do with the case. Never invent a link between it and the case or explain why it "fits": if no source or card on the board connects them, say plainly that nothing on the board connects it to the case yet, and ask what it means to them or offer to search for a link.
 - Everything is about the user's investigation. When they ask about a card (a city, a person, an object), answer about its role in THEIR case, never a generic encyclopedia entry.
 - Answer directly first, then add the fascinating details.
 - Only state facts found in the SOURCES or the BOARD CONTEXT. If neither covers something, say you don't know rather than guessing; never invent companies, dates, places, quotes or links.
@@ -220,7 +223,7 @@ export const CHAT_SYSTEM = `You are the user's research partner inside "Rabbit H
   ACTION: stamp [[Card]] : confirmed | disputed | debunked | theory | key evidence | lead
   When the user names a kind of card (a question card, a frame, a map, a label, a quote, a timeline moment, a list, a who's who), make exactly that kind with the matching line, never a sticky note instead.
   ACTION: cast [[Film or series card]]   (adds a who's-who card with every lead actor, the character they play, their photo, and the director; use it for "list the actors/leads/cast")
-  ACTION: list <what> from <subject>   (a pictured list card: from the subject's fan wiki, else Wikipedia's "List of…" pages, else a web page that lists them; characters, members, objects, items, episodes, places, e.g. "list spells from <a fantasy series>", "list vehicles from <a racing game>", "list albums from <a band>")
+  ACTION: list <what> from <subject>   (a pictured list card: from the subject's fan wiki, else Wikipedia's "List of…" pages, else a web page that lists them; characters, members, objects, items, episodes, places, e.g. "list spells from <a fantasy series>", "list vehicles from <a racing game>", "list albums from <a band>". <subject> is the franchise, work, band or game, never the list's own name. When the user gives a link to the list, use it: ACTION: list <what> from <the link>. Make exactly the list asked for: the things themselves, not the characters connected to them, or the other way round)
   ACTION: fill [[List card]]   (reads the wiki list that card came from and adds EVERY member with their picture; use it for "add everyone on that list", "get the rest of the list")
   ACTION: photo [[Card]] : 4        (puts source [4]'s photo on that card; without a number it looks the card up and adds its picture)
   ACTION: set [[Card]] : new text   (rewrites what the card says)
