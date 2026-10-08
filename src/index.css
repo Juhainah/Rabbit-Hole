@@ -2677,3 +2677,72 @@ button {
 .board.moving .react-flow__handle.tie-grip {
   display: none;
 }
+
+/* While a phone's keyboard is open: everything you are typing into sits in the part of the screen you can see. */
+@media (max-width: 767px) {
+  .kb-open .mobile-nav,
+  .kb-open .board-toolbar > .toolbar-row,
+  .kb-open .react-flow__controls {
+    display: none !important;
+  }
+  .kb-open .toolbar-panel {
+    bottom: calc(var(--kb, 0px) + 8px) !important;
+    max-height: calc(var(--vvh, 100dvh) - 16px) !important;
+  }
+  .kb-open .side-right {
+    bottom: var(--kb, 0px);
+    height: calc(var(--vvh, 100dvh) - 8px);
+    border-radius: 0;
+  }
+  .kb-open .side-left {
+    bottom: var(--kb, 0px);
+  }
+  .kb-open .modal-overlay {
+    top: var(--vvt, 0px) !important;
+    bottom: auto !important;
+    height: var(--vvh, 100dvh) !important;
+  }
+  .kb-open .modal-overlay > div {
+    max-height: calc(var(--vvh, 100dvh) - 20px) !important;
+  }
+  .kb-open .map-draft,
+  .kb-open .phone-form-sheet {
+    bottom: calc(var(--kb, 0px) + 8px);
+  }
+  .kb-open .map-tools .place-suggest {
+    max-height: calc(var(--vvh, 100dvh) - 140px);
+  }
+}
+
+/* A form that belongs to a card (an entry on a list, a place on a map), opened full size on a phone. */
+.phone-form-sheet {
+  position: fixed;
+  left: 10px;
+  right: 10px;
+  bottom: calc(130px + env(safe-area-inset-bottom, 0px));
+  z-index: 90;
+  max-height: calc(100dvh - 190px);
+  overflow-y: auto;
+  padding: 12px;
+  border-radius: 14px;
+  box-shadow: 0 -8px 28px rgba(0, 0, 0, 0.45);
+}
+.phone-form-sheet .list-item-form {
+  margin: 0;
+  box-shadow: none;
+  background: transparent;
+  padding: 0;
+}
+
+/* The label you are writing for a string draws above every card. */
+.react-flow__edgelabel-renderer:has(.string-label-input) {
+  z-index: 4000;
+}
+@media (max-width: 767px) {
+  /* A question the app asks (rename, delete?) centres in the part of the screen above the keyboard. */
+  .kb-open .dialog-overlay {
+    top: var(--vvt, 0px) !important;
+    bottom: auto !important;
+    height: var(--vvh, 100dvh) !important;
+  }
+}

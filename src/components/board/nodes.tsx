@@ -14,6 +14,8 @@ import type { ClueData, ClueNode } from '../../types';
 import { Glyph, SourceBadge } from '../SourceBadge';
 import { SafeImg } from './SafeImg';
 import { PlacePicker } from '../PlacePicker';
+import { useIsPhone } from '../MobileNav';
+import { createPortal } from 'react-dom';
 import { StaticMap } from './StaticMap';
 
 type P = NodeProps<ClueNode>;
@@ -331,6 +333,16 @@ function listHeading(data: ClueData) {
 
 type ListItem = NonNullable<ClueData['items']>[number];
 
+/**
+ * A form that belongs to a card. On a phone the card is drawn as small as the board's zoom, so the form
+ * opens full size at the bottom of the screen instead (above the toolbar, and above the keyboard).
+ */
+function CardForm({ children }: { children: ReactNode }) {
+  const phone = useIsPhone();
+  if (!phone) return <>{children}</>;
+  return createPortal(<div className="phone-form-sheet paper-panel nodrag nowheel">{children}</div>, document.body);
+}
+
 /** Add or change one entry on a list card: its name, what it is, and a picture (a link or from your device). */
 function ListItemForm({ item, onSave, onCancel }: { item?: ListItem; onSave: (it: ListItem) => void; onCancel: () => void }) {
   const [name, setName] = useState(item?.title ?? '');
@@ -458,6 +470,7 @@ export function GalleryNode({ id, data, selected }: P) {
   };
   // While the card is picked, every entry shows (so any of them can be changed) and can be edited.
   const shown = all || selected ? people : people.slice(0, 10);
+  const phone = useIsPhone();
   return (
     <Card id={id} data={data} selected={selected} className="clue-gallery" pin={data.pin ?? '#c8322f'}>
       <div className="gallery-head">
@@ -465,17 +478,20 @@ export function GalleryNode({ id, data, selected }: P) {
         <Renamable value={data.title} placeholder="Name this list" className="clue-title" editable={!!selected} onSave={(v) => change('Renamed a list', { title: v })} />
         {data.text && <div className="gallery-note">{data.text}</div>}
       </div>
-      {editing !== null ? (
-        <ListItemForm
-          item={editing === 'new' ? undefined : people[editing]}
-          onCancel={() => setEditing(null)}
-          onSave={(it) => {
-            const next = editing === 'new' ? [...people, it] : people.map((p, j) => (j === editing ? it : p));
-            change(editing === 'new' ? 'Added to a list' : 'Changed a list entry', { items: next });
-            setEditing(null);
-          }}
-        />
-      ) : (
+      {editing !== null && (
+        <CardForm>
+          <ListItemForm
+            item={editing === 'new' ? undefined : people[editing]}
+            onCancel={() => setEditing(null)}
+            onSave={(it) => {
+              const next = editing === 'new' ? [...people, it] : people.map((p, j) => (j === editing ? it : p));
+              change(editing === 'new' ? 'Added to a list' : 'Changed a list entry', { items: next });
+              setEditing(null);
+            }}
+          />
+        </CardForm>
+      )}
+      {editing !== null && !phone ? null : (
         <div className={clsx('gallery-grid', (all || selected) && people.length > 10 && 'all nowheel nodrag')}>
           {shown.map((p, i) => (
             <div key={i} className="gallery-face-wrap">
@@ -838,7 +854,9 @@ export function MapNode({ id, data, selected, width, height }: P) {
         {selected && (
           <div className="map-card-tools nodrag nowheel">
             {adding ? (
+              <CardForm>
               <div className="map-card-add paper-panel">
+                <div className="mb-1 font-hand text-[19px] leading-none">Add a place to this map</div>
                 <PlacePicker
                   autoFocus
                   placeholder="A place, address, map link or coordinates"
@@ -851,6 +869,7 @@ export function MapNode({ id, data, selected, width, height }: P) {
                   Done
                 </button>
               </div>
+              </CardForm>
             ) : (
               <button className="chip map-card-plus" onClick={(e) => { e.stopPropagation(); setAdding(true); }}>
                 + Add a place

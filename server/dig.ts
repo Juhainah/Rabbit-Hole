@@ -351,7 +351,9 @@ export async function runDig(req: DigRequest, emit: Emit, signal: AbortSignal) {
       allowed.has('podcasts') ? searchSource('podcasts', phrase, { limit: 4, signal }) : Promise.resolve([]),
     ]);
     const [audio, films, pods] = batches.map((b) => (b.status === 'fulfilled' ? rankRelevant(keep(b.value), { ...topicOf, phrasings: [phrase, titleHelps] }) : []));
-    const items = [...audio.slice(0, 2), ...films.slice(0, 2), ...pods.slice(0, 2)];
+    // In a deeper dig, recordings must be about this case (a namesake podcast is not).
+    const inCase = (xs: SourceItem[]) => (framed ? xs.filter(mentionsCase) : xs);
+    const items = [...inCase(audio).slice(0, 2), ...inCase(films).slice(0, 2), ...inCase(pods).slice(0, 2)];
     sideItems.push(...items);
     if (items.length && !signal.aborted) emit({ type: 'media', items });
   })();
@@ -377,7 +379,9 @@ export async function runDig(req: DigRequest, emit: Emit, signal: AbortSignal) {
   {
     const fromArchives = await Promise.race([photoTask, sleep(4000).then(() => [] as SourceItem[])]);
     const seenPhotos = new Set<string>();
-    const all = [...(research?.photos ?? []), ...fromArchives].filter((p) => p.image && !seenPhotos.has(p.image) && seenPhotos.add(p.image));
+    // In a deeper dig, archive pictures must name what is being dug into (not just share the case's words).
+    const archivePics = framed ? fromArchives.filter((p) => namesSubject(subject, `${p.title} ${p.snippet ?? ''}`)) : fromArchives;
+    const all = [...(research?.photos ?? []), ...archivePics].filter((p) => p.image && !seenPhotos.has(p.image) && seenPhotos.add(p.image));
     // Pictures whose names say what they show go up now; nameless ones (archive file numbers) are
     // looked at first by an AI that can see, and pinned only if they show what this dig is about.
     const photos = all.filter((p) => !needsLooking(p)).slice(0, 6);
@@ -398,13 +402,16 @@ export async function runDig(req: DigRequest, emit: Emit, signal: AbortSignal) {
   }
   if (research) {
     // The research finds go on the board like any other evidence, grouped by where they came from.
-    const fresh = keep(research.items);
+    // In a deeper dig, research that ties the card to the case comes first; plain background gets two slots.
+    const fresh = framed ? framedPick(keep(research.items), 12, 2) : keep(research.items);
     evidence.unshift(...fresh);
     const bySource = new Map<string, SourceItem[]>();
     for (const it of fresh) bySource.set(it.source, [...(bySource.get(it.source) ?? []), it]);
     for (const [source, items] of bySource) emit({ type: 'source', source, items, limit: items.length });
-    if (research.gallery) emit({ type: 'gallery', gallery: { ...research.gallery, source: 'fandom' } });
-    for (const g of research.more ?? []) emit({ type: 'gallery', gallery: { ...g, source: 'fandom' } });
+    // In a deeper dig, only a list about the card itself (not the whole case's albums or characters).
+    const ownList = (g: NonNullable<typeof research.gallery>) => !framed || namesSubject(subject, `${g.title} ${g.about ?? ''} ${g.label ?? ''}`);
+    if (research.gallery && ownList(research.gallery)) emit({ type: 'gallery', gallery: { ...research.gallery, source: 'fandom' } });
+    for (const g of framed ? [] : (research.more ?? [])) emit({ type: 'gallery', gallery: { ...g, source: 'fandom' } });
     // Results let in only for naming the subject ("Star Girl: Cosmic Conversations", another app) must also
     // touch what this case's own sources talk about (Animoca, Boyfriends, SimSimi); namesakes don't.
     const vocabulary = new Set(research.vocabulary);
@@ -618,8 +625,8 @@ export async function runDig(req: DigRequest, emit: Emit, signal: AbortSignal) {
   if (!research && !signal.aborted) {
     const late = await Promise.race([researchTask, sleep(40000).then(() => null)]);
     if (late && !signal.aborted) {
-      if (late.gallery) emit({ type: 'gallery', gallery: { ...late.gallery, source: 'fandom' } });
-      for (const g of late.more ?? []) emit({ type: 'gallery', gallery: { ...g, source: 'fandom' } });
+      if (late.gallery && (!framed || namesSubject(subject, `${late.gallery.title} ${late.gallery.about ?? ''} ${late.gallery.label ?? ''}`))) emit({ type: 'gallery', gallery: { ...late.gallery, source: 'fandom' } });
+      for (const g of framed ? [] : (late.more ?? [])) emit({ type: 'gallery', gallery: { ...g, source: 'fandom' } });
     }
   }
   await Promise.allSettled([...tasks, photoTask, mediaTask, thumbTask, lookTask]);

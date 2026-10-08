@@ -66,6 +66,33 @@ function Desk() {
     onUndoable((text) => useUi.getState().set({ toast: { text, at: Date.now(), undo: true } }));
   }, []);
 
+  // The part of the screen you can see: a phone's keyboard covers the bottom, so pop-ups, sheets and
+  // dialogs move up above it (--kb, --vvh, --vvt), and the bottom bar steps aside while you type.
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const root = document.documentElement;
+    const apply = () => {
+      const kb = Math.max(0, Math.round(window.innerHeight - (vv.height + vv.offsetTop)));
+      root.style.setProperty('--kb', `${kb}px`);
+      root.style.setProperty('--vvh', `${Math.round(vv.height)}px`);
+      root.style.setProperty('--vvt', `${Math.round(vv.offsetTop)}px`);
+      // Android (resizing the page) shows it as a shorter screen; iPhone as a covered one.
+      const typing = kb > 120 || (window.screen.height - vv.height > 260 && !!document.activeElement?.matches('input, textarea, [contenteditable]'));
+      root.classList.toggle('kb-open', typing);
+    };
+    apply();
+    vv.addEventListener('resize', apply);
+    vv.addEventListener('scroll', apply);
+    window.addEventListener('focusin', apply);
+    window.addEventListener('focusout', () => setTimeout(apply, 120));
+    return () => {
+      vv.removeEventListener('resize', apply);
+      vv.removeEventListener('scroll', apply);
+      window.removeEventListener('focusin', apply);
+    };
+  }, []);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z' && !e.shiftKey && !typing(e.target)) {

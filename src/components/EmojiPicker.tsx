@@ -72,11 +72,14 @@ export function EmojiPicker() {
 
   const recent = readRecent();
   const shown = results ?? (groups.find((g) => g.name === group) ?? groups[0]).items;
-  const left = Math.min(Math.max(8, target.x - 20), window.innerWidth - W - 8);
-  const top = target.y + H + 12 > window.innerHeight ? Math.max(8, target.y - H - 12) : target.y + 12;
+  // Never wider or taller than the screen (small phones), and always fully on it.
+  const w = Math.min(W, window.innerWidth - 16);
+  const h = Math.min(H, window.innerHeight - 16);
+  const left = Math.min(Math.max(8, target.x - 20), window.innerWidth - w - 8);
+  const top = Math.max(8, Math.min(target.y + h + 12 > window.innerHeight ? target.y - h - 12 : target.y + 12, window.innerHeight - h - 8));
 
   return (
-    <div ref={box} role="dialog" aria-label="Choose an icon" className="emoji-picker paper-panel animate-rise fixed z-[70] flex flex-col rounded-xl" style={{ left, top, width: W, height: H }}>
+    <div ref={box} role="dialog" aria-label="Choose an icon" className="emoji-picker paper-panel animate-rise fixed z-[70] flex flex-col rounded-xl" style={{ left, top, width: w, height: h }}>
       <div className="flex items-center gap-2 border-b border-ink/10 p-2.5">
         <label className="flex min-w-0 flex-1 items-center gap-2 rounded-lg border border-ink/15 bg-white px-2.5 py-1.5">
           <Search size={14} className="shrink-0 text-ink-soft" />

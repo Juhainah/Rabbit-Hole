@@ -50,7 +50,7 @@ export function Dialog() {
   const confirm = () => close(ask.value !== undefined ? text.trim() : true);
   return (
     <div
-      className="fixed inset-0 z-[90] grid place-items-center bg-black/55 p-4 animate-[fade_.15s_ease-out]"
+      className="dialog-overlay fixed inset-0 z-[90] grid place-items-center bg-black/55 p-4 animate-[fade_.15s_ease-out]"
       onMouseDown={(e) => e.target === e.currentTarget && close(null)}
       onKeyDown={(e) => {
         if (e.key === 'Escape') close(null);
