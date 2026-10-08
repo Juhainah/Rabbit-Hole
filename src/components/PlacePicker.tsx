@@ -95,6 +95,10 @@ export function PlacePicker({ onPick, onRaw, rawLabel, placeholder, autoFocus, c
             </button>
           ))}
           {note && !busy && <div className="place-note">{note}</div>}
+          {/* The free map doesn't know every building: Google's own link (or a dropped pin) is exact. */}
+          {!busy && !isMapLink(q.trim()) && !isShortMapLink(q.trim()) && !parseCoords(q.trim()) && q.trim().length > 1 && (
+            <div className="place-note">Not the exact spot? Paste its Google Maps link (Share → Copy link) here, or drop a pin on the map.</div>
+          )}
           {onRaw && q.trim().length > 1 && !busy && (
             <button type="button" className="place-option" onMouseDown={(e) => e.preventDefault()} onClick={() => { onRaw(q.trim()); setQ(''); setList([]); setNote(''); }}>
               <span className="place-name">✎ {rawLabel ?? 'Use the name as typed'}: “{q.trim()}”</span>

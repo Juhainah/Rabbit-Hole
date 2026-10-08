@@ -143,6 +143,23 @@ function Board() {
   const wrap = useRef<HTMLDivElement>(null);
   const settle = useRef<ReturnType<typeof setTimeout>>(undefined);
 
+  // The board never scrolls: it pans. But when a box on a card takes focus, the browser may scroll the
+  // board's frame to show it, shoving the toolbar and everything else sideways off the screen. Undo that.
+  useEffect(() => {
+    const el = wrap.current;
+    if (!el) return;
+    const reset = (e: Event) => {
+      const t = e.target as HTMLElement;
+      if (t !== el && !t.classList?.contains('react-flow') && !t.classList?.contains('react-flow__renderer') && !t.classList?.contains('react-flow__pane')) return;
+      if (t.scrollLeft || t.scrollTop) {
+        t.scrollLeft = 0;
+        t.scrollTop = 0;
+      }
+    };
+    el.addEventListener('scroll', reset, true);
+    return () => el.removeEventListener('scroll', reset, true);
+  }, []);
+
   useEffect(() => {
     registerFlow(rf, wrap.current);
     return () => registerFlow(null, null);

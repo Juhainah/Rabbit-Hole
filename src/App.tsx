@@ -78,7 +78,9 @@ function Desk() {
       root.style.setProperty('--vvh', `${Math.round(vv.height)}px`);
       root.style.setProperty('--vvt', `${Math.round(vv.offsetTop)}px`);
       // Android (resizing the page) shows it as a shorter screen; iPhone as a covered one.
-      const typing = kb > 120 || (window.screen.height - vv.height > 260 && !!document.activeElement?.matches('input, textarea, [contenteditable]'));
+      // Only a touch screen has an on-screen keyboard; a small desktop window must never hide the toolbar.
+      const touch = window.matchMedia('(pointer: coarse)').matches;
+      const typing = touch && (kb > 120 || (window.screen.height - vv.height > 260 && !!document.activeElement?.matches('input, textarea, [contenteditable]')));
       root.classList.toggle('kb-open', typing);
     };
     apply();

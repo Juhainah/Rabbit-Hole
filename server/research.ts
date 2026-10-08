@@ -41,6 +41,45 @@ export interface Research {
 const WIKI_HEADERS = { 'User-Agent': BROWSER_UA };
 /** Words in a search that ask about a subject rather than name a set of things in it. */
 /** Words that ask for a list rather than name what goes in it. */
+/**
+ * What exists by this name, without a web search: the fan wikis named after it and Wikipedia's matching
+ * articles, shaped like search results. Used when every web search engine is out of allowance.
+ */
+export async function knownNames(q: string, signal: AbortSignal): Promise<SourceItem[]> {
+  const [wikis, wp] = await Promise.all([
+    getJson(`https://services.fandom.com/unified-search/community-search?query=${enc(q)}&lang=en&limit=5`, { signal, headers: WIKI_HEADERS, timeout: 8000 })
+      .then((s) => (s?.results ?? []) as any[])
+      .catch(() => [] as any[]),
+    getJson(`https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${enc(q)}&srlimit=5&format=json&formatversion=2`, { signal, timeout: 8000 })
+      .then((j) => (j?.query?.search ?? []) as any[])
+      .catch(() => [] as any[]),
+  ]);
+  return [
+    ...wikis.map((w) => ({ id: `fandom-wiki:${w.url}`, source: 'fandom', kind: 'article' as const, title: String(w.name), snippet: stripHtml(String(w.description ?? ''), 300), url: String(w.url).startsWith('http') ? String(w.url) : `https://${w.url}` })),
+    ...wp.map((p) => ({ id: `wikipedia:${p.pageid}`, source: 'wikipedia', kind: 'article' as const, title: String(p.title), snippet: stripHtml(String(p.snippet ?? ''), 300), url: `https://en.wikipedia.org/wiki/${enc(String(p.title).replace(/ /g, '_'))}` })),
+  ];
+}
+
+/** The wiki's page named exactly after the subject ("Star Girl"), following redirects, with its text. */
+async function wikiOwnPage(wiki: Wiki, subject: string, signal: AbortSignal): Promise<{ title: string; text: string } | null> {
+  const j = await wikiApi(wiki, { action: 'query', titles: subject, redirects: 1, meta: 'siteinfo', siprop: 'general' }, signal).catch(() => null);
+  const page = j?.query?.pages?.[0];
+  // No page by that name: the wiki's front page, which a fan wiki fills with the subject's main features.
+  const front = String(j?.query?.general?.mainpage ?? '');
+  if ((!page || page.missing || page.invalid) && !front) return null;
+  const title = !page || page.missing || page.invalid ? front : String(page.title);
+  const text = await wikiText(wiki, title, signal).catch(() => '');
+  return text ? { title, text } : { title, text: '' };
+}
+
+/** The words in a search that name a set of things ("keys", "dishes", "weapons"): plural nouns that are not the subject. */
+function setWords(query: string, subject: string): string[] {
+  const own = new Set(subject.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []);
+  return (query.toLowerCase().match(/[\p{L}\p{N}']+/gu) ?? []).filter(
+    (w) => w.length >= 4 && !w.includes("'") && /s$/.test(w) && !/(ss|us|is|ous|ics|news|series|species)$/.test(w) && !own.has(w) && !GENERIC_ASK.has(w) && !GENERIC_ASK.has(w.replace(/s$/, '')) && !LIST_ASK.has(w),
+  );
+}
+
 const LIST_ASK = new Set('list lists listing card cards whos who all every full complete whole make create pin add show give fetch get please also too wiki fandom'.split(' '));
 const GENERIC_ASK = new Set('controversy scandal history story theory theories conspiracy mystery explained facts truth death leaving drama rumor rumors news game games movie film show series book anime manga character characters'.split(' '));
 
@@ -833,6 +872,10 @@ export async function deepResearch(
     .slice(0, 6);
   const webTexts = await Promise.all(toRead.map((it) => timeout(readPage(it.url!, signal), 11000, null)));
   const corpus = [...scout.map((x) => `${x.title} ${x.snippet ?? ''}`), ...webTexts.map((p) => p?.text ?? '')];
+  // The subject's own wiki page: always a candidate, and when the web had little to say (or web search is
+  // out of allowance) its text is what tells us the case's features and lists ("its chat feature", "Boyfriends").
+  const ownPage = wiki ? await timeout(wikiOwnPage(wiki, subject, signal), 9000, null) : null;
+  if (ownPage && corpus.join(' ').length < 4000) corpus.push(ownPage.text.slice(0, 8000));
   // The names and features the sources keep coming back to ("starchat", "boyfriends", "animoca").
   const salient = salientTerms(corpus, subject, 8);
 
@@ -844,7 +887,7 @@ export async function deepResearch(
   let listLabel: string | undefined;
   let pool: string[] = [];
   if (wiki) {
-    const hitTitles = [...new Set(wikiHits.flat().map((h) => h.title))];
+    const hitTitles = [...new Set([...(ownPage ? [ownPage.title] : []), ...wikiHits.flat().map((h) => h.title)])];
     const mainPage = hitTitles.find((t) => namesSubject(subject, mainTitle(t)));
     // The pages the searches hit, plus everything they link to: that's where a case's parts and lists live.
     const linked = (await Promise.all(hitTitles.slice(0, 14).map((t) => timeout(wikiLinks(wiki, t, signal), 8000, [] as string[])))).flat();
@@ -929,9 +972,12 @@ export async function deepResearch(
     const asked = new Set([...named, ...sets.flatMap(terms)]);
     const onPoint = (t: string) => terms(t).some((w) => asked.has(w) || asked.has(w.replace(/s$/, '')) || asked.has(`${w}s`));
     const aiList = gallery;
-    if (aiList && named.length && !onPoint(aiList.title)) gallery = undefined;
+    // Only a search that asks for a set of things ("gate keys", "dishes", "list the weapons") replaces the list
+    // the AI picked for the case; "<a game> controversy" keeps the case's own list (its characters, say).
+    const askedSet = setWords(query, subject).length > 0 || /\b(list|every|all the)\b/i.test(query);
+    if (aiList && askedSet && named.length && !onPoint(aiList.title)) gallery = undefined;
     // The page the case is about can be the list itself ("… Gate Keys": a table of every key with its picture).
-    const own = named.length ? topWiki.find((t) => terms(t).filter((w) => asked.has(w) || asked.has(w.replace(/s$/, '')) || asked.has(`${w}s`)).length >= Math.min(2, asked.size)) : undefined;
+    const own = askedSet && named.length ? topWiki.find((t) => terms(t).filter((w) => asked.has(w) || asked.has(w.replace(/s$/, '')) || asked.has(`${w}s`)).length >= Math.min(2, asked.size)) : undefined;
     if (own) {
       const table = await timeout(tableList(wiki, own, subject, signal), 10000, undefined);
       if (table) {
@@ -941,8 +987,8 @@ export async function deepResearch(
     }
     // The wiki may word them differently from the search: the AI matches the search to the wiki's categories
     // by meaning, alongside the word match below.
-    const byMeaning = !gallery && named.length ? timeout(askedCategory(wiki, subject, query, signal), 16000, { wants: false, gallery: undefined }) : undefined;
-    for (const what of sets) {
+    const byMeaning = askedSet && !gallery && named.length ? timeout(askedCategory(wiki, subject, query, signal), 16000, { wants: false, gallery: undefined }) : undefined;
+    for (const what of askedSet ? sets : (given?.focus ?? []).slice(0, 3)) {
       if (gallery) break;
       const g = await timeout(categoryGallery(wiki, subject, what, signal), 7000, undefined);
       if (g) gallery = { title: g.title, url: g.url, items: g.items.slice(0, 40), label: g.label };

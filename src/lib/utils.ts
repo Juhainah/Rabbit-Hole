@@ -158,7 +158,10 @@ export const MAP_STYLES = {
     name: 'Explorer',
     url: 'https://server.arcgisonline.com/ArcGIS/rest/services/NatGeo_World_Map/MapServer/tile/{z}/{y}/{x}',
     attribution: 'Tiles &copy; Esri &mdash; National Geographic, Esri, DeLorme, NAVTEQ, UNEP-WCMC, USGS, NASA, ESA, METI, NRCAN, GEBCO, NOAA, iPC',
-    maxZoom: 16,
+    maxZoom: 19,
+    // The explorer map has detail down to about town level; closer in, its last real tiles are enlarged
+    // instead of "Map data not yet available".
+    nativeZoom: 12,
   },
   // OpenStreetMap's own tile servers are volunteer-run and block apps in some places ("Access blocked"),
   // so every style comes from the same tile service as the board's map cards.
@@ -178,7 +181,8 @@ export const MAP_STYLES = {
     name: 'Night',
     url: 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}',
     attribution: 'Tiles &copy; Esri &mdash; Esri, DeLorme, NAVTEQ',
-    maxZoom: 16,
+    maxZoom: 19,
+    nativeZoom: 16,
   },
 } as const;
 

@@ -5,7 +5,7 @@ import { completeWithFallback, resolveProviders } from './llm';
 import { digMessages, normalizeAnalysis, normalizeTangents, tangentMessages } from './prompts';
 import { checkPremise, compactQuery, editDistance, namesSubject, norm, rankRelevant, relevanceFilter, saysName, subjectName, subjectWords, terms, touches } from './relevance';
 import { serper, serperImages, webSearch } from './sources/web';
-import { deepResearch, type Research } from './research';
+import { deepResearch, knownNames, type Research } from './research';
 import { understand, type Understanding } from './understand';
 import { ogImage, primaryFromUrl } from './scrape';
 import { availableSources, searchSource } from './sources';
@@ -176,6 +176,9 @@ export async function runDig(req: DigRequest, emit: Emit, signal: AbortSignal) {
       serper(scoutQ, 8, signal).then((r) => (r.length ? r : webSearch(scoutQ, 6, signal))).catch(() => webSearch(scoutQ, 6, signal).catch(() => [] as SourceItem[])),
       sleep(7000).then(() => [] as SourceItem[]),
     ]);
+    // No web search to hand (out of allowance, or blocked): fan wikis and Wikipedia still say what exists
+    // and how it is spelled ("Bakery Story Wiki"), which is what the AI needs to read the search right.
+    if (!scout.length) scout = await Promise.race([knownNames(scoutQ, signal), sleep(6000).then(() => [] as SourceItem[])]);
     u = await understand(asked, scout, signal, caseQuery);
     if (process.env.RH_DEBUG) console.log('[understand]', JSON.stringify(u));
   }
@@ -362,7 +365,10 @@ export async function runDig(req: DigRequest, emit: Emit, signal: AbortSignal) {
   await Promise.race([Promise.allSettled(tasks), sleep(18000)]);
   if (signal.aborted) return;
   if (!signal.aborted) emit({ type: 'status', message: 'Finishing the deep research…' });
-  const research = await Promise.race([researchTask, sleep(30000).then(() => null)]);
+  // With little found so far (a niche topic, or web search out of allowance), the wiki research is the case:
+  // give it longer before saying nothing turned up.
+  const thin = evidence.length + (primary ? 2 : 0) < 4;
+  const research = await Promise.race([researchTask, sleep(thin ? 55000 : 30000).then(() => null)]);
   // A film, series, band or group: who is in it (and who they play), as who's-who cards.
   const casts = await Promise.race([castTask, sleep(3000).then(() => [] as Cast[])]);
   const castReading = casts.map((cast) => ({

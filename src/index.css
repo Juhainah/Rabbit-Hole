@@ -2746,3 +2746,12 @@ button {
     height: var(--vvh, 100dvh) !important;
   }
 }
+
+/* "12 years later" between moments: on a paper slip, so the timeline's line runs behind it. */
+.tl-gap {
+  padding: 0 8px;
+  border-radius: 999px;
+  background: #f4ecdb;
+  font: 400 17px/1.4 var(--font-hand);
+  color: var(--color-ink-soft);
+}

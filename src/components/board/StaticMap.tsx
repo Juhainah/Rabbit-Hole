@@ -31,7 +31,22 @@ export const StaticMap = memo(function StaticMap({ points, width, height, labels
   return (
     <div className={className ?? 'mini-map'} style={{ width, height, position: 'relative' }}>
       {layout.tiles.map((t) => (
-        <img key={t.key} src={t.src} alt="" style={{ left: t.left, top: t.top }} loading="lazy" draggable={false} />
+        <img
+          key={t.key}
+          src={t.src}
+          alt=""
+          style={{ left: t.left, top: t.top }}
+          loading="lazy"
+          draggable={false}
+          // A tile that fails to load (a blank strip on the card) comes from the street map instead, then a retry.
+          onError={(e) => {
+            const img = e.currentTarget;
+            const tries = Number(img.dataset.tries ?? 0);
+            if (tries >= 2) return;
+            img.dataset.tries = String(tries + 1);
+            img.src = tries === 0 ? t.src.replace('NatGeo_World_Map', 'World_Street_Map') : `${t.src}${t.src.includes('?') ? '&' : '?'}r=${Date.now()}`;
+          }}
+        />
       ))}
       <svg width={width} height={height} className="absolute inset-0 overflow-visible pointer-events-none">
         {points.map((p, i) => {

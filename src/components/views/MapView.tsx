@@ -100,7 +100,7 @@ export function MapView() {
   return (
     <div className={clsx('map-view relative h-full w-full', dropping && 'dropping')}>
       <MapContainer center={[30, 10]} zoom={2} className="h-full w-full" worldCopyJump>
-        <TileLayer key={style} url={tiles.url} attribution={tiles.attribution} maxZoom={tiles.maxZoom} referrerPolicy="strict-origin-when-cross-origin" />
+        <TileLayer key={style} url={tiles.url} attribution={tiles.attribution} maxZoom={tiles.maxZoom} maxNativeZoom={'nativeZoom' in tiles ? tiles.nativeZoom : undefined} referrerPolicy="strict-origin-when-cross-origin" />
         <Fit points={geo.map((n) => [n.data.lat, n.data.lon])} />
         <FlyTo to={fly} />
         <Clicks dropping={dropping} onSpot={spot} />

@@ -19,9 +19,10 @@ const SCHEMA = `{
   "title": "evocative case title, max 6 words, about this topic only",
   "summary": "4-6 sentences: what it is, why it matters, what is strange about it",
   "hook": "one gripping sentence",
-  "entities": [{"name": "", "type": "person|place|org|event|concept|object|work", "description": "1-2 specific sentences", "date": "YYYY or YYYY-MM-DD (omit if none)", "place": "for places/events: geocodable location, e.g. 'Lake Bled, Slovenia' (omit otherwise)"}],
+  "entities": [{"name": "", "type": "person|place|org|event|concept|object|work", "description": "1-2 specific sentences", "date": "only for events and works: when it happened or came out, YYYY or YYYY-MM-DD; omit for people, places, groups and ideas, and never a count or number from the text (episodes, levels, prices)", "place": "for places/events: geocodable location, e.g. 'Lake Bled, Slovenia' (omit otherwise)"}],
   "relations": [{"from": "entity name or TOPIC", "to": "entity name", "label": "2-4 word verb phrase"}],
-  "timeline": [{"date": "YYYY[-MM[-DD]] (negative year for BC)", "event": "short line", "evidence": number of the evidence it comes from (omit if it comes from a page read in full)}],
+  "timeline": [{"date": "YYYY[-MM[-DD]] (negative year for BC), a real calendar date the evidence gives", "event": "short line", "evidence": number of the evidence it comes from (omit if it comes from a page read in full)}],
+  (The timeline is the story of THIS case in order, chosen for what kind of case it is. A show, film, book, game or app: when it was made, announced, released or premiered, its seasons or big updates, changes of owner or cast, controversies, and when it ended or shut down. A crime, death or disappearance: what happened, day by day, and a birth or earlier life event only when it matters to what happened. A person: the turning points of their story, not a birth date for its own sake. Never a birth date of someone who merely worked on a work, never a count or number from the text as a year.)
   "tangents": [{"title": "", "hook": "one sentence on why it's a rabbit hole, naming what in the evidence points to it", "query": "a web search that would answer it, starting with the subject's name"}],
   (Rabbit holes go DEEPER INTO THE SUBJECT, not away from it: its hidden or removed content, how it really worked, odd details and changes over time, disputes, lore or theories its own community argues about, the people and events at the centre of it. The maker, owner or a person's wider career only where the evidence ties them to something specific about the subject. Never the wider industry, other companies or products, or general topics. Each must be something the evidence hints at but does not settle, so a search can actually turn up an answer; prefer the niche and surprising over the obvious. Never connect through a shared word or name. Each title names the subject or something inside this case.)
   "questions": ["an open question the evidence raises but does not answer, specific enough to search (names, versions, dates), about the subject itself"],
@@ -117,6 +118,8 @@ export function normalizeTangents(raw: any): Analysis['tangents'] {
 }
 
 const TYPES: EntityType[] = ['person', 'place', 'org', 'event', 'concept', 'object', 'work', 'date'];
+/** A real calendar date ("2005", "2005-09-19", "-44" for 44 BC), or nothing: never a count read as a year ("196"). */
+const calendarDate = (d: string) => (/^(\d{4}(-\d{2}(-\d{2})?)?|-\d{1,5})$/.test(d.trim()) ? d.trim() : undefined);
 const str = (v: unknown, max = 600) => (typeof v === 'string' ? v.trim().slice(0, max) : '');
 const list = (v: unknown): any[] => (Array.isArray(v) ? v : []);
 
@@ -130,7 +133,7 @@ export function normalizeAnalysis(raw: any, topic: string): Analysis {
         name: str(e?.name, 80),
         type: TYPES.includes(type) ? type : 'concept',
         description: str(e?.description, 400),
-        date: str(e?.date, 20) || undefined,
+        date: calendarDate(str(e?.date, 20)),
         place: str(e?.place, 120) || undefined,
       };
     })
@@ -163,7 +166,7 @@ export function normalizeAnalysis(raw: any, topic: string): Analysis {
     relations,
     timeline: list(raw.timeline)
       .map((t) => ({ date: str(String(t?.date ?? ''), 24), event: str(t?.event, 200), evidence: Number.isInteger(Number(t?.evidence)) && Number(t?.evidence) > 0 ? Number(t.evidence) : undefined }))
-      .filter((t) => t.date && t.event && !/^(a |an |the )?([\w'"-]+ ){0,2}(video|article|post|thread|podcast|blog|report|documentary|episode)s?\b.*\b(released|published|uploaded|posted|premiered|discuss\w*|explain\w*|cover\w*|explor\w*|examin\w*|revisit\w*|analy[sz]\w*)\b/i.test(t.event))
+      .filter((t) => !!calendarDate(t.date) && t.event && !/^(a |an |the )?([\w'"-]+ ){0,2}(video|article|post|thread|podcast|blog|report|documentary|episode)s?\b.*\b(released|published|uploaded|posted|premiered|discuss\w*|explain\w*|cover\w*|explor\w*|examin\w*|revisit\w*|analy[sz]\w*)\b/i.test(t.event))
       .slice(0, 10),
     tangents: list(raw.tangents)
       .map((t) => ({ title: str(t?.title, 90), hook: str(t?.hook, 240), query: str(t?.query, 120) || str(t?.title, 90) }))

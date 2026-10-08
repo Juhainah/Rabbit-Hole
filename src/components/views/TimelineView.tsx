@@ -28,6 +28,13 @@ interface Row {
   published?: boolean;
 }
 
+/** "2005", "2005-09", "2005-09-19", "-44", "44 BC": a date, not a number that came from somewhere else. */
+function plainDate(date?: string): boolean {
+  if (!date) return false;
+  const d = date.trim();
+  return /^\d{4}(-\d{2}(-\d{2})?)?$/.test(d) || /^-\d{1,5}$/.test(d) || /^\d{1,4}\s*(BC|BCE)$/i.test(d) || /^[A-Za-z]{3,9}\.? (\d{1,2}, )?\d{4}$/.test(d);
+}
+
 // Cards whose date is when they were published, not when something happened.
 const SOURCE_TYPES = new Set(['clip', 'post', 'video', 'image', 'quote']);
 const MONTHS = 'Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec'.split(' ');
@@ -89,6 +96,7 @@ export function TimelineView() {
     const topicByCluster = new Map(board.nodes.filter((n) => n.type === 'topic').map((n) => [n.data.clusterId, n]));
     const out: Row[] = [];
     for (const t of board.timeline) {
+      if (!plainDate(t.date)) continue;
       const y = yearOf(t.date);
       if (y == null) continue;
       const topic = topicByCluster.get(t.clusterId);
@@ -96,9 +104,20 @@ export function TimelineView() {
       out.push({ key: t.id, moment: true, year: y, sort: t.date, date: t.date, title: t.event, sub: topic?.data.title, color: '#c8322f', nodeId: proof?.id ?? topic?.id, proof, clusterId: t.clusterId });
     }
     const told = board.timeline.map((t) => ({ y: yearOf(t.date), text: t.event.toLowerCase(), clusterId: t.clusterId }));
+    // The story's own moments set the era; a card dated centuries before all of them is a misread number.
+    const storyYears = out.map((r) => r.year).sort((a, b) => a - b);
+    const earliest = storyYears.length ? storyYears[0] : null;
     for (const n of board.nodes) {
+      // Of the index cards, only events and works (a release, a premiere) are moments in the story; a person's
+      // date is a birthday and a place's or group's a founding, which the story's own timeline includes when they matter.
+      if (n.type === 'entity' && n.data.entityType !== 'event' && n.data.entityType !== 'work') continue;
+      // A date must be a real calendar date: four digits ("2005", "2005-09-19") or BC, never a count ("196").
+      if (!plainDate(n.data.date)) continue;
       const y = yearOf(n.data.date);
       if (y == null) continue;
+      if (earliest != null && y < earliest - 150) continue;
+      // An index card dated the very day of a story moment is that moment told again.
+      if (n.type === 'entity' && n.data.date!.length >= 10 && board.timeline.some((t) => t.date === n.data.date && t.clusterId === n.data.clusterId)) continue;
       const title = n.data.title?.toLowerCase() ?? '';
       if (n.type === 'entity' && title.length >= 3 && told.some((t) => t.y === y && t.clusterId === n.data.clusterId && t.text.includes(title))) continue;
       out.push({
@@ -168,12 +187,16 @@ export function TimelineView() {
             return (
               <div key={r.key}>
                 {showEra ? (
-                  <div className="relative z-10 my-6 flex md:justify-center">
+                  <div className="relative z-10 my-6 flex flex-col items-start gap-1 md:items-center">
                     <span className="date-scrap !text-[20px] md:!text-[22px]">{era}</span>
-                    {gap >= 2 && <span className="ml-2 self-center font-hand text-[17px] text-ink-soft">{gap} years later</span>}
+                    {gap >= 2 && <span className="tl-gap">{gap} years later</span>}
                   </div>
                 ) : (
-                  gap >= 2 && <div className="relative z-10 -mt-1 mb-3 pl-8 font-hand text-[17px] text-ink-soft md:pl-0 md:text-center">· {gap} years later ·</div>
+                  gap >= 2 && (
+                    <div className="relative z-10 -mt-1 mb-3 flex justify-start pl-6 md:justify-center md:pl-0">
+                      <span className="tl-gap">{gap} years later</span>
+                    </div>
+                  )
                 )}
                 <div className={clsx('relative mb-4 flex pl-8 md:mb-5 md:pl-0', left ? 'md:justify-start md:pr-[52%]' : 'md:justify-end md:pl-[52%]')}>
                   <span className="absolute left-[10px] top-4 size-3.5 -translate-x-1/2 rounded-full ring-4 ring-[#f4ecdb] md:left-1/2" style={{ background: r.color }} />
