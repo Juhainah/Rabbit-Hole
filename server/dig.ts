@@ -4,7 +4,7 @@ import { parseJsonLoose } from './json';
 import { completeWithFallback, resolveProviders } from './llm';
 import { digMessages, normalizeAnalysis, normalizeTangents, tangentMessages } from './prompts';
 import { checkPremise, compactQuery, editDistance, namesSubject, norm, rankRelevant, relevanceFilter, saysName, subjectName, subjectWords, terms, touches } from './relevance';
-import { serper, serperImages, webSearch } from './sources/web';
+import { googleSearch, serperImages, webSearch } from './sources/web';
 import { deepResearch, knownNames, type Research } from './research';
 import { understand, type Understanding } from './understand';
 import { ogImage, primaryFromUrl } from './scrape';
@@ -173,13 +173,22 @@ export async function runDig(req: DigRequest, emit: Emit, signal: AbortSignal) {
     // Google knows how things are spelled and what exists; the first results show the AI both.
     const scoutQ = caseQuery && !norm(asked).includes(norm(caseQuery)) ? `${asked} ${caseQuery}` : asked;
     scout = await Promise.race([
-      serper(scoutQ, 8, signal).then((r) => (r.length ? r : webSearch(scoutQ, 6, signal))).catch(() => webSearch(scoutQ, 6, signal).catch(() => [] as SourceItem[])),
+      googleSearch(scoutQ, 8, signal).then((r) => (r.length ? r : webSearch(scoutQ, 6, signal))).catch(() => webSearch(scoutQ, 6, signal).catch(() => [] as SourceItem[])),
       sleep(7000).then(() => [] as SourceItem[]),
     ]);
     // No web search to hand (out of allowance, or blocked): fan wikis and Wikipedia still say what exists
     // and how it is spelled ("Bakery Story Wiki"), which is what the AI needs to read the search right.
     if (!scout.length) scout = await Promise.race([knownNames(scoutQ, signal), sleep(6000).then(() => [] as SourceItem[])]);
     u = await understand(asked, scout, signal, caseQuery);
+    // The first results were about something else (a weak engine's guess): read the search again from
+    // what fan wikis and Wikipedia know by that name, and keep those results instead of the junk.
+    if (!u && scout.length) {
+      const known = await Promise.race([knownNames(scoutQ, signal), sleep(6000).then(() => [] as SourceItem[])]);
+      if (known.length) {
+        u = await understand(asked, known, signal, caseQuery);
+        scout = known;
+      }
+    }
     if (process.env.RH_DEBUG) console.log('[understand]', JSON.stringify(u));
   }
   if (u && caseQuery) {
@@ -255,6 +264,14 @@ export async function runDig(req: DigRequest, emit: Emit, signal: AbortSignal) {
   const phraseFor = (id: string) => (framed && STORY_SOURCES.has(id) ? `${phrase} ${framed}` : phrase);
   /** The case's own name, for sources that match titles ("star girl" as one phrase). */
   const subject = u?.subject ?? subjectName(framed ?? query);
+  // Words the first results keep using besides the name (its maker, its platform): they tell this case
+  // from namesakes on sites that match by title.
+  const sideWords = (() => {
+    const own = new Set(terms(subject));
+    const count = new Map<string, number>();
+    for (const it of scout) for (const w of new Set(terms(`${it.title} ${it.snippet ?? ''} ${(it.url ?? '').replace(/[/._-]+/g, ' ')}`))) if (w.length >= 5 && !own.has(w) && !/^(https?|www|com|html|wiki|fandom|reddit|youtube|watch|games?|android|apps?|store|official|download)$/.test(w)) count.set(w, (count.get(w) ?? 0) + 1);
+    return [...count].filter(([, c]) => c >= 2).sort((a, b) => b[1] - a[1]).map(([w]) => w).slice(0, 3);
+  })();
   /** Names the search mentioned that sources never tie in: still searched where people talk, in case a link exists. */
   const storyExtra = !u && query !== asked && !framed ? asked : undefined;
   /** In a framed dig, results that tie back to the case come first; generic background gets one slot. */
@@ -313,7 +330,7 @@ export async function runDig(req: DigRequest, emit: Emit, signal: AbortSignal) {
               .map((it) => ({ ...it, kind: 'post' as const, source: venue.source ?? 'forums', meta: { sub: venue.name } })),
         },
       ]
-    : sources.map((id) => ({ id, run: () => searchSource(id, STORY_SOURCES.has(id) && storyExtra ? storyExtra : phraseFor(id), { limit: per + 3, signal, subject }) }));
+    : sources.map((id) => ({ id, run: () => searchSource(id, STORY_SOURCES.has(id) && storyExtra ? storyExtra : phraseFor(id), { limit: per + 3, signal, subject, context: sideWords }) }));
   const tasks = plan.map(async ({ id, run }) => {
     emit({ type: 'source-start', source: id });
     try {
@@ -343,7 +360,7 @@ export async function runDig(req: DigRequest, emit: Emit, signal: AbortSignal) {
       serperImages(u?.query ?? phrase, 8, signal).then((r) => r.filter((it) => !/fandom\.com|pinterest\.|instagram\.com|spotify\.com|apple\.com\/.*music|gettyimages|shutterstock|alamy|istockphoto|dreamstime/i.test(it.url ?? '') && namesSubject(subject, `${it.title} ${it.meta?.site ?? ''}`)).slice(0, 4)),
     ]);
     const items = rankRelevant(keep(batches.flatMap((b) => (b.status === 'fulfilled' ? b.value : [])).filter((it) => it.image)), { ...topicOf, phrasings: [phrase, titleHelps] });
-    return venue ? [] : framedPick(items, 8, 1);
+    return venue ? [] : framedPick(items, 8, 0);
   })().catch(() => []);
 
   // And a pass for things to listen to and watch: old broadcasts, oral histories, newsreels, podcasts.
@@ -409,7 +426,7 @@ export async function runDig(req: DigRequest, emit: Emit, signal: AbortSignal) {
   if (research) {
     // The research finds go on the board like any other evidence, grouped by where they came from.
     // In a deeper dig, research that ties the card to the case comes first; plain background gets two slots.
-    const fresh = framed ? framedPick(keep(research.items), 12, 2) : keep(research.items);
+    const fresh = framed ? framedPick(keep(research.items), 12, 1) : keep(research.items);
     evidence.unshift(...fresh);
     const bySource = new Map<string, SourceItem[]>();
     for (const it of fresh) bySource.set(it.source, [...(bySource.get(it.source) ?? []), it]);

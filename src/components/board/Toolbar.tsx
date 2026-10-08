@@ -334,7 +334,7 @@ export function Toolbar() {
   }, [open]);
 
   return (
-    <div ref={bar} className="board-toolbar absolute bottom-7 left-1/2 z-20 -translate-x-1/2">
+    <div ref={bar} className="board-toolbar absolute inset-x-3 bottom-7 z-20 mx-auto w-fit">
       {open && (
         <>
           <div className="toolbar-panel paper-panel animate-rise absolute bottom-[62px] left-1/2 z-10 min-w-[260px] -translate-x-1/2 rounded-xl p-3">

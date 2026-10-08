@@ -6,7 +6,7 @@ import { namesSubject, relevanceFilter, subjectName, terms } from './relevance';
 import { readAnything } from './reader';
 import { youtubeId } from './scrape';
 import { youtubeTranscript } from './sources/media';
-import { serper, webSearch } from './sources/web';
+import { googleSearch, webSearch } from './sources/web';
 
 // Deep research: what a good researcher does after the first search. Plan a few
 // targeted searches, find the subject's fan wiki, read the best pages in full
@@ -59,6 +59,24 @@ export async function knownNames(q: string, signal: AbortSignal): Promise<Source
     ...wp.map((p) => ({ id: `wikipedia:${p.pageid}`, source: 'wikipedia', kind: 'article' as const, title: String(p.title), snippet: stripHtml(String(p.snippet ?? ''), 300), url: `https://en.wikipedia.org/wiki/${enc(String(p.title).replace(/ /g, '_'))}` })),
   ];
 }
+
+/**
+ * Is this wiki about the case, or a namesake? The words the first results keep using (its maker, its kind:
+ * "board", "hasbro", "spinner") must turn up on the wiki's page for the subject (or its front page).
+ * With too little to compare (few results), the wiki is given the benefit of the doubt.
+ */
+async function wikiFits(wiki: Wiki, subject: string, scout: SourceItem[], signal: AbortSignal): Promise<boolean> {
+  const texts = scout.filter((s) => s.source !== 'fandom').map((s) => `${s.title} ${s.snippet ?? ''}`);
+  const salient = salientTerms(texts, subject, 10).filter((w) => !FANDOM_WORDS.has(w));
+  if (salient.length < 4) return true;
+  const page = await wikiOwnPage(wiki, subject, signal);
+  if (!page?.text) return true;
+  const on = new Set(terms(`${wiki.name} ${page.title} ${page.text.slice(0, 12000)}`));
+  const shared = salient.filter((w) => on.has(w));
+  if (process.env.RH_DEBUG) console.log('[research] wiki check', wiki.name, 'salient', salient.join(' '), 'shared', shared.join(' '));
+  return shared.length > 0;
+}
+const FANDOM_WORDS = new Set('fandom wiki wikia community page pages article articles edit category'.split(' '));
 
 /** The wiki's page named exactly after the subject ("Star Girl"), following redirects, with its text. */
 async function wikiOwnPage(wiki: Wiki, subject: string, signal: AbortSignal): Promise<{ title: string; text: string } | null> {
@@ -825,7 +843,11 @@ export async function deepResearch(
   const planned = given?.queries.length
     ? Promise.resolve({ queries: [...new Set(given.queries.map((q) => (namesSubject(subject, q) ? q : `${subject} ${q}`)))].slice(0, 4), sites: given.sites })
     : planQueries(query, subject, clues, signal);
-  const [plan, wiki] = await Promise.all([planned, timeout(findWiki(subject, signal, `${query} ${(given?.focus ?? []).join(' ')}`), 15000, undefined)]);
+  const [plan, found] = await Promise.all([planned, timeout(findWiki(subject, signal, `${query} ${(given?.focus ?? []).join(' ')}`), 15000, undefined)]);
+  // A wiki that merely shares the name (a role-play wiki called "Game of Life" for the board game) is not used:
+  // what the wiki says about itself must share the words the case's first results keep using.
+  const wiki = found && (await timeout(wikiFits(found, subject, scout, signal), 10000, true)) ? found : undefined;
+  if (found && !wiki) console.warn(`[research] skipped ${found.name}: not about "${subject}" as the results describe it`);
   const queries = plan.queries;
   // The places this topic lives: searched for the subject, inside each one.
   // Two places at most: each search spends from a small free allowance.
@@ -842,7 +864,7 @@ export async function deepResearch(
     Promise.all(
       [...queries, ...siteSearches].map((q, i) =>
         // Google (Serper) for the two key searches: it finds coverage from the time that other engines miss.
-        timeout(i < 2 ? serper(q, 6, signal).then((r) => (r.length ? r : webSearch(q, 5, signal))).catch(() => webSearch(q, 5, signal)) : webSearch(q, 5, signal), 12000, [] as SourceItem[]),
+        timeout(i < 2 ? googleSearch(q, 6, signal).then((r) => (r.length ? r : webSearch(q, 5, signal))).catch(() => webSearch(q, 5, signal)) : webSearch(q, 5, signal), 12000, [] as SourceItem[]),
       ),
     ),
     wiki ? Promise.all([query, subject, ...queries].map((q) => timeout(wikiSearch(wiki, q, 3, signal), 8000, []))) : Promise.resolve([]),

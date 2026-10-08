@@ -8,6 +8,35 @@ import { completeWithFallback, resolveProviders } from './llm';
 // in a name, or a word in front of it ("controversy …"), must not
 // send the whole dig down the wrong hole.
 
+const STOP_WORDS = new Set('the a an and or of in on at to for with by from about is was are game games mobile app movie film show series book controversy theory theories story history mystery'.split(' '));
+const wordsOf = (t: string) => (t.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []).filter(Boolean);
+/** The words in a search that could be a name (not "game", "controversy", "the"). */
+const typedWords = (t: string) => wordsOf(t).filter((w) => !STOP_WORDS.has(w));
+/** A word the text has, allowing a slip of the keyboard in a long word ("theroies"). */
+const near = (w: string, among: string[]) => among.some((x) => x === w || (w.length >= 5 && x.length >= 5 && levenshtein(w, x) <= (w.length >= 8 ? 2 : 1)));
+/** Is this name in the text: run together ("stargirl"), or each of its words (allowing slips)? */
+function typedName(name: string, text: string): boolean {
+  const have = wordsOf(text);
+  const whole = wordsOf(name).join('');
+  // Run together, but only across whole words ("stargirl" = "star girl"; "stargirls" is not in "star girl star").
+  for (let i = 0; i < have.length; i++) {
+    let joined = '';
+    for (let j = i; j < Math.min(have.length, i + 5); j++) {
+      joined += have[j];
+      if (joined === whole) return true;
+      if (joined.length >= whole.length) break;
+    }
+  }
+  const want = typedWords(name);
+  return want.length > 0 && want.every((w) => near(w, have));
+}
+function levenshtein(a: string, b: string): number {
+  const d = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array<number>(b.length).fill(0)]);
+  for (let j = 1; j <= b.length; j++) d[0][j] = j;
+  for (let i = 1; i <= a.length; i++) for (let j = 1; j <= b.length; j++) d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+  return d[a.length][b.length];
+}
+
 export interface Understanding {
   /** The thing at the centre, spelled the way sources spell it. */
   subject: string;
@@ -70,12 +99,25 @@ export async function understand(asked: string, firstResults: SourceItem[], sign
       const list = (v: unknown, n: number, max = 120) => (Array.isArray(v) ? v.map((x) => str(x, max)).filter(Boolean).slice(0, n) : []);
       const subject = str(j.subject, 90);
       if (!subject) throw new Error('no subject');
+      // The subject is what the user typed (respelled at most). A different name is allowed only when the
+      // first results show the two together ("9 11" → "September 11 attacks"); junk results about something
+      // else ("Stellar Blade" for "star girl") must never turn the dig into a dig about that.
+      if (!typedName(subject, [asked, inCase ?? '', earlier ?? ''].join(' '))) {
+        const typed = [...new Set(typedWords(asked))];
+        const bridged = firstResults.some((r) => {
+          const text = `${r.title} ${r.snippet ?? ''}`;
+          return typedName(subject, text) && typed.filter((w) => near(w, wordsOf(text))).length >= Math.min(2, typed.length);
+        });
+        if (!bridged) throw new Error(`subject "${subject}" is not what was typed`);
+      }
       const fixes: Record<string, string> = {};
       if (j.fixes && typeof j.fixes === 'object') {
         for (const [k, v] of Object.entries(j.fixes as Record<string, unknown>)) {
           const to = str(v, 60);
           // A real fix changes a word the user actually typed.
-          if (to && k.trim() && to.toLowerCase() !== k.trim().toLowerCase() && asked.toLowerCase().includes(k.trim().toLowerCase())) fixes[k.trim()] = to;
+          // …and is a real correction: "girl" → "Girls" (a plural, a capital letter) is not.
+          const bare = (t: string) => t.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '').replace(/(es|s)$/, '');
+          if (to && k.trim() && bare(to) !== bare(k) && asked.toLowerCase().includes(k.trim().toLowerCase())) fixes[k.trim()] = to;
         }
       }
       return {

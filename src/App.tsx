@@ -72,26 +72,36 @@ function Desk() {
     const vv = window.visualViewport;
     if (!vv) return;
     const root = document.documentElement;
+    // Only a touch screen has an on-screen keyboard; a small desktop window never changes.
+    if (!window.matchMedia('(pointer: coarse)').matches) return;
+    let last = '';
+    let frame = 0;
     const apply = () => {
-      const kb = Math.max(0, Math.round(window.innerHeight - (vv.height + vv.offsetTop)));
-      root.style.setProperty('--kb', `${kb}px`);
-      root.style.setProperty('--vvh', `${Math.round(vv.height)}px`);
-      root.style.setProperty('--vvt', `${Math.round(vv.offsetTop)}px`);
-      // Android (resizing the page) shows it as a shorter screen; iPhone as a covered one.
-      // Only a touch screen has an on-screen keyboard; a small desktop window must never hide the toolbar.
-      const touch = window.matchMedia('(pointer: coarse)').matches;
-      const typing = touch && (kb > 120 || (window.screen.height - vv.height > 260 && !!document.activeElement?.matches('input, textarea, [contenteditable]')));
-      root.classList.toggle('kb-open', typing);
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        // The keyboard is open only while a text box has focus. Moving, pinching or scrolling the board also
+        // changes the visible area; that must never hide the toolbar (it made the board blink).
+        const box = document.activeElement?.matches('input:not([type=checkbox]):not([type=radio]):not([type=range]), textarea, [contenteditable=true]');
+        const kb = box && vv.scale <= 1.01 ? Math.max(0, Math.round(window.innerHeight - (vv.height + vv.offsetTop))) : 0;
+        const typing = !!box && (kb > 120 || window.screen.height - vv.height > 260);
+        const next = typing ? `${kb}|${Math.round(vv.height)}|${Math.round(vv.offsetTop)}` : '';
+        if (next === last) return;
+        last = next;
+        root.style.setProperty('--kb', `${typing ? kb : 0}px`);
+        root.style.setProperty('--vvh', typing ? `${Math.round(vv.height)}px` : '100dvh');
+        root.style.setProperty('--vvt', `${typing ? Math.round(vv.offsetTop) : 0}px`);
+        root.classList.toggle('kb-open', typing);
+      });
     };
-    apply();
+    const later = () => setTimeout(apply, 150);
     vv.addEventListener('resize', apply);
-    vv.addEventListener('scroll', apply);
-    window.addEventListener('focusin', apply);
-    window.addEventListener('focusout', () => setTimeout(apply, 120));
+    window.addEventListener('focusin', later);
+    window.addEventListener('focusout', later);
     return () => {
+      cancelAnimationFrame(frame);
       vv.removeEventListener('resize', apply);
-      vv.removeEventListener('scroll', apply);
-      window.removeEventListener('focusin', apply);
+      window.removeEventListener('focusin', later);
+      window.removeEventListener('focusout', later);
     };
   }, []);
 

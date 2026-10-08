@@ -42,7 +42,7 @@ function redditItem(d: any): SourceItem {
   };
 }
 
-export const reddit: SearchFn = async (q, { limit, signal, subject }) => {
+export const reddit: SearchFn = async (q, { limit, signal, subject, context }) => {
   if (Date.now() > redditBlockedUntil) {
     try {
       const token = await redditAuth();
@@ -76,6 +76,19 @@ export const reddit: SearchFn = async (q, { limit, signal, subject }) => {
       return [] as any[];
     });
   archived.sort((a: any, b: any) => (b.score ?? 0) + (b.num_comments ?? 0) - ((a.score ?? 0) + (a.num_comments ?? 0)));
+  // A common name ("star girl") matches songs and memes by title; the threads about THIS case also say what
+  // it is (its maker, "app"): search the threads' whole text for the name together with those words.
+  if (subject && context?.length) {
+    const byText = await Promise.all(
+      context.slice(0, 2).map((w) =>
+        getJson(`https://api.pullpush.io/reddit/search/submission/?q=${enc(`"${subject.trim()}" ${w}`)}&size=${Math.min(50, limit * 3)}`, { signal, timeout: 9000 })
+          .then((j) => ((j.data ?? []) as any[]).filter((d) => !d.over_18 && d.title && d.selftext !== '[removed]' && d.selftext !== '[deleted]'))
+          .catch(() => [] as any[]),
+      ),
+    );
+    const found = byText.flat().sort((a: any, b: any) => (b.score ?? 0) + (b.num_comments ?? 0) - ((a.score ?? 0) + (a.num_comments ?? 0)));
+    archived.unshift(...found);
+  }
   // The threads Google ranks best for this search come first, then the archive's most discussed.
   const items: SourceItem[] = [];
   const seen = new Set<string>();

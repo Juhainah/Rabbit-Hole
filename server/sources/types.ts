@@ -5,6 +5,8 @@ export interface SearchOpts {
   signal?: AbortSignal;
   /** The case's own name ("star girl"), for sources that match titles and need it as one phrase. */
   subject?: string;
+  /** Words the case's own sources keep using (its maker, its platform), for sources that need help telling it from namesakes. */
+  context?: string[];
 }
 
 export type SearchFn = (q: string, opts: SearchOpts) => Promise<SourceItem[]>;

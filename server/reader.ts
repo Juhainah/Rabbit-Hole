@@ -174,6 +174,42 @@ const wikipedia: Reader = async (url) => {
   return r;
 };
 
+/**
+ * Research papers (OpenAlex, DOIs): the website blocks readers, but OpenAlex's free API has the paper's
+ * details and abstract; when the paper is open access, its full text is read from the PDF.
+ */
+const openAlex: Reader = async (url) => {
+  const id = url.pathname.match(/\b(W\d+)\b/i)?.[1];
+  const doi = url.hostname.endsWith('doi.org') ? url.pathname.replace(/^\//, '') : '';
+  if (!id && !doi) return null;
+  const w = await getJson(`https://api.openalex.org/works/${id ? id.toUpperCase() : `doi:${doi}`}`, { timeout: 15000 });
+  if (!w?.title && !w?.display_name) return null;
+  const r = base(url, String(w.display_name ?? w.title));
+  r.siteName = w.primary_location?.source?.display_name ?? 'OpenAlex';
+  r.byline = (w.authorships ?? []).map((a: any) => a.author?.display_name).filter(Boolean).slice(0, 6).join(', ');
+  r.published = w.publication_date ?? (w.publication_year ? String(w.publication_year) : undefined);
+  // OpenAlex stores abstracts as an index of words to positions: put the words back in order.
+  const inv = w.abstract_inverted_index as Record<string, number[]> | null;
+  const words: string[] = [];
+  if (inv) for (const [word, at] of Object.entries(inv)) for (const i of at) words[i] = word;
+  const abstract = words.filter(Boolean).join(' ');
+  const pdf = w.best_oa_location?.pdf_url ?? w.open_access?.oa_url;
+  const full = pdf && /\.pdf($|\?)/i.test(pdf) ? await readPdf(pdf).catch(() => null) : null;
+  const facts = [
+    w.publication_year ? `**Published:** ${w.publication_year}${r.siteName && r.siteName !== 'OpenAlex' ? ` in *${r.siteName}*` : ''}` : '',
+    r.byline ? `**By:** ${r.byline}` : '',
+    w.cited_by_count != null ? `**Cited by:** ${w.cited_by_count}` : '',
+  ].filter(Boolean);
+  r.text = [facts.join('  \n'), abstract ? `## Abstract\n\n${abstract}` : '', full?.text ? `## Full text\n\n${full.text.slice(0, 60000)}` : ''].filter(Boolean).join('\n\n');
+  r.format = 'markdown';
+  r.excerpt = abstract.slice(0, 300) || undefined;
+  r.alternatives = [
+    ...(w.doi ? [{ label: 'The paper (DOI)', url: String(w.doi) }] : []),
+    ...(pdf ? [{ label: 'Open-access copy', url: String(pdf) }] : []),
+  ];
+  return r;
+};
+
 /** Fandom wikis: their pages sit behind a bot check, but the wiki's own API serves the article. */
 const fandom: Reader = async (url) => {
   const title = decodeURIComponent(url.pathname.match(/^\/wiki\/(.+)$/)?.[1] ?? '').replace(/_/g, ' ');
@@ -230,6 +266,7 @@ const SPECIAL: [RegExp, Reader][] = [
   [/(^|\.)reddit\.com$/, reddit],
   [/^news\.ycombinator\.com$/, hackerNews],
   [/(^|\.)wikipedia\.org$/, wikipedia],
+  [/(^|\.)openalex\.org$|^(dx\.)?doi\.org$/, openAlex],
 ];
 
 const WALL = /human verification|security verification|just a moment|attention required|access denied|are you a robot|captcha|verify you are human|enable javascript|please (log|sign) in|sign in to continue|you('|’)re offline|checking your browser|request unsuccessful/i;

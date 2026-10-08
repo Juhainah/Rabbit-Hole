@@ -133,7 +133,17 @@ async function exa(q: string, limit: number, signal?: AbortSignal): Promise<Sour
     method: 'POST',
     signal,
     headers: { 'Content-Type': 'application/json', 'x-api-key': key },
-    body: JSON.stringify({ query: q, numResults: Math.min(limit, 10), type: 'auto', contents: { text: { maxCharacters: 600 } } }),
+    // Exa takes "site:" as a list of domains to search, not as words in the query.
+    body: JSON.stringify({
+      query: q.replace(/\s*\bsite:[\w.-]+/gi, '').replace(/\s*\bOR\b\s*/g, ' ').replace(/[()]/g, ' ').replace(/\s+/g, ' ').trim(),
+      numResults: Math.min(limit, 10),
+      type: 'auto',
+      contents: { text: { maxCharacters: 600 } },
+      ...((): { includeDomains?: string[] } => {
+        const d = [...q.matchAll(/\bsite:([\w.-]+\.[a-z]{2,})/gi)].map((m) => m[1].replace(/^www\./, ''));
+        return d.length ? { includeDomains: d } : {};
+      })(),
+    }),
   });
   return (j?.results ?? []).map((r: any) => {
     const it = toItem(r.url, r.title ?? '', stripHtml(r.text ?? '', 400));
@@ -141,6 +151,20 @@ async function exa(q: string, limit: number, signal?: AbortSignal): Promise<Sour
     if (r.author && !it.author) it.author = String(r.author).slice(0, 60);
     return it;
   });
+}
+
+/** Firecrawl search: 1,000 free credits a month, no card. Off until FIRECRAWL_API_KEY is set. */
+async function firecrawl(q: string, limit: number, signal?: AbortSignal): Promise<SourceItem[]> {
+  const key = process.env.FIRECRAWL_API_KEY?.trim();
+  if (!key) return [];
+  const j = await getJson('https://api.firecrawl.dev/v1/search', {
+    method: 'POST',
+    signal,
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
+    body: JSON.stringify({ query: q, limit: Math.min(limit, 10) }),
+  });
+  if (j?.success === false) throw new Error(`Firecrawl: ${j.error ?? 'refused'}`);
+  return (j?.data ?? []).filter((r: any) => r?.url).map((r: any) => toItem(r.url, r.title ?? '', stripHtml(r.description ?? '', 400)));
 }
 
 /** SerpApi (Google results): 250 free searches a month, no card. Off until SERPAPI_API_KEY is set. */
@@ -174,6 +198,26 @@ export async function serper(q: string, limit: number, signal?: AbortSignal): Pr
     if (d && !Number.isNaN(d.getTime()) && /\d{4}/.test(r.date)) it.date = d.toISOString().slice(0, 10);
     return it;
   });
+}
+
+/**
+ * Google's own results, for the few searches that matter most (reading the search, the two key searches):
+ * Serper while it has credits, then SerpApi. Empty when neither works, so callers fall back to webSearch.
+ */
+export async function googleSearch(q: string, limit: number, signal?: AbortSignal): Promise<SourceItem[]> {
+  for (const engine of [serper, serpapi]) {
+    if ((engineRest.get(engine.name) ?? 0) > Date.now()) continue;
+    try {
+      const items = await engine(q, limit, signal);
+      if (items.length) return items;
+    } catch (e) {
+      if (signal?.aborted) throw e;
+      const m = e instanceof Error ? e.message : String(e);
+      if (/\b(400|432|401|402|403)\b|usage limit|quota|credits/i.test(m)) engineRest.set(engine.name, Date.now() + 6 * 3600_000);
+      else if (/\b429\b/.test(m)) engineRest.set(engine.name, Date.now() + 2 * 60_000);
+    }
+  }
+  return [];
 }
 
 /** Google Images through Serper: real pictures of the thing asked about, with the page each came from. */
@@ -214,11 +258,16 @@ export async function webSearch(q: string, limit: number, signal?: AbortSignal):
   const hit = webCache.get(key);
   if (hit && Date.now() - hit.at < 30 * 60_000) return hit.items;
   const errors: string[] = [];
-  // Allowances that renew (monthly, daily) go first; Serper's one-time searches are kept for when those run out.
-  for (const engine of [tavily, langsearch, exa, serpapi, serper, brave, duckduckgo]) {
+  // "… site:reddit.com": only pages from there count. An engine that ignores the operator (LangSearch)
+  // returns the open web instead; then the next engine is asked.
+  const sites = [...q.matchAll(/\bsite:([\w.-]+\.[a-z]{2,})/gi)].map((m) => m[1].toLowerCase().replace(/^www\./, ''));
+  const onSite = (it: SourceItem) => !sites.length || sites.some((s) => (host(it.url) ?? '').endsWith(s));
+  // Best results first: Tavily, Exa and Google (SerpApi) renew every month; LangSearch (daily, but its own
+  // weaker index) after them; Serper's one-time searches and the keyless scrapers last.
+  for (const engine of [tavily, exa, serpapi, firecrawl, langsearch, serper, brave, duckduckgo]) {
     if ((engineRest.get(engine.name) ?? 0) > Date.now()) continue;
     try {
-      const items = await engine(q, limit, signal);
+      const items = (await engine(q, limit, signal)).filter(onSite);
       if (items.length) {
         webCache.set(key, { at: Date.now(), items });
         return items;

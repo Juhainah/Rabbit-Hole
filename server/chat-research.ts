@@ -7,7 +7,7 @@ import { readAnything } from './reader';
 import { understand } from './understand';
 import { vetPictures } from './vision';
 import { castOf, isGroup, isScreenWork } from './sources/cast';
-import { serper, serperImages, webSearch } from './sources/web';
+import { googleSearch, serperImages, webSearch } from './sources/web';
 
 // Words that say what to do, not what to look for.
 const META_WORDS = new Set(
@@ -114,7 +114,7 @@ export async function chatResearch(
       )
     : Promise.resolve([] as SourceItem[]);
   // Google finds the page that answers a question; Google Images finds the pictures asked for.
-  const googleTask = within(serper(phrase, 6, deadline).catch(() => webSearch(phrase, 5, deadline)), 13_000, [] as SourceItem[]);
+  const googleTask = within(googleSearch(phrase, 6, deadline).then((r) => (r.length ? r : webSearch(phrase, 5, deadline))).catch(() => webSearch(phrase, 5, deadline)), 13_000, [] as SourceItem[]);
   // Like a researcher: read the question against the first results, plan better searches, run them.
   // The partner's own follow-up searches ("ACTION: search …") are run as asked.
   const own = (extra.searchFor ?? []).map((q) => q.trim()).filter(Boolean).slice(0, 3);
@@ -133,7 +133,7 @@ export async function chatResearch(
     if (!qs.length) return { items: [] as SourceItem[], names };
     extra.onStatus?.(`Searching the web: ${qs.map((q) => `“${q}”`).join(', ')}`);
     const lists = await Promise.all(
-      qs.map((q, i) => within(i === 0 ? serper(q, 8, signal).then((r) => (r.length ? r : webSearch(q, 6, signal))) : webSearch(q, 6, signal), 12_000, [] as SourceItem[])),
+      qs.map((q, i) => within(i === 0 ? googleSearch(q, 8, signal).then((r) => (r.length ? r : webSearch(q, 6, signal))) : webSearch(q, 6, signal), 12_000, [] as SourceItem[])),
     );
     return { items: lists.flat(), names };
   })();

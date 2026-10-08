@@ -113,8 +113,21 @@ export function ReaderPanel() {
   const pinned = currentBoard().nodes.filter((n) => n.data.url === url);
 
   if (page.blocked) {
+    // What the card itself holds (a summary, an abstract, a picture) is still worth reading here.
+    const held = pinned.find((n) => (n.data.text ?? '').trim().length > 40 || n.data.image);
     return (
       <div className="px-4 py-6">
+        {held && (
+          <article className="mb-4">
+            <div className="font-type text-[11px] uppercase tracking-wider text-ink-soft">From the card</div>
+            <h2 className="mt-1 font-serif text-[21px] font-bold leading-tight text-ink">{held.data.title}</h2>
+            {(held.data.author || held.data.date) && (
+              <div className="mt-1 text-[12.5px] text-ink-soft">{[held.data.author, held.data.date && prettyDate(held.data.date)].filter(Boolean).join(' · ')}</div>
+            )}
+            {held.data.image && <img src={held.data.image} alt="" referrerPolicy="no-referrer" className="mt-3 max-h-[280px] w-full rounded object-cover" />}
+            {held.data.text && <div className="prose-rh mt-3 whitespace-pre-wrap text-[14.5px] leading-relaxed text-ink">{held.data.text}</div>}
+          </article>
+        )}
         <div className="rounded-lg border border-dashed border-ink/25 bg-[#fffdf7] p-4">
           <div className="text-[26px]">🔒</div>
           <div className="mt-1 font-serif text-[19px] font-bold text-ink">{page.title}</div>
