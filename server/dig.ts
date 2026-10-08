@@ -217,7 +217,7 @@ export async function runDig(req: DigRequest, emit: Emit, signal: AbortSignal) {
   }
   if (u) {
     for (const [typo, word] of Object.entries(u.fixes)) notes.push(`Read “${typo}” as “${word}”.`);
-    if (u.doubt) notes.push(u.doubt);
+    // (The AI's doubts about weak first results are not shown: they described the search engine, not the case.)
     query = u.query;
     if (notes.length) emit({ type: 'status', message: `⚠ ${notes.join(' ')} This case follows “${query}”.`, level: 'warn' });
   } else if (topic && !caseQuery && !req.trail?.length) {

@@ -2016,7 +2016,6 @@ button {
 .board.moving .clue,
 .board.moving .react-flow__handle.pin {
   transition: none !important;
-  animation: none !important;
 }
 .board.moving .react-flow__node:hover .clue {
   transform: rotate(var(--rot));

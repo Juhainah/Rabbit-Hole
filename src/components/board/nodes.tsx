@@ -24,10 +24,15 @@ const WASHI = ['#8ea67c', '#c96d4b', '#dca83f', '#7fa7b5', '#c9a0c7'];
 
 /** Cards drop in with a bounce the first time they appear, never again (zoom/scroll stay cheap). */
 const seen = new Set<string>();
-function useFresh(id: string) {
-  const [fresh] = useState(() => !seen.has(id));
+/**
+ * A card drops in once, when it first lands. The "fresh" mark comes off when the drop-in ends: left on, the
+ * drop-in played again every time the board stopped moving (animations pause while you pan), so every
+ * card flashed as you moved around.
+ */
+function useFresh(id: string): [boolean, () => void] {
+  const [fresh, setFresh] = useState(() => !seen.has(id));
   seen.add(id);
-  return fresh;
+  return [fresh, () => setFresh(false)];
 }
 
 function Card(props: {
@@ -42,7 +47,7 @@ function Card(props: {
 }) {
   const messy = useSettings((s) => s.messy);
   const rot = messy ? (props.data.rotation ?? 0) : 0;
-  const fresh = useFresh(props.id);
+  const [fresh, landed] = useFresh(props.id);
   // React Flow measures the pin mid-fall; once the card lands, measure again so strings meet the pin.
   const updateInternals = useUpdateNodeInternals();
   const hold = useTouchHold(props.id);
@@ -51,7 +56,11 @@ function Card(props: {
   return (
     <div
       {...hold}
-      onAnimationEnd={(e) => e.animationName === 'drop-in' && updateInternals(props.id)}
+      onAnimationEnd={(e) => {
+        if (e.animationName !== 'drop-in' || e.target !== e.currentTarget) return;
+        landed();
+        updateInternals(props.id);
+      }}
       className={clsx('clue', fresh && 'fresh', props.className, props.selected && 'is-selected', props.data.vetting && 'vetting', props.data.tint && 'tinted')}
       style={{ '--rot': `${rot}deg`, ...(props.data.tint ? { '--tint': props.data.tint } : {}), ...props.style } as CSSProperties}
     >
@@ -823,7 +832,7 @@ export function MapNode({ id, data, selected, width, height }: P) {
   const points = data.points ?? [];
   const updateInternals = useUpdateNodeInternals();
   const messy = useSettings((s) => s.messy);
-  const fresh = useFresh(id);
+  const [fresh, landed] = useFresh(id);
   const [adding, setAdding] = useState(false);
   useEffect(() => updateInternals(id), [id, points.length, w, h, updateInternals]);
   useEffect(() => {
@@ -837,6 +846,7 @@ export function MapNode({ id, data, selected, width, height }: P) {
     <>
       <NodeResizer isVisible={!!selected} minWidth={300} minHeight={220} lineStyle={{ borderColor: 'transparent' }} handleStyle={{ width: 10, height: 10, borderRadius: 3 }} />
       <div
+        onAnimationEnd={(e) => e.animationName === 'drop-in' && e.target === e.currentTarget && landed()}
         className={clsx('clue clue-map', fresh && 'fresh', selected && 'is-selected')}
         style={{ '--rot': `${messy ? (data.rotation ?? 0) * 0.4 : 0}deg`, width: w + 16, height: h + 16 } as CSSProperties}
       >
