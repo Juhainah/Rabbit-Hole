@@ -264,13 +264,18 @@ export async function webSearch(q: string, limit: number, signal?: AbortSignal):
   const onSite = (it: SourceItem) => !sites.length || sites.some((s) => (host(it.url) ?? '').endsWith(s));
   // Best results first: Tavily, Exa and Google (SerpApi) renew every month; LangSearch (daily, but its own
   // weaker index) after them; Serper's one-time searches and the keyless scrapers last.
-  for (const engine of [tavily, exa, serpapi, firecrawl, langsearch, serper, brave, duckduckgo]) {
+  // A strong engine's answer is enough. A weak one (its own small index, or a scraped page) is combined
+  // with the next engine that works, so a niche topic gets two chances to turn up its pages.
+  const strong = new Set<SearchEngine>([tavily, exa, serpapi, firecrawl, serper]);
+  let got: SourceItem[] = [];
+  let weakAnswers = 0;
+  for (const engine of [tavily, exa, serpapi, firecrawl, langsearch, serper, brave, duckduckgo] as SearchEngine[]) {
     if ((engineRest.get(engine.name) ?? 0) > Date.now()) continue;
     try {
       const items = (await engine(q, limit, signal)).filter(onSite);
       if (items.length) {
-        webCache.set(key, { at: Date.now(), items });
-        return items;
+        got = interleave(got, items);
+        if (strong.has(engine) || ++weakAnswers >= 2) break;
       }
     } catch (e) {
       if (signal?.aborted) throw e;
@@ -281,8 +286,31 @@ export async function webSearch(q: string, limit: number, signal?: AbortSignal):
       else if (/\b429\b/.test(m)) engineRest.set(engine.name, Date.now() + 2 * 60_000);
     }
   }
+  if (got.length) {
+    webCache.set(key, { at: Date.now(), items: got });
+    return got;
+  }
   if (errors.length) throw new Error(errors.join('; '));
   return [];
+}
+
+type SearchEngine = (q: string, limit: number, signal?: AbortSignal) => Promise<SourceItem[]>;
+
+/** Two engines' answers, best of each first, each page once. */
+function interleave(a: SourceItem[], b: SourceItem[]): SourceItem[] {
+  if (!a.length) return b;
+  const out: SourceItem[] = [];
+  const seen = new Set<string>();
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    for (const it of [a[i], b[i]]) {
+      const k = it?.url?.replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, '') ?? it?.id;
+      if (it && k && !seen.has(k)) {
+        seen.add(k);
+        out.push(it);
+      }
+    }
+  }
+  return out;
 }
 
 export const web: SearchFn = (q, { limit, signal }) => webSearch(q, limit, signal);

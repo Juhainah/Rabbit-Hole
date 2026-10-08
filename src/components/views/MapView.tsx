@@ -4,6 +4,7 @@ import 'leaflet/dist/leaflet.css';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { MapContainer, Marker, Polyline, Popup, TileLayer, useMap, useMapEvents } from 'react-leaflet';
 import { api } from '../../lib/api';
+import { askAboutPlace } from '../../lib/dig';
 import { cardForPlace, locateCard, pinPlace, type FoundPlace } from '../../lib/places';
 import { MAP_STYLES, nodeColor, prettyDate, type MapStyle } from '../../lib/utils';
 import { useBoards, useCurrentBoard } from '../../store/boards';
@@ -124,6 +125,9 @@ export function MapView() {
                 <div className="mt-2 flex flex-wrap gap-1.5">
                   <button className="chip" onClick={() => useUi.getState().focusNodes([n.id])}>
                     Show on board
+                  </button>
+                  <button className="chip" onClick={() => askAboutPlace(n.id, n.data.title)}>
+                    Why is it here?
                   </button>
                   <button className="chip" onClick={() => { useUi.getState().select(n.id); useUi.getState().openTab('inspect'); }}>
                     Edit

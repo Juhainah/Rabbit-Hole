@@ -13,6 +13,7 @@ import { archiveMedia, siteIn, waybackImages } from './sources/archives';
 import { nameMatcher, norm as nameKey, tokenize } from '../shared/names';
 import { enrichEntities, wikiPrimary } from './sources/knowledge';
 import { castOf, isGroup, isScreenWork, type Cast } from './sources/cast';
+import { keyDates, type KeyDate } from './sources/keydates';
 import { needsLooking, vetPictures } from './vision';
 
 export type Emit = (ev: DigEvent) => void;
@@ -242,6 +243,8 @@ export async function runDig(req: DigRequest, emit: Emit, signal: AbortSignal) {
   // In a deeper dig, the general article ("Reddit", "FBI") is only the main article if it mentions the case.
   if (primary && framed && !req.url && !namesSubject(framed, `${primary.title} ${primary.extract}`)) primary = null;
   if (primary) emit({ type: 'primary', primary });
+  // The subject's checked dates (released, first aired, awards, founded, ended): the timeline's backbone.
+  const keyDatesTask: Promise<KeyDate[]> = primary && !framed ? keyDates(primary.title, signal).catch(() => []) : Promise.resolve([]);
 
   const phrase = u ? u.query : searchPhrase(query, primary);
   // A link's page title can be incidental ("Rotten.com Source Code/Mirror"); only a typed topic's article title helps judge results.
@@ -496,13 +499,14 @@ export async function runDig(req: DigRequest, emit: Emit, signal: AbortSignal) {
   })();
 
   emit({ type: 'status', message: 'Connecting the dots…' });
+  const dates = await Promise.race([keyDatesTask, sleep(4000).then(() => [] as KeyDate[])]);
   const providers = resolveProviders();
   const listed = (compact: boolean) => evidence.slice(0, compact ? 14 : 36);
   const attempt = (compact: boolean) =>
     completeWithFallback(
       providers,
       {
-        messages: digMessages(venue ? `${framed} on ${venue.name}` : query, trail, primary, listed(compact), compact, framed, notes.length ? `The user typed “${asked}”. ${notes.join(' ')}` : undefined, venue?.name, [...castReading, ...(research?.reading ?? [])], research?.gallery, subject),
+        messages: digMessages(venue ? `${framed} on ${venue.name}` : query, trail, primary, listed(compact), compact, framed, notes.length ? `The user typed “${asked}”. ${notes.join(' ')}` : undefined, venue?.name, [...castReading, ...(research?.reading ?? [])], research?.gallery, subject, dates),
         temperature: 0.6,
         maxTokens: compact ? 4000 : 8000,
         signal,
@@ -577,6 +581,14 @@ export async function runDig(req: DigRequest, emit: Emit, signal: AbortSignal) {
     analysis.timeline = analysis.timeline.map(({ evidence, ...t }) => ({ ...t, item: evidence ? shown[evidence - 1]?.id : undefined }));
     // The premise check stands even if the AI didn't mention it.
     if (notes.length) analysis.premise = `${notes.join(' ')} This case follows “${query}”.`;
+    // Every checked key date is on the timeline, even if the AI left it out.
+    for (const kd of dates) {
+      const y = kd.date.slice(0, kd.date.startsWith('-') ? 5 : 4);
+      const head = kd.event.split(/[ (]/)[0].toLowerCase();
+      const told = analysis.timeline.some((t) => t.date.startsWith(y) && (t.event.toLowerCase().includes(head) || kd.event.toLowerCase().split(' ').slice(1, 4).some((w) => w.length > 4 && t.event.toLowerCase().includes(w))));
+      if (!told) analysis.timeline.push({ date: kd.date, event: kd.event.replace(/ ((.+))$/, ' in $1') });
+    }
+    analysis.timeline.sort((a, b) => parseInt(a.date, 10) - parseInt(b.date, 10) || a.date.localeCompare(b.date));
 
     // People, places and organisations must come from what the archives returned, not the AI's memory.
     const readInFull = [

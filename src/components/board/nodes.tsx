@@ -4,7 +4,7 @@ import clsx from 'clsx';
 import { ArrowDown, MessageCircle, Play, Square, BookOpen, Pencil, Plus, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { sourceMeta } from '../../../shared/sources';
-import { askAbout, autoFall, caseFromTangent, startDig, stopDig } from '../../lib/dig';
+import { askAbout, askAboutPlace, autoFall, caseFromTangent, startDig, stopDig } from '../../lib/dig';
 import { shrink } from '../../lib/evidence';
 import { compact, domain, ENTITY_COLORS, ENTITY_LABEL, hash01, prettyDate, STAMPS } from '../../lib/utils';
 import { useBoards } from '../../store/boards';
@@ -880,6 +880,16 @@ export function MapNode({ id, data, selected, width, height }: P) {
                 {points.map((p, i) => (
                   <span key={`${p.label}${i}`} className="chip !py-0.5 !pr-1">
                     {p.label || `${p.lat.toFixed(2)}, ${p.lon.toFixed(2)}`}
+                    <button
+                      title="Ask the partner why this place is here"
+                      className="ml-1.5 opacity-60 hover:opacity-100"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        askAboutPlace(id, p.label || `${p.lat.toFixed(4)}, ${p.lon.toFixed(4)}`);
+                      }}
+                    >
+                      <MessageCircle size={11} />
+                    </button>
                     <button title="Take it off this map" className="ml-1 opacity-60 hover:opacity-100" onClick={(e) => { e.stopPropagation(); setPoints('Took a place off a map', points.filter((_, j) => j !== i)); }}>
                       <X size={11} />
                     </button>

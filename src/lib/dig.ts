@@ -504,6 +504,18 @@ export function caseName(node?: ClueNode) {
  * Opens the partner on a card, always framed by its case: asking about
  * "Buenos Aires" on a Liam Payne board means Buenos Aires *in that story*.
  */
+/** Asks the partner why one place on a map is on the board, and what it means in the case. */
+export function askAboutPlace(nodeId: string, place: string) {
+  const node = currentBoard().nodes.find((n) => n.id === nodeId);
+  if (!node) return;
+  const ui = useUi.getState();
+  ui.select(nodeId);
+  const topicName = caseName(node);
+  const text = `Why is "${place}" on this board, and what is its significance${topicName ? ` in ${topicName}` : ''}? What happened there, and which sources say so? If nothing on the board ties it to the case, say so plainly.`;
+  ui.set({ chatPrefill: { text, at: Date.now(), readOnly: true } });
+  ui.openTab('ai');
+}
+
 export function askAbout(nodeId: string) {
   const node = currentBoard().nodes.find((n) => n.id === nodeId);
   if (!node) return;
@@ -513,6 +525,10 @@ export function askAbout(nodeId: string) {
   const title = node.data.title;
   let text: string;
   if (node.type === 'topic') text = `What actually happened in "${title}"? Give me the key facts in order, then the most interesting open question.`;
+  else if (node.type === 'map') {
+    const places = (node.data.points ?? []).map((p) => p.label).filter(Boolean);
+    text = `Why are these places on the board${places.length ? `: ${places.join(', ')}` : ''}? For each one, what is its significance${topicName ? ` in ${topicName}` : ''}? Say plainly if nothing on the board ties a place to the case.`;
+  }
   else if (node.type === 'question') text = topicName ? `${title} (in the case of ${topicName})` : title;
   else if (node.type === 'image' || node.type === 'video')
     text = `What does ${node.type === 'image' ? 'this picture' : 'this recording'} show, and where does it come from?${node.data.date ? ` It was saved ${node.data.date}.` : ''}${topicName ? ` What does it add to ${topicName}?` : ''}`;
