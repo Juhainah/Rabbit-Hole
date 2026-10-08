@@ -95,7 +95,7 @@ async function fetchPrimary(topic: string, signal?: AbortSignal): Promise<Primar
   );
   const p = pagesOf(j)[0];
   // A "may refer to" page lists every thing with that name: never the main article of a case.
-  if (!p || /bmay (also )?refer tob/i.test(String(p.extract ?? "").slice(0, 300))) return null;
+  if (!p || /\bmay (also )?refer to\b/i.test(String(p.extract ?? '').slice(0, 300))) return null;
   const rel = await getJson(
     mw(WP, { action: 'query', list: 'search', srsearch: `morelike:${p.title}`, srlimit: 12, srprop: '' }),
     { signal },
