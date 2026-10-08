@@ -110,6 +110,27 @@ await check('Web search', 'Serper', ['SERPER_API_KEY'], async () => {
   });
   return { ok: !!body?.organic, detail: `search works${body?.credits != null ? ` · used ${body.credits} credit` : ''} · free: 2,500 searches once` };
 }, 'https://serper.dev');
+await check('Web search', 'LangSearch', ['LANGSEARCH_API_KEY'], async () => {
+  const { body } = await fetchJson('https://api.langsearch.com/v1/web-search', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${env('LANGSEARCH_API_KEY')}` },
+    body: JSON.stringify({ query: 'Tunguska event', count: 1 }),
+  });
+  return { ok: Array.isArray(body?.data?.webPages?.value), detail: 'search works · free: a daily allowance, no card' };
+}, 'https://langsearch.com');
+await check('Web search', 'Exa', ['EXA_API_KEY'], async () => {
+  const { body } = await fetchJson('https://api.exa.ai/search', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-api-key': env('EXA_API_KEY') },
+    body: JSON.stringify({ query: 'Tunguska event', numResults: 1 }),
+  });
+  return { ok: Array.isArray(body?.results), detail: 'search works · free: $10 of searches every month' };
+}, 'https://dashboard.exa.ai');
+await check('Web search', 'SerpApi', ['SERPAPI_API_KEY'], async () => {
+  const { body } = await fetchJson(`https://serpapi.com/account.json?api_key=${encodeURIComponent(env('SERPAPI_API_KEY'))}`);
+  const left = body?.total_searches_left ?? body?.plan_searches_left;
+  return { ok: left != null, detail: left != null ? `${num(left)} searches left this month · free: 250 a month` : 'key refused' };
+}, 'https://serpapi.com/users/sign_up');
 
 // ── Research sources that take a key ──
 await check('Sources', 'GitHub', ['GITHUB_TOKEN'], async () => {

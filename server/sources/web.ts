@@ -106,6 +106,57 @@ async function tavily(q: string, limit: number, signal?: AbortSignal): Promise<S
   return (j.results ?? []).map((r: any) => toItem(r.url, r.title ?? '', stripHtml(r.content, 400)));
 }
 
+/** LangSearch: a free web search (daily allowance, no card), with publication dates. Off until LANGSEARCH_API_KEY is set. */
+async function langsearch(q: string, limit: number, signal?: AbortSignal): Promise<SourceItem[]> {
+  const key = process.env.LANGSEARCH_API_KEY?.trim();
+  if (!key) return [];
+  const j = await getJson('https://api.langsearch.com/v1/web-search', {
+    method: 'POST',
+    signal,
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
+    body: JSON.stringify({ query: q, count: Math.min(limit, 20), freshness: 'noLimit', summary: true }),
+  });
+  if (j?.code && j.code !== 200) throw new Error(`LangSearch ${j.code}: ${j.msg ?? 'refused'}`);
+  return (j?.data?.webPages?.value ?? []).map((r: any) => {
+    const it = toItem(r.url, r.name ?? '', stripHtml(r.summary || r.snippet || '', 400));
+    const d = r.datePublished ? new Date(r.datePublished) : null;
+    if (d && !Number.isNaN(d.getTime())) it.date = d.toISOString().slice(0, 10);
+    return it;
+  });
+}
+
+/** Exa: $10 of free searches every month, no payment method. Off until EXA_API_KEY is set. */
+async function exa(q: string, limit: number, signal?: AbortSignal): Promise<SourceItem[]> {
+  const key = process.env.EXA_API_KEY?.trim();
+  if (!key) return [];
+  const j = await getJson('https://api.exa.ai/search', {
+    method: 'POST',
+    signal,
+    headers: { 'Content-Type': 'application/json', 'x-api-key': key },
+    body: JSON.stringify({ query: q, numResults: Math.min(limit, 10), type: 'auto', contents: { text: { maxCharacters: 600 } } }),
+  });
+  return (j?.results ?? []).map((r: any) => {
+    const it = toItem(r.url, r.title ?? '', stripHtml(r.text ?? '', 400));
+    if (r.publishedDate) it.date = String(r.publishedDate).slice(0, 10);
+    if (r.author && !it.author) it.author = String(r.author).slice(0, 60);
+    return it;
+  });
+}
+
+/** SerpApi (Google results): 250 free searches a month, no card. Off until SERPAPI_API_KEY is set. */
+async function serpapi(q: string, limit: number, signal?: AbortSignal): Promise<SourceItem[]> {
+  const key = process.env.SERPAPI_API_KEY?.trim();
+  if (!key) return [];
+  const j = await getJson(`https://serpapi.com/search.json?engine=google&q=${enc(q)}&num=${Math.min(limit, 20)}&api_key=${enc(key)}`, { signal });
+  if (j?.error) throw new Error(`SerpApi: ${j.error}`);
+  return (j?.organic_results ?? []).map((r: any) => {
+    const it = toItem(r.link, r.title ?? '', r.snippet ?? '');
+    const d = r.date ? new Date(r.date) : null;
+    if (d && !Number.isNaN(d.getTime()) && /\d{4}/.test(r.date)) it.date = d.toISOString().slice(0, 10);
+    return it;
+  });
+}
+
 /** Serper (Google results): 2,500 free searches, no card. */
 export async function serper(q: string, limit: number, signal?: AbortSignal): Promise<SourceItem[]> {
   const key = process.env.SERPER_API_KEY?.trim();
@@ -163,7 +214,8 @@ export async function webSearch(q: string, limit: number, signal?: AbortSignal):
   const hit = webCache.get(key);
   if (hit && Date.now() - hit.at < 30 * 60_000) return hit.items;
   const errors: string[] = [];
-  for (const engine of [tavily, serper, brave, duckduckgo]) {
+  // Allowances that renew (monthly, daily) go first; Serper's one-time searches are kept for when those run out.
+  for (const engine of [tavily, langsearch, exa, serpapi, serper, brave, duckduckgo]) {
     if ((engineRest.get(engine.name) ?? 0) > Date.now()) continue;
     try {
       const items = await engine(q, limit, signal);
