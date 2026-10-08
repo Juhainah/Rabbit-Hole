@@ -151,7 +151,7 @@ const PAGE_PROPS = {
  * lookup covers most of them; only the leftovers fall back to a search each.
  */
 export async function enrichEntities(
-  entities: { name: string; type: string; place?: string }[],
+  entities: { name: string; type: string; place?: string; fictional?: boolean }[],
   signal?: AbortSignal,
   /** The case's subject: an idea or a thing ("Recipe", "Oven") only gets an article that is about it in this case. */
   about?: string,
@@ -199,6 +199,8 @@ export async function enrichEntities(
   for (const e of entities) {
     const p = found.get(e.name);
     if (!p) continue;
+    // An invented character or place is never a real one with the same name (a real town for a game's country).
+    if (e.fictional) continue;
     // Wikipedia's general article on a common idea or object (what a recipe is, the history of ovens) is not
     // evidence about the case: the card keeps the case's own description instead.
     if ((e.type === 'concept' || e.type === 'object') && about && !namesSubject(about, `${p.title} ${stripHtml(p.extract ?? '', 600)}`)) continue;
@@ -212,7 +214,7 @@ export async function enrichEntities(
     };
   }
   // Places Wikipedia couldn't locate go to OpenStreetMap (throttled to 1/s, so cap it).
-  const missing = entities.filter((e) => e.type === 'place' && out[e.name]?.lat == null).slice(0, 5);
+  const missing = entities.filter((e) => e.type === 'place' && !e.fictional && out[e.name]?.lat == null).slice(0, 5);
   for (const e of missing) {
     const g = await geocode(e.place || e.name, signal).catch(() => null);
     if (g) out[e.name] = { ...out[e.name], lat: g.lat, lon: g.lon };

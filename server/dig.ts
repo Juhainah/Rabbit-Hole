@@ -5,7 +5,7 @@ import { completeWithFallback, resolveProviders } from './llm';
 import { digMessages, normalizeAnalysis, normalizeTangents, tangentMessages } from './prompts';
 import { checkPremise, compactQuery, editDistance, namesSubject, norm, rankRelevant, relevanceFilter, saysName, subjectName, subjectWords, terms, touches } from './relevance';
 import { googleSearch, serperImages, webSearch } from './sources/web';
-import { deepResearch, knownNames, type Research } from './research';
+import { deepResearch, knownNames, wikiPictures, type Research } from './research';
 import { understand, type Understanding } from './understand';
 import { ogImage, primaryFromUrl } from './scrape';
 import { availableSources, searchSource } from './sources';
@@ -173,13 +173,16 @@ export async function runDig(req: DigRequest, emit: Emit, signal: AbortSignal) {
     emit({ type: 'status', message: 'Reading your search…' });
     // Google knows how things are spelled and what exists; the first results show the AI both.
     const scoutQ = caseQuery && !norm(asked).includes(norm(caseQuery)) ? `${asked} ${caseQuery}` : asked;
-    scout = await Promise.race([
-      googleSearch(scoutQ, 8, signal).then((r) => (r.length ? r : webSearch(scoutQ, 6, signal))).catch(() => webSearch(scoutQ, 6, signal).catch(() => [] as SourceItem[])),
-      sleep(7000).then(() => [] as SourceItem[]),
+    // What fan wikis and Wikipedia know by that name ("Animoca Star Girl Wiki: a mobile game by…") is read
+    // alongside the first web results: a weak engine's guesses then can't outvote what the thing really is.
+    const [web0, known0] = await Promise.all([
+      Promise.race([
+        googleSearch(scoutQ, 8, signal).then((r) => (r.length ? r : webSearch(scoutQ, 6, signal))).catch(() => webSearch(scoutQ, 6, signal).catch(() => [] as SourceItem[])),
+        sleep(7000).then(() => [] as SourceItem[]),
+      ]),
+      Promise.race([knownNames(scoutQ, signal), sleep(6000).then(() => [] as SourceItem[])]),
     ]);
-    // No web search to hand (out of allowance, or blocked): fan wikis and Wikipedia still say what exists
-    // and how it is spelled ("Bakery Story Wiki"), which is what the AI needs to read the search right.
-    if (!scout.length) scout = await Promise.race([knownNames(scoutQ, signal), sleep(6000).then(() => [] as SourceItem[])]);
+    scout = [...known0.slice(0, 4), ...web0];
     u = await understand(asked, scout, signal, caseQuery);
     // The first results were about something else (a weak engine's guess): read the search again from
     // what fan wikis and Wikipedia know by that name, and keep those results instead of the junk.
@@ -273,7 +276,10 @@ export async function runDig(req: DigRequest, emit: Emit, signal: AbortSignal) {
     const own = new Set(terms(subject));
     const count = new Map<string, number>();
     for (const it of scout) for (const w of new Set(terms(`${it.title} ${it.snippet ?? ''} ${(it.url ?? '').replace(/[/._-]+/g, ' ')}`))) if (w.length >= 5 && !own.has(w) && !/^(https?|www|com|html|wiki|fandom|reddit|youtube|watch|games?|android|apps?|store|official|download)$/.test(w)) count.set(w, (count.get(w) ?? 0) + 1);
-    return [...count].filter(([, c]) => c >= 2).sort((a, b) => b[1] - a[1]).map(([w]) => w).slice(0, 3);
+    // The other names it goes by ("Animoca Star Girl") say best what it is.
+    const fromAliases = (u?.aliases ?? []).flatMap((a) => terms(a)).filter((w) => w.length >= 4 && !own.has(w));
+    const fromResults = [...count].filter(([, c]) => c >= 2).sort((a, b) => b[1] - a[1]).map(([w]) => w);
+    return [...new Set([...fromAliases, ...fromResults])].slice(0, 3);
   })();
   /** Names the search mentioned that sources never tie in: still searched where people talk, in case a link exists. */
   const storyExtra = !u && query !== asked && !framed ? asked : undefined;
@@ -579,8 +585,9 @@ export async function runDig(req: DigRequest, emit: Emit, signal: AbortSignal) {
     delete analysis.citations;
     // Each moment points at the evidence it came from, so the timeline can open the proof.
     analysis.timeline = analysis.timeline.map(({ evidence, ...t }) => ({ ...t, item: evidence ? shown[evidence - 1]?.id : undefined }));
-    // The premise check stands even if the AI didn't mention it.
-    if (notes.length) analysis.premise = `${notes.join(' ')} This case follows “${query}”.`;
+    // The "check this" note comes only from the app's own checks (a respelled name, a word no source has).
+    // The AI's own doubts about a search ("no controversy is confirmed") contradicted its research; they go.
+    analysis.premise = notes.length ? `${notes.join(' ')} This case follows “${query}”.` : undefined;
     // Every checked key date is on the timeline, even if the AI left it out.
     for (const kd of dates) {
       const y = kd.date.slice(0, kd.date.startsWith('-') ? 5 : 4);
@@ -650,6 +657,16 @@ export async function runDig(req: DigRequest, emit: Emit, signal: AbortSignal) {
 
     emit({ type: 'status', message: 'Pinning photos and locations…' });
     const entities = await enrichEntities(analysis.entities, signal, subject);
+    // Characters, invented places and things from the story: their pictures from its fan wiki.
+    if (research?.wikiBase) {
+      const want = analysis.entities.filter((e) => e.fictional || !entities[e.name]?.image).map((e) => e.name);
+      const fromWiki = await Promise.race([wikiPictures(research.wikiBase, want, signal).catch(() => ({})), sleep(8000).then(() => ({}))]) as Awaited<ReturnType<typeof wikiPictures>>;
+      for (const [name, w] of Object.entries(fromWiki)) {
+        const e = analysis.entities.find((x) => x.name === name);
+        if (!e || (!w.image && !e.fictional)) continue;
+        entities[name] = { ...(e.fictional ? {} : entities[name]), image: w.image ?? entities[name]?.image, url: w.url };
+      }
+    }
     emit({ type: 'enrich', entities });
   } catch (e) {
     if (signal.aborted) return;

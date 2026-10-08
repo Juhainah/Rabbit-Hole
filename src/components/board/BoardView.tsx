@@ -359,8 +359,8 @@ function Board() {
         selectionOnDrag={!!selecting}
         panOnDrag={selecting ? PAN_MOUSE : true}
         selectionMode={SelectionMode.Partial}
-        // Big boards only draw what is on screen.
-        onlyRenderVisibleElements={board.nodes.length > 70}
+        // Very big boards only draw what is on screen. (Cards drawn again as they scroll in blink, so not before then.)
+        onlyRenderVisibleElements={board.nodes.length > 160}
         zoomOnDoubleClick={false}
         panOnScroll={scrollMode === 'pan'}
         zoomOnScroll={scrollMode === 'zoom'}

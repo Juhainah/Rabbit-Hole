@@ -188,7 +188,8 @@ export async function castOf(page: string, signal?: AbortSignal, max = 24): Prom
     .slice(0, 2);
   if (rows.length < 2 && crew.length < 2) return siblings.length ? { title, url, director, items: [], label, siblings } : null;
   rows = rows.filter((r) => !crew.some((c) => c.actor === r.actor && !r.role)).slice(0, max);
-  const people = [...crew, ...rows];
+  // The leads and their parts first, then the people behind it (director, writer, music…).
+  const people = [...rows, ...crew];
   // Everyone's photo from their own article.
   const pages = [...new Set(people.map((r) => r.page).filter((p): p is string => !!p))];
   const pics = new Map<string, string>();

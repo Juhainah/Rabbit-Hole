@@ -2011,16 +2011,8 @@ button {
   inherits: false;
   initial-value: 1;
 }
-/* While panning/zooming: keep the board on one GPU layer and skip hover/transition work. */
-.board.moving .react-flow__viewport {
-  will-change: transform;
-}
-/* While moving, the cork keeps only its cheap texture tile (the soft blotches return on stop). */
-.board.theme-cork.moving {
-  background-image: var(--cork);
-  background-size: calc(320px * var(--z)) calc(320px * var(--z));
-  background-position: var(--bx) var(--by);
-}
+/* While panning/zooming: skip hover and transition work. (Switching the GPU layer or the cork's texture on
+   every start and stop made the whole board flash as you moved it, so neither changes any more.) */
 .board.moving .clue,
 .board.moving .react-flow__handle.pin {
   transition: none !important;
@@ -2754,4 +2746,16 @@ button {
   background: #f4ecdb;
   font: 400 17px/1.4 var(--font-hand);
   color: var(--color-ink-soft);
+}
+
+/* A person's polaroid: bigger, with room to write under the picture, framed on the face. */
+.photo-clip.portrait {
+  width: 108px;
+  margin: -30px -30px 10px 12px;
+  padding: 6px 6px 22px;
+  transform: rotate(5deg);
+}
+.photo-clip.portrait img {
+  aspect-ratio: 4 / 5;
+  object-position: 50% 18%;
 }

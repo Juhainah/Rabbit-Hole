@@ -279,7 +279,8 @@ export function EntityNode({ id, data, selected }: P) {
         {ENTITY_LABEL[type]}
       </span>
       {data.image && (
-        <div className="photo-clip">
+        // A person gets a proper polaroid portrait, framed on the face.
+        <div className={clsx('photo-clip', type === 'person' && 'portrait')}>
           <SafeImg src={data.image} alt="" draggable={false} />
         </div>
       )}

@@ -1,7 +1,7 @@
 import clsx from 'clsx';
 import { BoxSelect, CircleHelp, LayoutGrid, Link2, Maximize, Palette, Plus, Search, Sparkles, StickyNote, Tag } from 'lucide-react';
 import { WeavePanel } from './WeavePanel';
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { openTiePicker } from '../../lib/tie';
 import type { EntityType } from '../../../shared/types';
 import { addClue, pinUrl } from '../../lib/dig';
@@ -316,6 +316,35 @@ export function Toolbar() {
     if (addMenuAt) setOpen('add');
   }, [addMenuAt]);
   const bar = useRef<HTMLDivElement>(null);
+  const panel = useRef<HTMLDivElement>(null);
+  // The pop-up stays inside the board, however narrow it is (side panels open, a thin window): it shifts
+  // sideways, narrows and scrolls instead of spilling past the edge. (Phones lay it out as a sheet in CSS.)
+  useLayoutEffect(() => {
+    const el = panel.current;
+    const b = bar.current;
+    if (!open || !el || !b) return;
+    const board = (b.closest('.board') as HTMLElement | null) ?? document.body;
+    const fit = () => {
+      if (getComputedStyle(el).position === 'fixed') return;
+      const area = board.getBoundingClientRect();
+      el.style.setProperty('--shift', '0px');
+      el.style.maxWidth = `${Math.max(180, area.width - 16)}px`;
+      el.style.minWidth = `${Math.min(220, Math.max(180, area.width - 16))}px`;
+      el.style.maxHeight = `${Math.max(160, b.getBoundingClientRect().top - area.top - 20)}px`;
+      const r = el.getBoundingClientRect();
+      const shift = r.left < area.left + 8 ? area.left + 8 - r.left : r.right > area.right - 8 ? area.right - 8 - r.right : 0;
+      el.style.setProperty('--shift', `${Math.round(shift)}px`);
+    };
+    fit();
+    const ro = new ResizeObserver(fit);
+    ro.observe(el);
+    ro.observe(board);
+    window.addEventListener('resize', fit);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener('resize', fit);
+    };
+  }, [open]);
   useEffect(() => {
     if (!open) return;
     const away = (e: PointerEvent) => {
@@ -337,7 +366,7 @@ export function Toolbar() {
     <div ref={bar} className="board-toolbar absolute inset-x-3 bottom-7 z-20 mx-auto w-fit">
       {open && (
         <>
-          <div className="toolbar-panel paper-panel animate-rise absolute bottom-[62px] left-1/2 z-10 min-w-[260px] -translate-x-1/2 rounded-xl p-3">
+          <div ref={panel} className="toolbar-panel paper-panel animate-rise absolute bottom-[62px] left-1/2 z-10 min-w-[220px] overflow-y-auto rounded-xl p-3" style={{ translate: 'calc(-50% + var(--shift, 0px)) 0' }}>
             {open === 'add' && <AddPanel close={() => setOpen(null)} />}
             {open === 'weave' && <WeavePanel close={() => setOpen(null)} />}
             {open === 'link' && (

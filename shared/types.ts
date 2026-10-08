@@ -54,6 +54,8 @@ export interface Entity {
   description: string;
   date?: string;
   place?: string;
+  /** Exists only inside a story, game or show (a character, an invented country): never matched to the real world. */
+  fictional?: boolean;
 }
 
 export interface Relation {

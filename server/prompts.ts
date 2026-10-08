@@ -19,7 +19,7 @@ const SCHEMA = `{
   "title": "evocative case title, max 6 words, about this topic only",
   "summary": "4-6 sentences: what it is, why it matters, what is strange about it",
   "hook": "one gripping sentence",
-  "entities": [{"name": "", "type": "person|place|org|event|concept|object|work", "description": "1-2 specific sentences", "date": "only for events and works: when it happened or came out, YYYY or YYYY-MM-DD; omit for people, places, groups and ideas, and never a count or number from the text (episodes, levels, prices)", "place": "for places/events: geocodable location, e.g. 'Lake Bled, Slovenia' (omit otherwise)"}],
+  "entities": [{"name": "", "type": "person|place|org|event|concept|object|work", "description": "1-2 specific sentences", "date": "only for events and works: when it happened or came out, YYYY or YYYY-MM-DD; omit for people, places, groups and ideas, and never a count or number from the text (episodes, levels, prices)", "place": "for real places/events: geocodable location, e.g. 'Lake Bled, Slovenia' (omit otherwise, and always for invented places)", "fictional": true if it exists only inside a story, game, show or book (a character, an invented country, a made-up gadget), else omit}],
   "relations": [{"from": "entity name or TOPIC", "to": "entity name", "label": "2-4 word verb phrase"}],
   "timeline": [{"date": "YYYY[-MM[-DD]] (negative year for BC), a real calendar date the evidence gives", "event": "short line", "evidence": number of the evidence it comes from (omit if it comes from a page read in full)}],
   (The timeline is the story of THIS case in order, chosen for what kind of case it is. A show, film, book, game or app: when it was made, announced, released or premiered, its seasons or big updates, changes of owner or cast, controversies, and when it ended or shut down. A crime, death or disappearance: what happened, day by day, and a birth or earlier life event only when it matters to what happened. A person: the turning points of their story, not a birth date for its own sake. Never a birth date of someone who merely worked on a work, never a count or number from the text as a year. Never WHEN SOMETHING ABOUT IT WAS PUBLISHED: a review, a video, a guide, a how-to, an article, a forum post, a price comparison or a play session is a source, not a moment in the story.)
@@ -139,7 +139,8 @@ export function normalizeAnalysis(raw: any, topic: string): Analysis {
         type: TYPES.includes(type) ? type : 'concept',
         description: str(e?.description, 400),
         date: calendarDate(str(e?.date, 20)),
-        place: str(e?.place, 120) || undefined,
+        place: e?.fictional === true ? undefined : str(e?.place, 120) || undefined,
+        fictional: e?.fictional === true || undefined,
       };
     })
     .filter((e) => {

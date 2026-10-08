@@ -34,6 +34,8 @@ export interface Research {
   reading: Reading[];
   queries: string[];
   wiki?: string;
+  /** The fan wiki's address, for looking up the case's characters and places there. */
+  wikiBase?: string;
   /** Words this case's own sources keep using ("animoca", "boyfriends", "simsimi"): what a namesake lacks. */
   vocabulary: string[];
 }
@@ -77,6 +79,40 @@ async function wikiFits(wiki: Wiki, subject: string, scout: SourceItem[], signal
   return shared.length > 0;
 }
 const FANDOM_WORDS = new Set('fandom wiki wikia community page pages article articles edit category'.split(' '));
+
+/** Maps of the story's own world on its fan wiki ("Medici map.png"): pictures, not real-world places. */
+async function wikiMaps(wiki: Wiki, subject: string, signal: AbortSignal): Promise<SourceItem[]> {
+  const j = await wikiApi(wiki, { action: 'query', list: 'search', srsearch: 'map', srnamespace: 6, srlimit: 12 }, signal).catch(() => null);
+  const files = ((j?.query?.search ?? []) as { title: string }[]).map((r) => String(r.title)).filter((t) => /\bmaps?\b/i.test(t.replace(/[_-]/g, ' ')) && !/icon|logo|marker|button|symbol/i.test(t)).slice(0, 3);
+  if (!files.length) return [];
+  const info = await wikiApi(wiki, { action: 'query', titles: files.join('|'), prop: 'imageinfo', iiprop: 'url|size', iiurlwidth: 900 }, signal).catch(() => null);
+  return ((info?.query?.pages ?? []) as any[])
+    .map((p) => ({ p, ii: p.imageinfo?.[0] }))
+    .filter(({ ii }) => ii?.thumburl && (ii.width ?? 0) >= 400)
+    .slice(0, 2)
+    .map(({ p, ii }) => {
+      const name = String(p.title).replace(/^File:/, '').replace(/\.\w+$/, '').replace(/[_-]+/g, ' ');
+      return { id: `fandom-map:${wiki.base}:${p.title}`, source: 'fandom', kind: 'image' as const, title: `Map: ${name}`, snippet: `A map of ${subject}'s world, from the ${wiki.name}`, url: wikiUrl(wiki, String(p.title)), image: ii.thumburl };
+    });
+}
+
+/** Pictures and links for the case's people, places and things that live on its fan wiki (characters, invented places). */
+export async function wikiPictures(base: string, names: string[], signal: AbortSignal): Promise<Record<string, { image?: string; url: string; extract?: string }>> {
+  const wiki: Wiki = { name: '', base };
+  const out: Record<string, { image?: string; url: string; extract?: string }> = {};
+  if (!names.length) return out;
+  const j = await wikiApi(wiki, { action: 'query', titles: names.slice(0, 40).join('|'), redirects: 1, prop: 'pageimages|extracts', piprop: 'thumbnail', pithumbsize: 330, exintro: 1, explaintext: 1, exsentences: 2, exlimit: 'max' }, signal).catch(() => null);
+  const alias = new Map<string, string>();
+  for (const r of [...(j?.query?.normalized ?? []), ...(j?.query?.redirects ?? [])]) alias.set(String(r.to), String(r.from));
+  for (const p of (j?.query?.pages ?? []) as any[]) {
+    if (p.missing) continue;
+    let name = String(p.title);
+    while (alias.has(name) && !names.includes(name)) name = alias.get(name)!;
+    if (!names.includes(name)) continue;
+    out[name] = { image: p.thumbnail?.source, url: wikiUrl(wiki, String(p.title)), extract: p.extract ? String(p.extract).slice(0, 300) : undefined };
+  }
+  return out;
+}
 
 /** The wiki's page named exactly after the subject ("Star Girl"), following redirects, with its text. */
 async function wikiOwnPage(wiki: Wiki, subject: string, signal: AbortSignal): Promise<{ title: string; text: string } | null> {
@@ -248,11 +284,13 @@ async function wikiGallery(wiki: Wiki, title: string, subject: string, signal: A
   const linked: any[] = [];
   let cont: Record<string, string> = {};
   for (let round = 0; round < 4; round++) {
-    const j = await wikiApi(wiki, { action: 'query', generator: 'links', titles: title, gpllimit: 'max', gplnamespace: 0, prop: 'pageimages', piprop: 'thumbnail', pithumbsize: 330, pilimit: 'max', redirects: 1, ...cont }, signal).catch(() => null);
+    const j = await wikiApi(wiki, { action: 'query', generator: 'links', titles: title, gpllimit: 'max', gplnamespace: 0, prop: 'pageimages|categories', piprop: 'thumbnail', pithumbsize: 330, pilimit: 'max', cllimit: 'max', clshow: '!hidden', redirects: 1, ...cont }, signal).catch(() => null);
     for (const p of (j?.query?.pages ?? []) as any[]) {
       const had = linked.find((x) => x.pageid === p.pageid);
-      if (had) had.thumbnail ??= p.thumbnail;
-      else linked.push(p);
+      if (had) {
+        had.thumbnail ??= p.thumbnail;
+        if (p.categories) had.categories = [...(had.categories ?? []), ...p.categories];
+      } else linked.push(p);
     }
     if (!j?.continue) break;
     cont = Object.fromEntries(Object.entries(j.continue).map(([k, v]) => [k, String(v)]));
@@ -265,9 +303,17 @@ async function wikiGallery(wiki: Wiki, title: string, subject: string, signal: A
       if (deeper) return deeper;
     }
   }
-  const members = linked.filter((p) => p.thumbnail?.source && !namesSubject(subject, String(p.title)));
-  if (members.length < 5 || members.length < linked.length * 0.35) return undefined;
   const label = title.replace(/\s*\(.*\)\s*$/, '');
+  // A page links to everything it mentions (characters, places, factions); the list is the pages filed under
+  // what the list is ("Grenades": pages in a grenades or explosives category), when the wiki says so.
+  const listWords = new Set(terms(label).map((w) => w.replace(/s$/, '')));
+  const filed = (p: any) => ((p.categories ?? []) as { title: string }[]).some((c) => terms(String(c.title).replace(/^Category:/, '')).some((w) => listWords.has(w.replace(/s$/, ''))));
+  const inList = linked.filter(filed);
+  const pool = inList.length >= 3 ? inList : linked;
+  const members = pool.filter((p) => p.thumbnail?.source && !namesSubject(subject, String(p.title)));
+  if (members.length < (pool === inList ? 3 : 5) || members.length < pool.length * 0.35) return undefined;
+  // Without the wiki saying what is on the list, a long page that links mostly to other kinds of things is not one.
+  if (pool === linked && linked.some((p) => p.categories) && !/^list of /i.test(title) && linked.length > 25 && !/\b(characters?|cast|members?|people)\b/i.test(label)) return undefined;
   return {
     title,
     url: wikiUrl(wiki, title),
@@ -956,7 +1002,8 @@ export async function deepResearch(
   if (wiki) {
     // The list page that what we read mentions most ("talk with Boyfriends"): used when the AI picked
     // none, or picked a page that is not a list (the feature page itself), or its list has no pictures.
-    const text = [...corpus, ...wikiTexts].join(' ').toLowerCase();
+    // (The wiki's own page for the subject counts too: it names the lists the subject is known for.)
+    const text = [...corpus, ...wikiTexts, ownPage?.text ?? ''].join(' ').toLowerCase();
     const mentions = (t: string) => text.split(mainTitle(t).toLowerCase().replace(/s$/, '')).length - 1;
     const mentioned = pool
       .filter((t) => listLike(t, subject) && t !== listPage)
@@ -1010,7 +1057,9 @@ export async function deepResearch(
     // The wiki may word them differently from the search: the AI matches the search to the wiki's categories
     // by meaning, alongside the word match below.
     const byMeaning = askedSet && !gallery && named.length ? timeout(askedCategory(wiki, subject, query, signal), 16000, { wants: false, gallery: undefined }) : undefined;
-    for (const what of askedSet ? sets : (given?.focus ?? []).slice(0, 3)) {
+    // A search that names no set of things gets the subject's who's who (its characters, cast or members)
+    // before anything its angle happens to be filed under ("Gameplay").
+    for (const what of askedSet ? sets : ['characters', 'main characters', 'members']) {
       if (gallery) break;
       const g = await timeout(categoryGallery(wiki, subject, what, signal), 7000, undefined);
       if (g) gallery = { title: g.title, url: g.url, items: g.items.slice(0, 40), label: g.label };
@@ -1043,7 +1092,9 @@ export async function deepResearch(
     }
   }
   const vocabulary = [...new Set([...salientTerms([...wikiTexts, ...reading.map((r) => r.text), ...scout.filter((s) => namesSubject(subject, s.title)).map((s) => `${s.title} ${s.snippet ?? ''}`)], subject, 24), ...(wiki ? terms(wiki.name).filter((w) => w.length >= 5 && !terms(subject).includes(w) && w !== 'wiki') : [])])];
-  return { items, photos, gallery, more, reading, queries: [...queries, ...siteSearches], wiki: wiki?.name, vocabulary };
+  // The world's own maps (a game's or a show's invented country), from the wiki's pictures.
+  if (wiki) photos.push(...(await timeout(wikiMaps(wiki, subject, signal), 8000, [] as SourceItem[])));
+  return { items, photos, gallery, more, reading, queries: [...queries, ...siteSearches], wiki: wiki?.name, wikiBase: wiki?.base, vocabulary };
 }
 
 export function describeError(e: unknown) {
