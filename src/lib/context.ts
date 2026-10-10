@@ -26,10 +26,16 @@ export function boardContext(): string {
   const cards = board.nodes.filter((n) => n.data.title && n.type !== 'label').slice(0, 160);
   if (cards.length) {
     lines.push('\nCARDS ON THE BOARD, each with the archive it came from (link any you mention as [[exact title]]):');
+    // What each card says, not just its title: a thread's opening post or an article's summary is what tells the
+    // partner what the case is about. Threads and articles get the most room; the total stays within budget.
+    let room = 6000;
     for (const n of cards) {
       const own = n.data.source === 'mine';
       const from = own ? 'added by the user (their own, not from the web)' : archiveOf(n.data.source);
-      lines.push(`- [${TYPE_LABEL[n.type as ClueType]}${from ? ` · ${from}` : ''}] ${n.data.title.slice(0, 90)}${n.data.date ? ` (${n.data.date})` : ''}${own && n.data.text ? `: ${n.data.text.slice(0, 160)}` : ''}`);
+      const max = own ? 160 : n.type === 'post' || n.type === 'clip' || n.type === 'quote' ? 320 : n.type === 'topic' ? 0 : 160;
+      const said = n.data.text && max && room > 0 ? n.data.text.replace(/\s+/g, ' ').trim().slice(0, Math.min(max, room)) : '';
+      room -= said.length;
+      lines.push(`- [${TYPE_LABEL[n.type as ClueType]}${from ? ` · ${from}` : ''}] ${n.data.title.slice(0, 90)}${n.data.date ? ` (${n.data.date})` : ''}${said ? `: ${said}` : ''}`);
     }
     // Grouped by archive, so "is anything from the Smithsonian / data.gov here?" gets an exact answer.
     const byArchive = new Map<string, string[]>();

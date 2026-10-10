@@ -2664,8 +2664,8 @@ button {
     opacity: 1;
   }
 }
-.board[data-lod=far] .react-flow__handle.tie-grip,
-.board.moving .react-flow__handle.tie-grip {
+/* (Not hidden while the board moves: changing every card's grip at each start and stop redrew all the cards.) */
+.board[data-lod=far] .react-flow__handle.tie-grip {
   display: none;
 }
 

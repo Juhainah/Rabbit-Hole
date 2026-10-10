@@ -43,6 +43,9 @@ export interface Research {
 
 const WIKI_HEADERS = { 'User-Agent': BROWSER_UA };
 /** Words in a search that ask about a subject rather than name a set of things in it. */
+/** A list page of people or characters ("Boyfriends", "Main characters", "Members", "Villains"). */
+const PEOPLE_LIST = /\b(characters?|cast|members?|boyfriends?|girlfriends?|villains?|heroes|antagonists?|protagonists?|people|crew|contestants|players|suspects|victims|famil(y|ies)|staff|students|idols|celebrities|bosses|enemies|allies|friends|couples|love interests?)\b/i;
+
 /** Words that ask for a list rather than name what goes in it. */
 /**
  * What exists by this name, without a web search: the fan wikis named after it and Wikipedia's matching
@@ -70,16 +73,24 @@ export async function knownNames(q: string, signal: AbortSignal): Promise<Source
  */
 async function wikiFits(wiki: Wiki, subject: string, scout: SourceItem[], signal: AbortSignal): Promise<boolean> {
   const texts = scout.filter((s) => s.source !== 'fandom').map((s) => `${s.title} ${s.snippet ?? ''}`);
-  const salient = salientTerms(texts, subject, 10).filter((w) => !FANDOM_WORDS.has(w));
+  // Words that describe the subject (its maker, its features, its kind), not the sources or the search.
+  const salient = salientTerms(texts, subject, 12).filter((w) => !FANDOM_WORDS.has(w) && !SOURCE_WORDS.has(w));
   if (salient.length < 4) return true;
   const page = await wikiOwnPage(wiki, subject, signal);
-  if (!page?.text) return true;
-  const on = new Set(terms(`${wiki.name} ${page.title} ${page.text.slice(0, 12000)}`));
-  const shared = salient.filter((w) => on.has(w));
+  // The wiki's own page, and what its search finds for the results' words ("starchat" finds its "Star Chat"
+  // page): a wiki about the same thing has some of them; a namesake has none.
+  const found = await Promise.all(salient.slice(0, 4).map((w) => wikiSearch(wiki, w, 3, signal).catch(() => [])));
+  const text = `${wiki.name} ${page?.title ?? ''} ${page?.text.slice(0, 12000) ?? ''} ${found.flat().map((h) => `${h.title} ${h.snippet}`).join(' ')}`;
+  const squashed = text.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
+  const on = new Set(terms(text));
+  const shared = salient.filter((w) => on.has(w) || (w.length >= 6 && squashed.includes(w)));
   if (process.env.RH_DEBUG) console.log('[research] wiki check', wiki.name, 'salient', salient.join(' '), 'shared', shared.join(' '));
-  return shared.length > 0;
+  // Everyday words ("family", "guide") turn up anywhere: one of the results' most telling words must, or three in all.
+  return shared.some((w) => salient.slice(0, 4).includes(w)) || shared.length >= 3;
 }
 const FANDOM_WORDS = new Set('fandom wiki wikia community page pages article articles edit category'.split(' '));
+/** Words about where something was found or how it was told, not about what it is. */
+const SOURCE_WORDS = new Set('reddit youtube comment comments video videos thread threads post posts behind disturbing mystery mysteries system story stories history explained review reviews news article blog download free official update updates version'.split(' '));
 
 /** Maps of the story's own world on its fan wiki ("Medici map.png"): pictures, not real-world places. */
 async function wikiMaps(wiki: Wiki, subject: string, signal: AbortSignal): Promise<SourceItem[]> {
@@ -128,19 +139,24 @@ async function wikiOwnPage(wiki: Wiki, subject: string, signal: AbortSignal): Pr
 }
 
 /** The words in a search that name a set of things ("keys", "dishes", "weapons"): plural nouns that are not the subject. */
-function setWords(query: string, subject: string): string[] {
+export function setWords(query: string, subject: string): string[] {
   const own = new Set(subject.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []);
   return (query.toLowerCase().match(/[\p{L}\p{N}']+/gu) ?? []).filter(
     (w) => w.length >= 4 && !w.includes("'") && /s$/.test(w) && !/(ss|us|is|ous|ics|news|series|species)$/.test(w) && !own.has(w) && !GENERIC_ASK.has(w) && !GENERIC_ASK.has(w.replace(/s$/, '')) && !LIST_ASK.has(w),
   );
 }
 
-const LIST_ASK = new Set('list lists listing card cards whos who all every full complete whole make create pin add show give fetch get please also too wiki fandom'.split(' '));
+const LIST_ASK = new Set('list lists listing card cards whos who all every full complete whole make create pin add show give fetch get find search look bring pull put board please also too wiki wikis fandom page official names'.split(' '));
 const GENERIC_ASK = new Set('controversy scandal history story theory theories conspiracy mystery explained facts truth death leaving drama rumor rumors news game games movie film show series book anime manga character characters'.split(' '));
 
 // Listing pages (topics, tags, search results) mention everything and explain nothing.
 const LISTING = /\/(topics?|tags?|categor(y|ies)|search|explore|hashtag)(\/|$)/i;
 const NOT_READABLE = /(^|\.)(tiktok\.com|instagram\.com|facebook\.com|x\.com|twitter\.com|play\.google\.com|apps\.apple\.com|pinterest\.)/;
+/**
+ * App stores and download sites (and archived copies of them): a listing, not an account of anything. Their
+ * dates are when the listing was last updated, which read as a release date made "released in 2026" up.
+ */
+const STORE_PAGE = /(uptodown|apkpure|apkmirror|apkcombo|apkmody|happymod|an1\.com|softonic|filehippo|malavida|appbrain|mytinyphone|andro\.io|itunes\.apple\.com|apps\.apple\.com|play\.google\.com|amazon\.[a-z.]+\/.*(appstore|dp\/B0)|microsoft\.com\/store|\bapk\b)/i;
 const timeout = <T>(p: Promise<T>, ms: number, fallback: T) => Promise.race([p.catch(() => fallback), sleep(ms).then(() => fallback)]);
 
 interface Plan {
@@ -471,7 +487,7 @@ async function pageList(subject: string, what: string, signal: AbortSignal): Pro
   const readable = results.filter((r) => {
     if (!r.url) return false;
     const h = new URL(r.url).hostname.replace(/^www\./, '');
-    return !NOT_READABLE.test(h) && namesSubject(subject, `${r.title} ${r.snippet ?? ''} ${r.url}`);
+    return !NOT_READABLE.test(h) && !STORE_PAGE.test(r.url!) && namesSubject(subject, `${r.title} ${r.snippet ?? ''} ${r.url}`);
   });
   for (const r of readable.slice(0, 3)) {
     // A wiki page among the results is read through the wiki itself: its table keeps the pictures.
@@ -935,7 +951,7 @@ export async function deepResearch(
   onStatus('Reading the best pages in full…');
   const byDomain = new Map<string, number>();
   const toRead = [...scout, ...items]
-    .filter((it) => it.url && it.source !== 'fandom' && !NOT_READABLE.test(new URL(it.url).hostname) && !LISTING.test(new URL(it.url).pathname))
+    .filter((it) => it.url && it.source !== 'fandom' && !NOT_READABLE.test(new URL(it.url).hostname) && !STORE_PAGE.test(it.url) && !LISTING.test(new URL(it.url).pathname))
     // Only pages about the subject itself: a topic page that lists it among a hundred petitions is not.
     .filter((it) => namesSubject(subject, it.title) || namesSubject(subject, `${it.title} ${it.snippet ?? ''}`.slice(0, 220)))
     .filter((it) => {
@@ -1063,8 +1079,19 @@ export async function deepResearch(
     // The wiki may word them differently from the search: the AI matches the search to the wiki's categories
     // by meaning, alongside the word match below.
     const byMeaning = askedSet && !gallery && named.length ? timeout(askedCategory(wiki, subject, query, signal), 16000, { wants: false, gallery: undefined }) : undefined;
-    // A search that names no set of things gets the subject's who's who (its characters, cast or members)
-    // before anything its angle happens to be filed under ("Gameplay").
+    // A search that names no set of things gets the subject's who's who: first a list of people the wiki itself
+    // keeps as a page ("Boyfriends", "Members", "Villains"), the way its fans organise it…
+    if (!gallery && !askedSet) {
+      const people = pool.filter((t) => listLike(t, subject) && PEOPLE_LIST.test(mainTitle(t))).slice(0, 2);
+      for (const t of people) {
+        const g = await timeout(wikiGallery(wiki, t, subject, signal), 12000, undefined);
+        if (g) {
+          gallery = { ...g, items: g.items.slice(0, 40), label: mainTitle(g.title) };
+          break;
+        }
+      }
+    }
+    // …then its characters, cast or members category, before anything its angle is filed under ("Gameplay").
     for (const what of askedSet ? sets : ['characters', 'main characters', 'members']) {
       if (gallery) break;
       const g = await timeout(categoryGallery(wiki, subject, what, signal), 7000, undefined);

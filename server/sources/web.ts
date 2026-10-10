@@ -157,6 +157,60 @@ async function exa(q: string, limit: number, signal?: AbortSignal): Promise<Sour
   });
 }
 
+/**
+ * Reserp (Google results): 5,000 free searches a month. Off until RESERP_API_KEY is set.
+ * It takes a Google search address and returns each result's link with the text Google shows for it
+ * (site name, address, title, date, snippet) on separate lines.
+ */
+async function reserp(q: string, limit: number, signal?: AbortSignal): Promise<SourceItem[]> {
+  const key = process.env.RESERP_API_KEY?.trim();
+  if (!key) return [];
+  const j = await getJson('https://api.reserp.ai/v2/serp/search', {
+    method: 'POST',
+    signal,
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
+    body: JSON.stringify({ url: `https://www.google.com/search?q=${enc(q)}&gl=us&hl=en` }),
+  });
+  if (j?.ok === false) throw new Error(`Reserp: ${j.error?.code ?? j.error ?? 'refused'}`);
+  const out: SourceItem[] = [];
+  for (const r of (j?.results ?? []) as { url?: string; text?: string }[]) {
+    if (!r.url || !/^https?:\/\//.test(r.url) || /^https?:\/\/(www\.)?google\.[a-z.]+\//.test(r.url)) continue;
+    const parsed = reserpText(r.text ?? '', r.url);
+    const it = toItem(r.url, parsed.title, parsed.snippet);
+    if (parsed.date) it.date = parsed.date;
+    out.push(it);
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
+/** Google's text for one result → its title, date and snippet (the site name and address lines are dropped). */
+export function reserpText(text: string, url: string): { title: string; snippet: string; date?: string } {
+  const lines = text.split('\n').map((l) => l.trim()).filter((l) => l && l !== '—' && l !== '·');
+  const site = host(url) ?? '';
+  // The first lines name the site and its address ("RecordingNOW.com", "https://recordingnow.com › blog"), or a
+  // forum's place and activity ("Reddit · r/nostalgia", "100+ comments · 2 years ago"): the title comes after.
+  const meta = (l: string) => /^https?:\/\//.test(l) || l.includes('›') || l.includes(' · ') || l.toLowerCase().replace(/^www\./, '') === site;
+  let start = 0;
+  while (start < Math.min(3, lines.length - 1) && meta(lines[start])) start++;
+  // A site name on its own line, followed by its address.
+  if (start === 0 && lines[1] && /^https?:\/\//.test(lines[1])) start = 2;
+  while (start < Math.min(4, lines.length - 1) && meta(lines[start])) start++;
+  const named = lines.slice(start);
+  const title = named[0] ?? site;
+  let date: string | undefined;
+  const rest = named.slice(1).filter((l) => {
+    const d = !date && l.length <= 20 && /\d{4}/.test(l) ? new Date(l) : null;
+    if (d && !Number.isNaN(d.getTime())) {
+      // The date as written ("Jul 20, 2026" is the 20th), not shifted by the server's time zone.
+      date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      return false;
+    }
+    return true;
+  });
+  return { title: title.slice(0, 200), snippet: rest.join(' ').replace(/\s+/g, ' ').slice(0, 400), date };
+}
+
 /** Firecrawl search: 1,000 free credits a month, no card. Off until FIRECRAWL_API_KEY is set. */
 async function firecrawl(q: string, limit: number, signal?: AbortSignal): Promise<SourceItem[]> {
   const key = process.env.FIRECRAWL_API_KEY?.trim();
@@ -209,7 +263,7 @@ export async function serper(q: string, limit: number, signal?: AbortSignal): Pr
  * Serper while it has credits, then SerpApi. Empty when neither works, so callers fall back to webSearch.
  */
 export async function googleSearch(q: string, limit: number, signal?: AbortSignal): Promise<SourceItem[]> {
-  for (const engine of [serper, serpapi]) {
+  for (const engine of [reserp, serper, serpapi]) {
     if ((engineRest.get(engine.name) ?? 0) > Date.now()) continue;
     try {
       const items = await engine(q, limit, signal);
@@ -270,10 +324,10 @@ export async function webSearch(q: string, limit: number, signal?: AbortSignal):
   // weaker index) after them; Serper's one-time searches and the keyless scrapers last.
   // A strong engine's answer is enough. A weak one (its own small index, or a scraped page) is combined
   // with the next engine that works, so a niche topic gets two chances to turn up its pages.
-  const strong = new Set<SearchEngine>([tavily, exa, serpapi, firecrawl, serper]);
+  const strong = new Set<SearchEngine>([tavily, reserp, exa, serpapi, firecrawl, serper]);
   let got: SourceItem[] = [];
   let weakAnswers = 0;
-  for (const engine of [tavily, exa, serpapi, firecrawl, langsearch, serper, brave, duckduckgo] as SearchEngine[]) {
+  for (const engine of [tavily, reserp, exa, serpapi, firecrawl, langsearch, serper, brave, duckduckgo] as SearchEngine[]) {
     if ((engineRest.get(engine.name) ?? 0) > Date.now()) continue;
     try {
       const items = (await engine(q, limit, signal)).filter(onSite);

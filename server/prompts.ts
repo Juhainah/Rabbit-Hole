@@ -51,6 +51,9 @@ export function digMessages(
 ): ChatMessage[] {
   const lines: string[] = [`TOPIC: ${topic}`];
   if (subject && subject.toLowerCase() !== topic.toLowerCase()) lines.push(`THE SUBJECT (rabbit holes and questions stay inside it): ${subject}`);
+  lines.push(
+    `NAMESAKES: the topic as typed says which thing is meant (a board game, a mobile game, a film, a person). Evidence about a different thing that only shares the name (another game, a mathematical idea, a song, an app with the same name) goes in "offtopic", and never becomes an entity, relation, timeline moment, rabbit hole or question.`,
+  );
   if (premiseNote) lines.push(`PREMISE CHECK: ${premiseNote} Build the case only from what the evidence shows, and say this plainly in "premise".`);
   if (venue && fromCase) {
     lines.push(`THIS DIG COLLECTS WHAT PEOPLE ON ${venue.toUpperCase()} SAY ABOUT "${fromCase}". Summarise those discussions: the claims, who made them, what was debunked. Do not describe ${venue} itself.`);
@@ -233,6 +236,7 @@ export const CHAT_SYSTEM = `You are the user's research partner inside "Rabbit H
   ACTION: stamp [[Card]] : confirmed | disputed | debunked | theory | key evidence | lead
   When the user names a kind of card (a question card, a frame, a map, a label, a quote, a timeline moment, a list, a who's who), make exactly that kind with the matching line, never a sticky note instead.
   ACTION: cast [[Film or series card]]   (adds a who's-who card with every lead actor, the character they play, their photo, and the director; use it for "list the actors/leads/cast")
+  A source titled "LIST FOUND" is the real list from the subject's fan wiki (or Wikipedia): answer from it, name what is on it, and never say there is no list. When the user wants it on the board, use the exact ACTION line its text gives.
   ACTION: list <what> from <subject>   (a pictured list card: from the subject's fan wiki, else Wikipedia's "List of…" pages, else a web page that lists them; characters, members, objects, items, episodes, places, e.g. "list spells from <a fantasy series>", "list vehicles from <a racing game>", "list albums from <a band>". <subject> is the franchise, work, band or game, never the list's own name. When the user gives a link to the list, use it: ACTION: list <what> from <the link>. Make exactly the list asked for: the things themselves, not the characters connected to them, or the other way round)
   ACTION: fill [[List card]]   (reads the wiki list that card came from and adds EVERY member with their picture; use it for "add everyone on that list", "get the rest of the list")
   ACTION: photo [[Card]] : 4        (puts source [4]'s photo on that card; without a number it looks the card up and adds its picture)
@@ -257,7 +261,7 @@ TANGENTS: first rabbit hole | second rabbit hole | third rabbit hole
 
 export function chatMessages(history: ChatMessage[], context: string | undefined, sources: SourceItem[]): ChatMessage[] {
   const sys: string[] = [CHAT_SYSTEM];
-  if (context?.trim()) sys.push(`\nBOARD CONTEXT (what the user is looking at):\n${context.slice(0, 12000)}`);
+  if (context?.trim()) sys.push(`\nBOARD CONTEXT (what the user is looking at):\n${context.slice(0, 16000)}`);
   if (sources.length) {
     sys.push(
       `\nSOURCES (fresh research for this question):\n${sources

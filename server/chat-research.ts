@@ -7,6 +7,7 @@ import { readAnything } from './reader';
 import { understand } from './understand';
 import { vetPictures } from './vision';
 import { castOf, isGroup, isScreenWork } from './sources/cast';
+import { findList, knownNames, setWords } from './research';
 import { googleSearch, serperImages, webSearch } from './sources/web';
 
 // Words that say what to do, not what to look for.
@@ -58,6 +59,9 @@ const ANIME = /\b(anime|manga|manhwa|manhua|light novel|isekai|shonen|shounen|sh
 const FAN_ART = /\b(fan ?art|fanart|deviantart|drawings?|illustrations?|artworks?|sketch(es)?|doodles?|cosplay)\b/i;
 /** Design boards and inspiration: Pinterest, Behance, ArtStation, Dribbble. */
 const DESIGN = /\b(pinterest|behance|artstation|dribbble|mood ?boards?|aesthetics?|inspo|inspiration|design ideas|concept art|portfolio)\b/i;
+
+/** A request for a list of things or people in the subject. */
+const LIST_REQUEST = /\b(list|lists|who'?s who|all (the|of)|every|full set|names of|characters|cast|members|boyfriends?|girlfriends?|villains|heroes|weapons|items|episodes|levels|recipes|dishes|keys|spells|monsters|cards)\b/i;
 
 const FINDING = /\b(add|find|search|look|fetch|bring|get|pull|show|any|more|other|articles?|sources?|news|coverage|reviews?|interviews?|pictures?|photos?|images?|list|who|which)\b/i;
 
@@ -177,7 +181,43 @@ export async function chatResearch(
   if (p) found.unshift({ id: `wikipedia:${p.title}`, source: 'wikipedia', kind: 'article', title: p.title, snippet: p.extract.slice(0, 600), url: p.url, image: p.image });
   // A film or series on the board: who plays whom, so "list the leads and their characters" can be answered.
   const castTask = p && (isScreenWork(p.extract) || isGroup(p.extract)) ? within(castOf(p.title, signal), 9000, null) : Promise.resolve(null);
-  const [fromArchive, media, fromCard, planned, cast] = await Promise.all([waybackTask, mediaTask, focusTask, plannedTask, castTask]);
+  // Asked for a list ("the boyfriends", "all the keys", "who's who"): the subject's fan wiki keeps it, with
+  // pictures, and needs no web search. Looked up as soon as the subject is known.
+  const listTask: Promise<SourceItem[]> = LIST_REQUEST.test(question)
+    ? plannedTask.then(async (pl) => {
+        // A question asked on a board is about its case: when the question's own subject is just the thing asked
+        // for ("boyfriends"), the subject is the case's, read from its name the way a dig reads a search.
+        let subject = pl.names[0] || (p ? p.title : '');
+        const askedNouns = setWords(question, '');
+        const isTheThing = !subject || askedNouns.some((w) => terms(subject).some((t) => t === w || t === w.replace(/s$/, '') || `${t}s` === w));
+        if (isTheThing && hint) {
+          const known = await within(knownNames(hint, signal), 8_000, [] as SourceItem[]);
+          const ofCase = await within(understand(hint, known, signal), 12_000, null);
+          subject = ofCase?.subject ?? subjectName(hint);
+        }
+        if (!subject) subject = subjectName(hint ?? question);
+        if (!subject) return [];
+        const what = question.replace(/[?!.,]/g, ' ').replace(new RegExp(subject.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'ig'), ' ').replace(/\s+/g, ' ').trim();
+        extra.onStatus?.(`Looking for the list on the ${subject} fan wiki…`);
+        // The thing asked for ("boyfriends", "keys"), not every word of the question ("game" would match "Games").
+        const asked = setWords(question, subject);
+        const g = await within(findList(subject, asked.length ? asked.join(' ') : what || question, signal), 25_000, undefined);
+        if (!g?.items.length) return [];
+        const names = g.items.slice(0, 40).map((it) => (it.meta?.role ? `${it.title} (${it.meta.role})` : it.title));
+        return [
+          {
+            id: `wiki-list:${g.url}`,
+            source: g.source === 'web' ? 'web' : g.source,
+            kind: 'article' as const,
+            title: `LIST FOUND: ${g.label} — ${g.title} (${g.items.length} on ${g.wiki})`,
+            snippet: `${names.join('; ')}. To pin it as a list card: ACTION: list ${g.label} from ${subject}`,
+            url: g.url,
+            image: g.items.find((it) => it.image)?.image,
+          },
+        ];
+      })
+    : Promise.resolve([]);
+  const [fromArchive, media, fromCard, planned, cast, listFound] = await Promise.all([waybackTask, mediaTask, focusTask, plannedTask, castTask, listTask.catch(() => [] as SourceItem[])]);
   const castSource: SourceItem[] = cast
     ? [{ id: `cast-list:${cast.title}`, source: 'wikipedia', kind: 'article', title: `${cast.label === 'Cast & crew' ? 'Cast' : cast.label} of ${cast.title}`, url: cast.url, snippet: [cast.director.length ? `Directed by ${cast.director.join(', ')}.` : '', ...cast.items.map((it) => (it.meta?.role ? `${it.title} as ${it.meta.role}` : it.title))].filter(Boolean).join('; ') }]
     : [];
@@ -192,6 +232,7 @@ export async function chatResearch(
   const threads = found.filter((s) => s.kind === 'post');
   const rest = found.filter((s) => s.kind !== 'post');
   const ordered = [
+    ...listFound,
     ...fromCard,
     ...castSource,
     ...fromArchive,

@@ -84,7 +84,7 @@ export const SOURCES: SourceMeta[] = [
   { id: 'gdelt', name: 'GDELT', group: 'News', glyph: 'GD', color: '#0891b2', description: 'Global news monitor (slow, rate limited)', dig: false },
 
   // Web
-  { id: 'web', name: 'Web', group: 'Web', glyph: 'DDG', color: '#de5833', description: 'General web search', dig: true },
+  { id: 'web', name: 'Web', group: 'Web', glyph: 'WEB', color: '#3f6f8a', description: 'General web search', dig: true },
   { id: 'wiby', name: 'Wiby (old web)', group: 'Web', glyph: 'wb', color: '#a3e635', description: 'Search engine for the classic, handmade web', dig: false },
   { id: 'github', name: 'GitHub', group: 'Web', glyph: 'GH', color: '#e5e7eb', description: 'Code repositories', dig: true },
 

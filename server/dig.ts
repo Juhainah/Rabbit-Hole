@@ -19,7 +19,7 @@ import { needsLooking, vetPictures } from './vision';
 export type Emit = (ev: DigEvent) => void;
 
 /** Websites and stores where evidence is found, not people or groups in a story. */
-const PLATFORM = /^(the )?(youtube|reddit|r\/\w+|wikipedia|wikimedia|fandom|.+ wiki|wikia|twitter|x|x \(twitter\)|tiktok|instagram|facebook|tumblr|discord|twitch|google|google play( store)?|app store|apple app store|steam|imdb|internet archive|wayback machine|archive\.org|knowyourmeme|know your meme|quora|medium|substack|github|spotify|patreon|deviantart|pinterest)$/i;
+const PLATFORM = /^(the )?(android|ios|iphone|ipad|ipados|macos|mac os|windows|microsoft windows|mobile|smartphones?|web browsers?|app stores?|google play store|amazon appstore|apk|youtube|reddit|r\/\w+|wikipedia|wikimedia|fandom|.+ wiki|wikia|twitter|x|x \(twitter\)|tiktok|instagram|facebook|tumblr|discord|twitch|google|google play( store)?|app store|apple app store|steam|imdb|internet archive|wayback machine|archive\.org|knowyourmeme|know your meme|quora|medium|substack|github|spotify|patreon|deviantart|pinterest)$/i;
 
 // Sources whose pages rarely carry a useful share image (or can't be fetched).
 const NO_PAGE_IMAGES = new Set([
@@ -82,7 +82,9 @@ export function topicFromUrl(url: string, title?: string): string {
 
 // Sources whose search understands "subject + case" as one question (news, forums, video, the web).
 // Store, download and profile pages: background, never the evidence that tells a story.
-const LOW_VALUE = /(uptodown|apkpure|apkmirror|apkcombo|softonic|bluestacks|soft112|filehippo|malavida|ldplayer|appbrain|apps\.apple\.com|play\.google\.com|instagram\.com|facebook\.com|vk\.(com|ru)|pinterest\.|tiktok\.com|linkedin\.com)/i;
+const LOW_VALUE = /(uptodown|apkpure|apkmirror|apkcombo|apkmody|happymod|an1\.com|apk\w*\.(com|net|org|io)|softonic|bluestacks|soft112|filehippo|malavida|ldplayer|appbrain|apps\.apple\.com|itunes\.apple\.com|play\.google\.com|mytinyphone|andro\.io|instagram\.com|facebook\.com|vk\.(com|ru)|pinterest\.|tiktok\.com|linkedin\.com)/i;
+/** Cracked, modded or "premium unlocked" download pages. */
+const JUNK_DOWNLOAD = /\bmod\s*apk\b|\bapk\b.{0,40}\b(mod|unlocked|premium|hack|cheat)|\b(premium|paid|vip)\s+unlocked\b|\bcrack(ed)?\s+(apk|download|version)\b|\bunlimited\s+(gems|coins|money)\b|platinmods|apkmody|happymod/i;
 const STORY_SOURCES = new Set(['web', 'reddit', 'forums', 'lemmy', 'hackernews', 'youtube', 'googlenews', 'gdelt', 'podcasts', 'dailymotion', 'archive', 'declassified', 'courtlistener', 'lostmedia', 'atlasobscura', 'fandom']);
 
 const CHECKED_KINDS = new Set(['person', 'place', 'org']);
@@ -315,14 +317,24 @@ export async function runDig(req: DigRequest, emit: Emit, signal: AbortSignal) {
           .catch(() => [])
       : Promise.resolve([]);
   const seen = new Set<string>();
+  /** Same site, same title once version numbers are gone ("… Ver. 10.0 MOD APK" and "… Ver. 14.0 MOD APK"). */
+  const seenTitles = new Set<string>();
   const keep = (items: SourceItem[]) =>
-    items.filter((it) => {
-      const yt = it.media?.type === 'youtube' ? it.media.src : it.url?.match(/(?:v=|youtu\.be\/|shorts\/)([\w-]{11})/)?.[1];
-      const key = yt ? `yt:${yt}` : (it.url ?? it.id).replace(/[?#].*$/, '').replace(/\/$/, '');
-      if (seen.has(key) || !isRelevant(it)) return false;
-      seen.add(key);
-      return true;
-    });
+    items
+      .filter((it) => {
+        const yt = it.media?.type === 'youtube' ? it.media.src : it.url?.match(/(?:v=|youtu\.be\/|shorts\/)([\w-]{11})/)?.[1];
+        const key = yt ? `yt:${yt}` : (it.url ?? it.id).replace(/[?#].*$/, '').replace(/\/$/, '');
+        // Cracked and modded download pages are never evidence about anything.
+        if (seen.has(key) || JUNK_DOWNLOAD.test(`${it.title} ${it.url ?? ''}`) || !isRelevant(it)) return false;
+        const host = it.url ? (() => { try { return new URL(it.url!).hostname.replace(/^www\./, ''); } catch { return ''; } })() : '';
+        const sameish = `${host}|${it.title.toLowerCase().replace(/\b(v(er(sion)?)?\.?\s*)?\d+(\.\d+)*\b/g, '').replace(/[^\p{L}]+/gu, ' ').trim()}`;
+        if (host && seenTitles.has(sameish)) return false;
+        seen.add(key);
+        if (host) seenTitles.add(sameish);
+        return true;
+      })
+      // A download or store page's date is when the listing was last updated, not when the thing came out.
+      .map((it) => (it.date && it.url && LOW_VALUE.test(it.url) ? { ...it, date: undefined } : it));
 
   const evidence: SourceItem[] = [];
   /** Archive pictures being looked at before they are pinned. */

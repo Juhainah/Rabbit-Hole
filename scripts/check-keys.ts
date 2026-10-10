@@ -110,6 +110,14 @@ await check('Web search', 'Serper', ['SERPER_API_KEY'], async () => {
   });
   return { ok: !!body?.organic, detail: `search works${body?.credits != null ? ` · used ${body.credits} credit` : ''} · free: 2,500 searches once` };
 }, 'https://serper.dev');
+await check('Web search', 'Reserp', ['RESERP_API_KEY'], async () => {
+  const { body } = await fetchJson('https://api.reserp.ai/v2/serp/search', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${env('RESERP_API_KEY')}` },
+    body: JSON.stringify({ url: 'https://www.google.com/search?q=Tunguska+event&gl=us&hl=en' }),
+  });
+  return { ok: body?.ok === true && Array.isArray(body?.results), detail: body?.ok ? `Google search works · ${body.results.length} results · free: 5,000 a month` : `refused: ${JSON.stringify(body?.error ?? body).slice(0, 80)}` };
+}, 'https://reserp.ai/dashboard/keys');
 await check('Web search', 'LangSearch', ['LANGSEARCH_API_KEY'], async () => {
   const { body } = await fetchJson('https://api.langsearch.com/v1/web-search', {
     method: 'POST',
